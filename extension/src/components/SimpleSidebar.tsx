@@ -59,7 +59,8 @@ export default function SimpleSidebar() {
                 const newTranscript = {
                     text: msg.data.text,
                     isFinal: msg.data.isFinal,
-                    timestamp: msg.data.timestamp
+                    timestamp: msg.data.timestamp,
+                    speaker: msg.data.speaker || 'unknown' // Add speaker property
                 };
                 setTranscripts(prev => [...prev, newTranscript]);
 
@@ -277,21 +278,37 @@ export default function SimpleSidebar() {
                             Aguardando áudio...
                         </div>
                     ) : (
-                        transcripts.map((t, i) => (
-                            <div
-                                key={i}
-                                style={{
-                                    padding: '8px 12px',
-                                    backgroundColor: t.isFinal ? '#334155' : '#1e293b',
-                                    borderRadius: '6px',
-                                    fontSize: '13px',
-                                    lineHeight: '1.5',
-                                    borderLeft: t.isFinal ? '3px solid #3b82f6' : '3px solid #64748b'
-                                }}
-                            >
-                                {t.text}
-                            </div>
-                        ))
+                        transcripts.map((t, i) => {
+                            const isSeller = t.speaker === 'seller';
+                            return (
+                                <div
+                                    key={i}
+                                    style={{
+                                        alignSelf: isSeller ? 'flex-end' : 'flex-start',
+                                        maxWidth: '85%',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: isSeller ? 'flex-end' : 'flex-start'
+                                    }}
+                                >
+                                    <span style={{ fontSize: '10px', color: '#64748b', marginBottom: '2px', marginLeft: '4px', marginRight: '4px' }}>
+                                        {isSeller ? 'Você' : 'Cliente'}
+                                    </span>
+                                    <div
+                                        style={{
+                                            padding: '8px 12px',
+                                            backgroundColor: isSeller ? '#3b82f6' : '#334155',
+                                            borderRadius: isSeller ? '12px 12px 0 12px' : '12px 12px 12px 0',
+                                            fontSize: '13px',
+                                            lineHeight: '1.5',
+                                            color: '#f1f5f9'
+                                        }}
+                                    >
+                                        {t.text}
+                                    </div>
+                                </div>
+                            );
+                        })
                     )}
                 </div>
             </div>

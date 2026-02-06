@@ -16,9 +16,9 @@ class RedisClient {
 
         this.client = new Redis(env.REDIS_URL, {
             maxRetriesPerRequest: 3,
-            retryStrategy(times) {
+            retryStrategy: (times) => {
                 if (times > 3) {
-                    logger.error('❌ Redis connection lost. Switching to in-memory.');
+                    logger.warn('⚠️ Redis connection failed after retries. Using in-memory cache.');
                     return null;
                 }
                 return Math.min(times * 50, 2000);
@@ -27,8 +27,11 @@ class RedisClient {
 
         this.client.on('connect', () => logger.info('✅ Redis connected'));
         this.client.on('error', (err) => {
-            logger.error('❌ Redis error, switching to memory:', err);
-            this.useMemory = true;
+            // Silence repeated errors
+            if (!this.useMemory) {
+                logger.warn('⚠️ Redis unreachable, switching to temporary in-memory storage.');
+                this.useMemory = true;
+            }
         });
     }
 

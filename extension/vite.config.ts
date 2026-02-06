@@ -23,6 +23,7 @@ export default defineConfig({
         hmr: {
             port: 5173,
         },
+        cors: true, // Enable CORS for Chrome Extension
     },
 
 })

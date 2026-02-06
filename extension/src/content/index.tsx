@@ -185,15 +185,15 @@ root.render(
 
 console.log('Sidebar component rendered. Host element:', host);
 
-// Auto-open sidebar after a short delay (to ensure page is ready)
-setTimeout(() => {
-    console.log('Auto-opening sidebar on Google Meet...');
-    isOpen = true;
-    host.style.width = '360px';
+// Auto-open logic removed to require user interaction
+// setTimeout(() => {
+//     console.log('Auto-opening sidebar on Google Meet...');
+//     isOpen = true;
+//     host.style.width = '360px';
 
-    // Notify background to start capture if user is logged in
-    chrome.runtime.sendMessage({ type: 'START_CAPTURE' }).catch(() => {
-        console.log('Background not ready or user not logged in');
-    });
-}, 2000); // 2 second delay
+//     // Notify background to start capture if user is logged in
+//     chrome.runtime.sendMessage({ type: 'START_CAPTURE' }).catch(() => {
+//         console.log('Background not ready or user not logged in');
+//     });
+// }, 2000); // 2 second delay
 

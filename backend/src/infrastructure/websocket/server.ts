@@ -26,12 +26,44 @@ export interface CallSession {
     leadProfile?: any;
     lastCoaching?: string;
     startupTime?: number;
+    lastTranscription?: string; // Context for prompt chaining
+    webmHeader?: Buffer[];
 }
 
 export interface TranscriptChunk {
     text: string;
     speaker: 'seller' | 'lead';
     timestamp: number;
+}
+
+// Hallucination Patterns (Whisper known issues)
+const HALLUCINATION_PATTERNS = [
+    /legendas?\s+(pela|por)\s+comunidade/i,
+    /amara\.org/i,
+    /obrigad[oa]\s+por\s+assistir/i,
+    /acesse\s+o\s+site/i,
+    /rádio\s+onu/i,
+    /www\.\w+\.org/i,
+    /inscreva-se/i,
+    /subscribe/i,
+    /like\s+and\s+subscribe/i,
+    /thanks?\s+for\s+watching/i,
+    /subtitles?\s+by/i,
+    /translated\s+by/i,
+    /♪|♫|🎵/,                    // Notes
+    /^\s*\.+\s*$/,               // Just dots
+    /^\s*,+\s*$/,                // Just commas
+    /^(tchau[,.\s]*)+$/i,        // Repeated 'tchau'
+    /^(.{1,15}[,.\s]+)\1{2,}$/i, // Short repeated phrases
+];
+
+function isHallucination(text: string): boolean {
+    const trimmed = text.trim();
+    if (trimmed.replace(/[^a-zA-ZÀ-ú]/g, '').length < 3) return true; // Too short
+    for (const pattern of HALLUCINATION_PATTERNS) {
+        if (pattern.test(trimmed)) return true;
+    }
+    return false;
 }
 
 export async function websocketRoutes(fastify: FastifyInstance) {
@@ -77,7 +109,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         await handleCallStart(event, user.id, socket);
                         break;
                     case 'audio:chunk':
+                        // Legacy handler - kept for compatibility
                         await handleAudioChunk(event, socket);
+                        break;
+                    case 'audio:segment':
+                        // New handler - complete WebM segment
+                        await handleAudioSegment(event, socket);
                         break;
                     case 'transcript:chunk':
                         await handleTranscript(event, callId, socket);
@@ -86,13 +123,22 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         await handleCallEnd(callId, socket);
                         break;
                 }
-            } catch (err) {
-                logger.error('Error handling message', err);
+            } catch (err: any) {
+                logger.error({
+                    message: err?.message,
+                    name: err?.name,
+                    stack: err?.stack,
+                    code: err?.code
+                }, '❌ Error handling message');
             }
         });
 
-        socket.on('close', () => {
-            // Cleanup handled by Redis TTL usually
+        socket.on('close', (code, reason) => {
+            logger.info({ code, reason: reason?.toString() }, '🔌 WS Disconnected');
+        });
+
+        socket.on('error', (err) => {
+            logger.error({ err }, '🔌 WS Error');
         });
 
         // --- Handlers ---
@@ -206,24 +252,19 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
             logger.info(`📦 Received audio chunk: ${audioData.length} bytes, buffer size: ${audioBuffer.length}`);
 
-            // Clear existing timer
-            if (transcriptionTimer) {
-                clearTimeout(transcriptionTimer);
-            }
+            // Logic: Transcribe every ~3 seconds of audio (3 chunks of 1s)
+            const CHUNKS_TO_PROCESS = 3;
 
-            // Set new timer to transcribe after 3 seconds of silence
-            transcriptionTimer = setTimeout(async () => {
-                if (audioBuffer.length === 0) return;
+            if (audioBuffer.length >= CHUNKS_TO_PROCESS) {
+                // Concatenate all binary buffers (MediaRecorder chunks form valid WebM when concatenated)
+                const finalBuffer = Buffer.concat(audioBuffer);
+                audioBuffer = []; // Clear buffer immediately
 
-                const buffer = Buffer.concat(audioBuffer);
-
-                logger.info(`🎤 Transcribing ${buffer.length} bytes of audio...`);
+                logger.info(`🎤 Transcribing ${finalBuffer.length} bytes of audio...`);
 
                 try {
-                    // Use a prompt to help Whisper differentiate speakers
-                    const prompt = "Este é um áudio de uma chamada de vendas. Identifique os falantes como Vendedor: e Cliente:. Mantenha a pontuação e gramática natural.";
-                    const text = await whisperClient.transcribe(buffer, prompt);
-                    audioBuffer = []; // Clear buffer after successful transcription
+                    const prompt = "Transcreva o áudio. Identifique como 'Vendedor:' e 'Cliente:' se possível.";
+                    const text = await whisperClient.transcribe(finalBuffer, prompt);
 
                     if (text && text.trim().length > 0) {
                         logger.info(`✨ Transcription result: ${text}`);
@@ -240,7 +281,60 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 } catch (err) {
                     logger.error('❌ Whisper transcription failed', err);
                 }
-            }, 3000);
+            }
+        }
+
+        async function handleAudioSegment(event: any, ws: WebSocket) {
+            // Each segment is a COMPLETE, INDEPENDENT WebM file
+            const audioBuffer = Buffer.from(event.payload.audio, 'base64');
+            const speaker = event.payload.speaker || 'unknown'; // Get speaker info
+
+            logger.info(`📦 Received complete audio segment: ${audioBuffer.length} bytes, Speaker: ${speaker}`);
+
+            // Validate WebM header (should ALWAYS be 1a45dfa3)
+            const headerHex = audioBuffer.slice(0, 4).toString('hex');
+            logger.debug(`📁 File header: ${headerHex} (expected: 1a45dfa3)`);
+
+            if (headerHex !== '1a45dfa3') {
+                logger.warn(`⚠️ Unexpected header: ${headerHex} - attempting transcription anyway`);
+            }
+
+            try {
+                // Prompt Chaining: Use previous transcription as prompt/context
+                const previousContext = sessionData?.lastTranscription || "Transcreva o áudio. Identifique como 'Vendedor:' e 'Cliente:' se possível.";
+
+                const text = await whisperClient.transcribe(audioBuffer, previousContext);
+
+                if (text && text.trim().length > 0) {
+
+                    // Filter Hallucinations
+                    if (isHallucination(text)) {
+                        logger.warn(`🚫 Hallucination filtered: "${text}"`);
+                        return;
+                    }
+
+                    logger.info(`✨ Transcription result: ${text} (${speaker})`);
+
+                    // Update context for next segment
+                    if (sessionData) {
+                        // Keep last ~200 chars for context
+                        sessionData.lastTranscription = text.slice(-200);
+                    }
+
+                    ws.send(JSON.stringify({
+                        type: 'transcript:chunk',
+                        payload: {
+                            text: text,
+                            isFinal: true,
+                            speaker: speaker // 🏷️ Return speaker to client
+                        }
+                    }));
+                } else {
+                    logger.debug('⏭️ Empty transcription (silence)');
+                }
+            } catch (err: any) {
+                logger.error({ message: err?.message, stack: err?.stack }, '❌ Segment transcription failed');
+            }
         }
     });
 }

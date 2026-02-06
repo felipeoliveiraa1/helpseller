@@ -35,15 +35,19 @@ export class WebSocketClient {
             }
         };
 
-        this.ws.onclose = () => {
-            console.log('❌ WS Closed');
+        this.ws.onclose = (event) => {
+            console.error('❌ WS Closed', {
+                code: event.code,
+                reason: event.reason,
+                wasClean: event.wasClean
+            });
             this.ws = null;
             this.retryConnection();
             this.notify('close', null);
         };
 
-        this.ws.onerror = (err) => {
-            console.error('WS Error', err);
+        this.ws.onerror = (event) => {
+            console.error('❌ WS Error:', event);
         };
     }
 

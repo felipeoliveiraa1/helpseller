@@ -1,98 +1,123 @@
-export class WebSocketClient {
-    private ws: WebSocket | null = null;
-    private url: string = 'ws://localhost:3001/ws/call';
-    private token: string | null = null;
-    private reconnectAttempts = 0;
-    private maxReconnect = 5;
-    private messageQueue: any[] = [];
-    private listeners = new Map<string, Set<Function>>();
+import { authService } from './auth';
 
-    connect(accessToken: string) {
-        this.token = accessToken;
-        if (this.ws) {
-            console.log('WS already connected');
-            return;
-        }
+const WS_BASE_URL = 'ws://localhost:3001/ws/call'; // Match the existing URL from previous file
 
-        // Auth Query Param
-        const wsUrl = `${this.url}?token=${this.token}`;
-        this.ws = new WebSocket(wsUrl);
+let ws: WebSocket | null = null;
+let messageQueue: string[] = [];
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
-        this.ws.onopen = () => {
+// Callbacks that background can register
+let onMessageCallback: ((data: any) => void) | null = null;
+let onConnectCallback: (() => void) | null = null;
+
+export function onWsMessage(cb: (data: any) => void) {
+    onMessageCallback = cb;
+}
+
+export function onWsConnect(cb: () => void) {
+    onConnectCallback = cb;
+}
+
+export async function connect() {
+    // Clear previous connection
+    if (ws) {
+        ws.onclose = null; // Prevent close handler from triggering reconnect
+        ws.close();
+        ws = null;
+    }
+
+    try {
+        // ★★★ OBTAIN FRESH TOKEN BEFORE EACH CONNECTION ★★★
+        console.log('🔄 Getting fresh token for WS connection...');
+        const token = await authService.getFreshToken();
+        console.log('🔌 Connecting WS with fresh token...');
+
+        ws = new WebSocket(`${WS_BASE_URL}?token=${token}`);
+
+        ws.onopen = () => {
             console.log('✅ WS Connected');
-            this.reconnectAttempts = 0;
-            this.flushQueue();
-            this.notify('open', null);
+            reconnectAttempts = 0; // Reset counter on success
+
+            // Flush queue
+            while (messageQueue.length > 0) {
+                const msg = messageQueue.shift()!;
+                ws!.send(msg);
+            }
+
+            // Notify background
+            if (onConnectCallback) onConnectCallback();
         };
 
-        this.ws.onmessage = (event) => {
+        ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
                 console.log('📩 WS Message:', data.type);
-                this.notify(data.type, data);
-            } catch (e) {
-                console.error('WS Parse Error', e);
+                if (onMessageCallback) onMessageCallback(data);
+            } catch (err) {
+                console.error('❌ WS parse error:', err);
             }
         };
 
-        this.ws.onclose = (event) => {
-            console.error('❌ WS Closed', {
-                code: event.code,
-                reason: event.reason,
-                wasClean: event.wasClean
-            });
-            this.ws = null;
-            this.retryConnection();
-            this.notify('close', null);
+        ws.onclose = (event) => {
+            console.error('❌ WS Closed', { code: event.code, reason: event.reason });
+            ws = null;
+
+            if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                console.error('❌ Max reconnect attempts reached, stopping.');
+                return;
+            }
+
+            // Exponential backoff for invalid token (1008)
+            const delay = event.code === 1008
+                ? Math.min(5000 * Math.pow(1.5, reconnectAttempts), 30000) // 5s -> 7.5s -> 11s -> ...
+                : 2000;
+
+            reconnectAttempts++;
+            console.log(`Retrying WS in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            reconnectTimer = setTimeout(() => connect(), delay);
         };
 
-        this.ws.onerror = (event) => {
-            console.error('❌ WS Error:', event);
+        ws.onerror = (error) => {
+            console.error('❌ WS Error:', error);
         };
-    }
 
-    send(type: string, payload: any) {
-        const message = JSON.stringify({ type, payload });
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(message);
-        } else {
-            console.warn('WS not open, queuing message', type);
-            this.messageQueue.push(message);
-        }
-    }
+    } catch (err: any) {
+        console.error('❌ Failed to get token or connect:', err.message);
 
-    on(event: string, cb: Function) {
-        if (!this.listeners.has(event)) {
-            this.listeners.set(event, new Set());
-        }
-        this.listeners.get(event)?.add(cb);
-    }
-
-    off(event: string, cb: Function) {
-        this.listeners.get(event)?.delete(cb);
-    }
-
-    private notify(event: string, data: any) {
-        this.listeners.get(event)?.forEach(cb => cb(data));
-    }
-
-    private flushQueue() {
-        while (this.messageQueue.length > 0 && this.ws?.readyState === WebSocket.OPEN) {
-            const msg = this.messageQueue.shift();
-            this.ws.send(msg);
-        }
-    }
-
-    private retryConnection() {
-        if (this.reconnectAttempts < this.maxReconnect) {
-            this.reconnectAttempts++;
-            const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
-            console.log(`Retrying WS in ${delay}ms...`);
-            setTimeout(() => {
-                if (this.token) this.connect(this.token);
-            }, delay);
+        reconnectAttempts++;
+        const delay = 5000;
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            console.log(`Retrying in ${delay}ms...`);
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            reconnectTimer = setTimeout(() => connect(), delay);
         }
     }
 }
 
-export const wsClient = new WebSocketClient();
+export function send(type: string, payload: any) {
+    const message = JSON.stringify({ type, payload });
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        // console.log(`📤 WS Send immediately: ${type}`, payload); 
+        ws.send(message);
+    } else {
+        console.log(`⏳ WS queuing message: ${type}`, payload);
+        messageQueue.push(message);
+    }
+}
+
+export function isConnected(): boolean {
+    return ws !== null && ws.readyState === WebSocket.OPEN;
+}
+
+export function close() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (ws) {
+        ws.onclose = null;
+        ws.close(1000, 'Client closing');
+        ws = null;
+    }
+}

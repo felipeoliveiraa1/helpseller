@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type CardType = 'signal' | 'objection' | 'tip' | 'alert' | 'reinforcement';
+export type CardType = 'signal' | 'objection' | 'tip' | 'alert' | 'reinforcement' | 'manager-whisper';
 
 export interface CoachCard {
     id: string;
@@ -16,6 +16,16 @@ export interface Stage {
     id: string;
     name: string;
     status: 'completed' | 'current' | 'pending';
+}
+
+// NEW: Objection interface for edge processing
+export interface CachedObjection {
+    id: string;
+    trigger_phrases: string[];
+    suggested_response: string;
+    mental_trigger: string;
+    coaching_tip: string;
+    success_rate?: number;
 }
 
 interface CoachingState {
@@ -43,6 +53,11 @@ interface CoachingState {
     // Cards
     cards: CoachCard[];
 
+    // NEW: Script Cache for Edge Processing
+    cachedObjections: CachedObjection[];
+    scriptId: string | null;
+    cacheTimestamp: number | null;
+
     // Actions
     toggleMinimize: () => void;
     toggleTheme: () => void;
@@ -55,6 +70,10 @@ interface CoachingState {
     setLeadProfile: (profile: CoachingState['leadProfile']) => void;
     setSpeaker: (speaker: 'user' | 'lead') => void;
     setCallSummary: (show: boolean) => void;
+
+    // NEW: Cache Management
+    loadScriptData: (scriptId: string, objections: CachedObjection[]) => void;
+    clearCache: () => void;
 }
 
 export const useCoachingStore = create<CoachingState>((set, get) => ({
@@ -132,5 +151,28 @@ export const useCoachingStore = create<CoachingState>((set, get) => ({
 
     setLeadProfile: (profile) => set({ leadProfile: profile }),
     setSpeaker: (speaker) => set({ activeSpeaker: speaker }),
-    setCallSummary: (show) => set({ showEndModal: show })
+    setCallSummary: (show) => set({ showEndModal: show }),
+
+    // NEW: Script Cache Implementation
+    cachedObjections: [],
+    scriptId: null,
+    cacheTimestamp: null,
+
+    loadScriptData: (scriptId, objections) => {
+        console.log(`📦 Caching ${objections.length} objections for script ${scriptId}`);
+        set({
+            scriptId,
+            cachedObjections: objections,
+            cacheTimestamp: Date.now()
+        });
+    },
+
+    clearCache: () => {
+        console.log('🗑️ Clearing objection cache');
+        set({
+            cachedObjections: [],
+            scriptId: null,
+            cacheTimestamp: null
+        });
+    }
 }));

@@ -51,7 +51,7 @@ export const authService = {
         });
     },
 
-    async getSession() {
+    async getSession(): Promise<any> {
         const data = await chrome.storage.local.get(['supabase_session']);
         return data.supabase_session;
     },
@@ -59,5 +59,59 @@ export const authService = {
     async logout() {
         await supabase.auth.signOut();
         await chrome.storage.local.remove(['supabase_session', 'access_token', 'refresh_token']);
+    },
+
+    async getFreshToken(): Promise<string> {
+        // 1. Tentar pegar sessão do Supabase (memória)
+        let { data: { session }, error } = await supabase.auth.getSession();
+
+        // 2. Se não tiver em memória, tentar recuperar do storage (background reiniciou)
+        if (!session) {
+            console.warn('⚠️ No session in memory, trying to recover from storage...');
+            const storedSession = await this.getSession();
+            if (storedSession && storedSession.refresh_token) {
+                // Recuperar usando setSession
+                const { data, error: setErr } = await supabase.auth.setSession({
+                    access_token: storedSession.access_token,
+                    refresh_token: storedSession.refresh_token
+                });
+
+                if (!setErr && data.session) {
+                    console.log('✅ Session recovered from storage');
+                    session = data.session;
+                } else {
+                    console.error('❌ Failed to restore session:', setErr?.message);
+                }
+            }
+        }
+
+        if (!session) {
+            throw new Error('No session found');
+        }
+
+        const expiresAt = session.expires_at || 0;
+        const now = Math.floor(Date.now() / 1000);
+        const timeLeft = expiresAt - now;
+
+        console.log(`🔑 Token time left: ${timeLeft}s`);
+
+        // Se expira em menos de 5 minutos, forçar refresh
+        if (timeLeft < 300) {
+            console.log('🔄 Token expiring soon, refreshing...');
+            const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+
+            if (refreshErr || !refreshData.session) {
+                console.error('❌ Token refresh failed:', refreshErr?.message);
+                // Tentar usar o token atual mesmo assim
+                return session.access_token;
+            }
+
+            console.log(`✅ Token refreshed! New expiry: ${refreshData.session.expires_at}`);
+            // Salvar nova sessão
+            await this.saveSession(refreshData.session);
+            return refreshData.session.access_token;
+        }
+
+        return session.access_token;
     }
 };

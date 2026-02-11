@@ -1,25 +1,145 @@
 import { authService } from '../services/auth';
-import { wsClient } from '../services/websocket';
+import { connect, send, onWsConnect, onWsMessage } from '../services/websocket';
+import { edgeCoach } from '../services/edge-coach';
+import type { CachedObjection } from '../stores/coaching-store';
 
 // State
 console.log('Background Service Worker Starting...');
 
-// Listen for transcription results from WebSocket and forward to content script
-wsClient.on('transcript:chunk', async (data: any) => {
-    console.log('📝 Received transcript from server:', data.payload?.text?.substring(0, 50));
+// Initialize Edge Coach
+edgeCoach.initialize().then(() => {
+    console.log('✅ Edge coach initialized');
+}).catch(err => {
+    console.error('❌ Edge coach initialization failed:', err);
+});
 
-    const state = await getState();
-    if (state.currentTabId) {
-        chrome.tabs.sendMessage(state.currentTabId, {
-            type: 'TRANSCRIPT_RESULT',
-            data: {
-                text: data.payload?.text,
-                isFinal: data.payload?.isFinal ?? true,
-                timestamp: Date.now()
-            }
-        }).catch((err) => {
-            console.warn('Failed to send transcript to content script:', err.message);
+let currentLeadName = '';
+let micIsMuted = false; // Track mic mute state
+let lastCallStartParams: { platform: string, scriptId: string } | null = null;
+let cachedObjections: CachedObjection[] = [];
+
+// Re-enviar dados iniciais quando o WebSocket reconectar
+onWsConnect(() => {
+    // 1. Re-send call:start if we were recording
+    if (lastCallStartParams) {
+        console.log('🔄 Re-sending call:start on reconnect:', lastCallStartParams);
+        send('call:start', lastCallStartParams);
+    }
+
+    // 2. Re-send participants
+    if (currentLeadName) {
+        console.log('👤 Re-sending lead name on reconnect:', currentLeadName);
+        send('call:participants', {
+            leadName: currentLeadName,
+            allParticipants: []
         });
+    }
+});
+
+// Listen for messages from WebSocket
+onWsMessage(async (data: any) => {
+    if (data.type === 'call:started') {
+        // When call starts, fetch and cache objections for edge processing
+        const { scriptId } = data.payload || {};
+        if (scriptId) {
+            try {
+                const token = await authService.getFreshToken();
+                const response = await fetch(`http://localhost:3001/api/scripts/${scriptId}/objections`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const objections = await response.json();
+                    cachedObjections = objections;
+                    console.log(`📦 Cached ${objections.length} objections for edge processing`);
+                } else {
+                    console.warn('⚠️ Failed to fetch objections for caching');
+                }
+            } catch (error) {
+                console.error('❌ Error caching objections:', error);
+            }
+        }
+    }
+
+    if (data.type === 'transcript:chunk') {
+        const payload = data.payload || {};
+        const text = payload.text || '';
+        const speaker = payload.speaker || payload.role;
+
+        console.log('📝 Received transcript:', text.substring(0, 50), 'speaker:', speaker);
+
+        // NEW: Try edge processing first for lead objections
+        if ((speaker === 'lead' || speaker === 'Cliente') && cachedObjections.length > 0) {
+            try {
+                const localResult = await edgeCoach.processTranscript(text, speaker, cachedObjections);
+
+                if (localResult) {
+                    // Local match successful! Send card directly to sidebar
+                    const state = await getState();
+                    if (state.currentTabId) {
+                        chrome.tabs.sendMessage(state.currentTabId, {
+                            type: 'COACHING_MESSAGE',
+                            data: {
+                                type: 'objection',
+                                title: 'OBJEÇÃO DETECTADA',
+                                description: localResult.coachingTip,
+                                metadata: localResult
+                            }
+                        }).catch(() => { });
+                    }
+                    console.log('⚡ LOCAL COACHING DELIVERED');
+                }
+            } catch (error) {
+                console.error('❌ Edge processing error:', error);
+            }
+        }
+
+        // Forward transcript to sidebar (for display)
+        const state = await getState();
+        if (state.currentTabId) {
+            chrome.tabs.sendMessage(state.currentTabId, {
+                type: 'TRANSCRIPT_RESULT',
+                data: {
+                    text,
+                    isFinal: payload.isFinal ?? true,
+                    timestamp: Date.now(),
+                    speaker: payload.speaker ?? (payload.role === 'seller' ? 'Você' : 'Cliente'),
+                    role: payload.role
+                }
+            }).catch((err) => {
+                console.warn('Failed to send transcript to content script:', err.message);
+            });
+        }
+    }
+
+    // Handle coaching messages from backend (fallback or non-objection coaching)
+    if (data.type === 'coach:message') {
+        console.log('📡 BACKEND COACHING:', data.payload?.message?.substring(0, 50));
+        const state = await getState();
+        if (state.currentTabId) {
+            chrome.tabs.sendMessage(state.currentTabId, {
+                type: 'COACHING_MESSAGE',
+                data: data.payload
+            }).catch(() => { });
+        }
+    }
+
+    // Handle manager whispers
+    if (data.type === 'coach:whisper') {
+        console.log('👔 MANAGER WHISPER:', data.payload?.content?.substring(0, 50));
+        const state = await getState();
+        if (state.currentTabId) {
+            chrome.tabs.sendMessage(state.currentTabId, {
+                type: 'MANAGER_WHISPER',
+                data: {
+                    type: 'manager-whisper',
+                    source: 'manager',
+                    content: data.payload.content,
+                    urgency: data.payload.urgency || 'normal',
+                    timestamp: data.payload.timestamp
+                }
+            }).catch(() => { });
+        }
     }
 });
 
@@ -67,19 +187,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         handleOffscreenReady();
     } else if (message.type === 'OFFSCREEN_LOG') {
         console.log('🖥️ [Offscreen]:', message.message);
+    } else if (message.type === 'RECORDING_STARTED') {
+        const micAvailable = !!message.micAvailable;
+        console.log('🎙️ Recording started, microfone:', micAvailable ? 'permitido' : 'não disponível');
+        getState().then(state => {
+            if (state.currentTabId) {
+                chrome.tabs.sendMessage(state.currentTabId, {
+                    type: 'STATUS_UPDATE',
+                    status: 'RECORDING',
+                    micAvailable
+                }).catch(() => { });
+            }
+        });
+        chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', status: 'RECORDING', micAvailable }).catch(() => { });
     } else if (message.type === 'AUDIO_CHUNK') {
         // Legacy handler - kept for compatibility
-        wsClient.send('audio:chunk', { audio: message.data });
+        send('audio:chunk', { audio: message.data });
     } else if (message.type === 'AUDIO_SEGMENT') {
-        // New handler - complete WebM segment
-        console.log(`📤 Sending complete audio segment: ${message.size} bytes, Speaker: ${message.speaker}`);
-        wsClient.send('audio:segment', {
+        const role = message.role || message.speaker || 'unknown';
+        console.log(`📤 Sending audio segment: ${message.size} bytes, role: ${role}`);
+        send('audio:segment', {
             audio: message.data,
             size: message.size,
-            speaker: message.speaker // Pass speaker info (seller/lead)
+            role
         });
+    } else if (message.type === 'MEDIA_STREAM_CHUNK') {
+        // NEW: Relay video + audio chunks to backend for manager streaming
+        console.log(`📹 Sending media chunk: ${message.size} bytes`);
+        send('media:stream', {
+            chunk: message.data,
+            size: message.size,
+            timestamp: message.timestamp
+        });
+    } else if (message.type === 'PARTICIPANT_INFO') {
+        currentLeadName = message.leadName || '';
+        console.log('👤 Lead name:', currentLeadName);
+        send('call:participants', {
+            leadName: message.leadName || 'Lead',
+            selfName: message.selfName,
+            allParticipants: message.allParticipants || []
+        });
+    } else if (message.type === 'MIC_STATE') {
+        micIsMuted = message.muted;
+        console.log('🎤 Mic state:', message.muted ? 'MUTED' : 'ACTIVE');
+
+        // Use storage for robust communication with offscreen
+        chrome.storage.local.set({ micMuted: message.muted }).catch(() => { });
+
+        // Fallback: still try to send message just in case, but storage is primary
+        chrome.runtime.sendMessage({ type: 'MIC_MUTE_STATE', muted: message.muted }).catch(() => { });
     } else if (message.type === 'TRANSCRIPT_RESULT') {
-        wsClient.send('transcript:chunk', message.data);
+        send('transcript:chunk', message.data);
         getState().then(state => {
             if (state.currentTabId) {
                 chrome.tabs.sendMessage(state.currentTabId, {
@@ -148,7 +306,8 @@ async function startCapture() {
         }
 
         console.log('🔌 Connecting WebSocket...');
-        wsClient.connect(session.access_token);
+        console.log('🔌 Connecting WebSocket...');
+        await connect();
 
         // 3. Ensure Offscreen Document Exists & Wait for Ready
         const existingContexts = await chrome.runtime.getContexts({
@@ -209,12 +368,22 @@ async function startCapture() {
             streamId: streamId
         });
 
+        // Send initial mic mute state to offscreen
+        console.log('📤 Sending initial mic state to offscreen:', micIsMuted ? 'MUTED' : 'ACTIVE');
+        await chrome.runtime.sendMessage({
+            type: 'MIC_MUTE_STATE',
+            muted: micIsMuted
+        });
+
         // 6. Send Call Start Metadata
         if (session?.access_token) {
-            wsClient.send('call:start', {
+            lastCallStartParams = {
                 platform: urlToPlatform(tab.url),
-                scriptId: 'default-script-id'
-            });
+                scriptId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' // Script Padrão criado no banco
+            };
+
+            console.log('📤 Sending call:start:', lastCallStartParams);
+            send('call:start', lastCallStartParams);
         }
 
     } catch (err: any) {
@@ -257,7 +426,7 @@ async function stopCapture() {
 
         await setState({ isRecording: false });
         broadcastStatus('PROGRAMMED');
-        wsClient.send('call:end', {});
+        send('call:end', {});
     } catch (err) {
         console.error('❌ stopCapture failed:', err);
     } finally {

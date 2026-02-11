@@ -1,15 +1,31 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import SimpleSidebar from '@/components/SimpleSidebar';
+import { startParticipantMonitoring, sendParticipantInfoNow, startMicStateMonitoring } from './meet-participants';
 // import '@/index.css';
 
 console.log('Sales Copilot Content Script Loaded');
 
-// Shadow DOM Injection
+if (window.location.hostname === 'meet.google.com') {
+    startParticipantMonitoring();
+    startMicStateMonitoring();
+    if (document.readyState !== 'complete') {
+        window.addEventListener('load', () => startParticipantMonitoring());
+    }
+}
+
+// Painel flutuante: posição (left/top) aplicada pelo SimpleSidebar
 const host = document.createElement('div');
 host.id = 'sales-copilot-root';
-host.style.cssText = 'position:fixed;top:0;right:0;width:0px;height:100vh;z-index:2147483647;transition: width 0.3s ease-in-out;'; // Start with 0 width
+host.style.cssText = 'position:fixed;width:0;height:80vh;z-index:2147483647;transition: width 0.2s ease, height 0.2s ease;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.4);';
 document.body.appendChild(host);
+
+chrome.storage.local.get(['sidebarPosition'], (r: { sidebarPosition?: { left: number; top: number } }) => {
+    const pos = r.sidebarPosition;
+    const defaultLeft = Math.max(0, window.innerWidth - 360 - 16);
+    host.style.left = (pos?.left ?? defaultLeft) + 'px';
+    host.style.top = (pos?.top ?? 16) + 'px';
+});
 
 const shadow = host.attachShadow({ mode: 'open' });
 
@@ -162,16 +178,20 @@ chrome.runtime.onMessage.addListener((msg) => {
 
     if (msg.type === 'TOGGLE_SIDEBAR') {
         isOpen = !isOpen;
-        host.style.width = isOpen ? '360px' : '0px';
+        host.style.width = isOpen ? '360px' : '0';
+        host.style.height = isOpen ? '80vh' : '80vh';
         console.log('Sidebar toggled:', isOpen ? 'OPEN' : 'CLOSED');
     } else if (msg.type === 'OPEN_SIDEBAR') {
         isOpen = true;
-        host.style.width = '360px'; // Expand
+        host.style.width = '360px';
+        host.style.height = '80vh';
         console.log('Sidebar opened');
     } else if (msg.type === 'CLOSE_SIDEBAR') {
         isOpen = false;
-        host.style.width = '0px';
+        host.style.width = '0';
         console.log('Sidebar closed');
+    } else if (msg.type === 'STATUS_UPDATE' && msg.status === 'RECORDING' && window.location.hostname === 'meet.google.com') {
+        sendParticipantInfoNow();
     }
 });
 

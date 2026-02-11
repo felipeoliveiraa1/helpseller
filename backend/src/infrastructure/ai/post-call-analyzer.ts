@@ -1,4 +1,4 @@
-import { CallSession } from "./coach-engine";
+import { CallSession } from "../websocket/server.js";
 import { OpenAIClient } from "./openai-client";
 
 export class PostCallAnalyzer {
@@ -17,7 +17,7 @@ export class PostCallAnalyzer {
   "ai_notes": "resumo livre com recomendações para a próxima interação"
 }`;
 
-        const transcriptText = session.transcript.map(t => `[${t.speaker.toUpperCase()}] ${t.text}`).join('\n');
+        const transcriptText = session.transcript.map((t: any) => `[${t.speaker.toUpperCase()}] ${t.text}`).join('\n');
 
         const userPrompt = `Script: ${scriptName}
 Etapas: ${steps.join(' → ')}
@@ -32,5 +32,40 @@ ${transcriptText}`;
             console.error('Failed to parse post-call analysis', e);
             return {};
         }
+    }
+
+    /**
+     * Correlates objection texts from analysis with actual objection IDs from the database
+     * This is needed to track which specific objections led to conversions
+     * 
+     * @param analysisResult - The result from generate()
+     * @param objectionMatcher - Matcher instance to correlate text to IDs
+     * @param availableObjections - All objections for the script
+     * @returns Array of objection IDs that were detected
+     */
+    extractObjectionIds(
+        analysisResult: any,
+        objectionMatcher: any,
+        availableObjections: any[]
+    ): string[] {
+        if (!analysisResult?.objections_faced || analysisResult.objections_faced.length === 0) {
+            return [];
+        }
+
+        const detectedIds: string[] = [];
+
+        for (const objFaced of analysisResult.objections_faced) {
+            const objectionText = objFaced.objection;
+            if (!objectionText) continue;
+
+            // Use the matcher to find which objection this text corresponds to
+            const match = objectionMatcher.match(objectionText, availableObjections, false);
+
+            if (match && match.objectionId) {
+                detectedIds.push(match.objectionId);
+            }
+        }
+
+        return detectedIds;
     }
 }

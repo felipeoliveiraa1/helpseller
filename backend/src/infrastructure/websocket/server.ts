@@ -13,6 +13,7 @@ import { PromptBuilder } from '../ai/prompt-builder.js';
 import { ResponseParser } from '../ai/response-parser.js';
 import { PostCallAnalyzer } from '../ai/post-call-analyzer.js';
 import { WhisperClient } from '../ai/whisper-client.js';
+import { ObjectionSuccessTracker } from '../ai/objection-success-tracker.js';
 
 // Types
 export interface CallSession {
@@ -26,7 +27,11 @@ export interface CallSession {
     leadProfile?: any;
     lastCoaching?: string;
     startupTime?: number;
-    lastTranscription?: string; // Context for prompt chaining
+    lastTranscription?: string; // legacy; prefer lastLeadTranscription / lastSellerTranscription
+    lastLeadTranscription?: string;
+    lastSellerTranscription?: string;
+    leadName?: string;
+    recentTranscriptions?: Array<{ text: string; role: string; timestamp: number }>;
     webmHeader?: Buffer[];
 }
 
@@ -66,18 +71,95 @@ function isHallucination(text: string): boolean {
     return false;
 }
 
+const DEDUP_WINDOW_MS = 8000; // 8s (segmentos 3s + latência Whisper)
+
+function normalizeText(text: string): string {
+    return text
+        .toLowerCase()
+        .trim()
+        .replace(/[.,!?;:""'']/g, '')
+        .replace(/\s+/g, ' ');
+}
+
+function textsAreSimilar(a: string, b: string): boolean {
+    const normA = normalizeText(a);
+    const normB = normalizeText(b);
+    if (normA === normB) return true;
+    if (normA.includes(normB) || normB.includes(normA)) return true;
+    const wordsA = new Set(normA.split(' ').filter((w) => w.length > 1));
+    const wordsB = new Set(normB.split(' ').filter((w) => w.length > 1));
+    if (wordsA.size === 0 || wordsB.size === 0) return false;
+    const intersection = [...wordsA].filter((w) => wordsB.has(w)).length;
+    const union = new Set([...wordsA, ...wordsB]).size;
+    return intersection / union > 0.5;
+}
+
+/** Lead tem prioridade: se seller diz o mesmo que o lead = eco → descartar seller. */
+function shouldDiscard(
+    text: string,
+    role: string,
+    session: CallSession | null
+): boolean {
+    if (!session) return false;
+    const recent = session.recentTranscriptions ?? [];
+    const now = Date.now();
+
+    session.recentTranscriptions = recent.filter(
+        (t) => now - t.timestamp < DEDUP_WINDOW_MS
+    );
+
+    for (const r of session.recentTranscriptions) {
+        if (!textsAreSimilar(text, r.text)) continue;
+
+        // SAME ROLE DUPLICATION (Whisper transcribing same audio multiple times)
+        if (r.role === role) {
+            logger.info(
+                `🔇 Duplicate filtered [${role}]: "${text.slice(0, 50)}..." (same text from same role)`
+            );
+            return true;
+        }
+
+        // CROSS-CHANNEL ECHO/LEAKAGE
+
+        // Case 1: Active Role is Seller (Mic), matched with recent Lead (Tab).
+        // Lead said it first, now Seller matches = Leakage (Lead's voice in Mic)
+        if (role === 'seller') {
+            logger.info(
+                `🔇 Leakage filtered [seller]: "${text.slice(0, 50)}..." (matches lead)`
+            );
+            return true;
+        }
+
+        // Case 2: Active Role is Lead (Tab), matched with recent Seller (Mic).
+        // Seller said it first, now Lead matches = Echo (Seller's voice in Tab)
+        if (role === 'lead') {
+            logger.info(`🔇 Echo filtered [lead]: "${text.slice(0, 50)}..." (matches seller)`);
+            return true;
+        }
+    }
+
+    session.recentTranscriptions.push({
+        text,
+        role: role as 'lead' | 'seller',
+        timestamp: now,
+    });
+    return false;
+}
+
 export async function websocketRoutes(fastify: FastifyInstance) {
     // Initialize AI Engine
     const openaiClient = new OpenAIClient();
+    const objectionMatcher = new ObjectionMatcher();
     const coachEngine = new CoachEngine(
         new TriggerDetector(),
-        new ObjectionMatcher(),
+        objectionMatcher,
         new PromptBuilder(),
         openaiClient,
         new ResponseParser()
     );
     const postCallAnalyzer = new PostCallAnalyzer(openaiClient);
     const whisperClient = new WhisperClient();
+    const successTracker = new ObjectionSuccessTracker(supabaseAdmin); // NEW: Track conversion success
 
     fastify.get('/ws/call', { websocket: true }, async (socket, req) => {
         logger.info('🔌 New WebSocket connection attempt');
@@ -97,8 +179,10 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         logger.info(`✅ User authenticated: ${user.id}`);
         let callId: string | null = null;
         let sessionData: CallSession | null = null;
+        let bufferedLeadName: string | null = null; // Buffer leadName if it arrives before session
         let audioBuffer: Buffer[] = [];
         let transcriptionTimer: NodeJS.Timeout | null = null;
+        let commandHandler: ((message: any) => void) | null = null; // For manager whispers
 
         socket.on('message', async (message: string) => {
             try {
@@ -119,8 +203,21 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     case 'transcript:chunk':
                         await handleTranscript(event, callId, socket);
                         break;
+                    case 'call:participants':
+                        await handleCallParticipants(event, callId, sessionData);
+                        break;
                     case 'call:end':
                         await handleCallEnd(callId, socket);
+                        break;
+                    case 'media:stream':
+                        // NEW: Relay video + audio chunks to managers via Redis pub/sub
+                        if (callId && event.payload?.chunk) {
+                            await redis.publish(`call:${callId}:media_raw`, {
+                                chunk: event.payload.chunk,
+                                size: event.payload.size,
+                                timestamp: event.payload.timestamp
+                            });
+                        }
                         break;
                 }
             } catch (err: any) {
@@ -133,8 +230,15 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             }
         });
 
-        socket.on('close', (code, reason) => {
+
+        socket.on('close', async (code, reason) => {
             logger.info({ code, reason: reason?.toString() }, '🔌 WS Disconnected');
+
+            // Cleanup command subscription
+            if (callId && commandHandler) {
+                await redis.unsubscribe(`call:${callId}:commands`, commandHandler);
+                commandHandler = null;
+            }
         });
 
         socket.on('error', (err) => {
@@ -144,15 +248,22 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         // --- Handlers ---
 
         async function handleCallStart(event: any, userId: string, ws: WebSocket) {
+            logger.info({ payload: event.payload }, '📞 handleCallStart initiated');
             const { scriptId, platform } = event.payload;
 
-            const { data: profile } = await supabaseAdmin.from('profiles').select('organization_id').eq('id', userId).single();
-            if (!profile) return ws.close(1011);
+            const { data: profile, error: profileError } = await supabaseAdmin.from('profiles').select('organization_id').eq('id', userId).single();
 
-            const { data: call } = await supabaseAdmin.from('calls')
+            if (profileError || !profile) {
+                logger.error({ profileError, userId }, '❌ Profile not found or error');
+                return ws.close(1011, 'Profile not found');
+            }
+
+            logger.info({ organizationId: profile.organization_id }, '✅ Profile found');
+
+            const { data: call, error: callError } = await supabaseAdmin.from('calls')
                 .insert({
                     user_id: userId,
-                    organization_id: profile.organization_id,
+                    organization_id: profile.organization_id, // Might be null if profile has no org
                     script_id: scriptId,
                     platform: platform || 'OTHER',
                     status: 'ACTIVE',
@@ -160,7 +271,17 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 })
                 .select().single();
 
-            if (!call) return;
+            if (callError) {
+                logger.error({ callError }, '❌ Failed to create call in DB');
+                return;
+            }
+
+            if (!call) {
+                logger.error('❌ Call created but returned null data');
+                return;
+            }
+
+            logger.info(`✅ Call created in DB: ${call.id}`);
             callId = call.id;
 
             const session: CallSession = {
@@ -176,7 +297,35 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             await redis.set(`call:${call.id}`, session, 3600 * 4);
             sessionData = session;
 
+            // Apply buffered leadName if it arrived before session was created
+            if (bufferedLeadName) {
+                sessionData.leadName = bufferedLeadName;
+                logger.info(`👤 Applying buffered lead name: ${bufferedLeadName}`);
+                await redis.set(`call:${call.id}`, sessionData, 3600 * 4);
+                bufferedLeadName = null;
+            }
+
             ws.send(JSON.stringify({ type: 'call:started', payload: { callId: call.id } }));
+
+            // Subscribe to manager whisper commands
+            commandHandler = (command: any) => {
+                if (command.type === 'whisper') {
+                    // Forward whisper to extension
+                    ws.send(JSON.stringify({
+                        type: 'coach:whisper',
+                        payload: {
+                            source: 'manager',
+                            content: command.content,
+                            urgency: command.urgency,
+                            timestamp: command.timestamp
+                        }
+                    }));
+                    logger.info(`💬 Forwarded manager whisper to seller`);
+                }
+            };
+
+            await redis.subscribe(`call:${call.id}:commands`, commandHandler);
+            logger.info(`🎧 Subscribed to commands for call ${call.id}`);
         }
 
         async function handleTranscript(event: any, currentCallId: string | null, ws: WebSocket) {
@@ -217,17 +366,75 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         async function handleCallEnd(currentCallId: string | null, ws: WebSocket) {
             if (!currentCallId || !sessionData) return;
 
-            // 1. Generate Summary
-            // Need to fetch script details first in real app
-            const summary = await postCallAnalyzer.generate(sessionData, "Standard Script", ["Intro", "Discovery", "Close"]);
+            // 1. Fetch script details for analysis
+            const { data: scriptData } = await supabaseAdmin
+                .from('scripts')
+                .select('name, id')
+                .eq('id', sessionData.scriptId)
+                .single();
 
-            // 2. Send Summary to Client
+            const scriptName = scriptData?.name || "Standard Script";
+
+            // Fetch objections for this script (needed for correlation)
+            const { data: objections } = await supabaseAdmin
+                .from('objections')
+                .select('id, trigger_phrases, suggested_response, mental_trigger, coaching_tip')
+                .eq('script_id', sessionData.scriptId);
+
+            // 2. Generate Summary
+            const summary = await postCallAnalyzer.generate(sessionData, scriptName, ["Intro", "Discovery", "Close"]);
+
+            // 3. NEW: Track conversion feedback if call was successful
+            if (summary && summary.result === 'CONVERTED' && objections && objections.length > 0) {
+                try {
+                    // Extract which objections were faced
+                    const objectionIds = postCallAnalyzer.extractObjectionIds(
+                        summary,
+                        objectionMatcher,
+                        objections
+                    );
+
+                    if (objectionIds.length > 0) {
+                        logger.info(`🎯 Tracking ${objectionIds.length} successful objections for script ${sessionData.scriptId}`);
+                        await successTracker.trackCallResult(
+                            sessionData.scriptId,
+                            objectionIds,
+                            true // wasConverted = true
+                        );
+                    }
+                } catch (trackingError) {
+                    logger.error({ error: trackingError }, 'Failed to track objection success');
+                    // Don't fail the entire call end flow if tracking fails
+                }
+            } else if (summary && summary.result === 'LOST' && objections && objections.length > 0) {
+                // Also track losses to get accurate success rates
+                try {
+                    const objectionIds = postCallAnalyzer.extractObjectionIds(
+                        summary,
+                        objectionMatcher,
+                        objections
+                    );
+
+                    if (objectionIds.length > 0) {
+                        logger.info(`📉 Tracking ${objectionIds.length} unsuccessful objections for script ${sessionData.scriptId}`);
+                        await successTracker.trackCallResult(
+                            sessionData.scriptId,
+                            objectionIds,
+                            false // wasConverted = false
+                        );
+                    }
+                } catch (trackingError) {
+                    logger.error({ error: trackingError }, 'Failed to track objection failure');
+                }
+            }
+
+            // 4. Send Summary to Client
             ws.send(JSON.stringify({
                 type: 'call:summary',
                 payload: summary
             }));
 
-            // 3. Update DB
+            // 5. Update DB
             await supabaseAdmin.from('calls').update({
                 status: 'COMPLETED',
                 ended_at: new Date().toISOString(),
@@ -235,14 +442,14 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 // summary: summary // If column exists
             }).eq('id', currentCallId);
 
-            // 4. Save Summary to specific table
+            // 6. Save Summary to specific table
             if (summary) {
                 await supabaseAdmin.from('call_summaries').insert({
                     call_id: currentCallId,
                     ...summary
                 });
             }
-            // 4. Clear Redis
+            // 7. Clear Redis
             await redis.del(`call:${currentCallId}`);
         }
 
@@ -284,57 +491,246 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             }
         }
 
+        async function handleCallParticipants(event: any, currentCallId: string | null, session: CallSession | null) {
+            logger.info(`📨 Handling call:participants event. Payload: ${JSON.stringify(event.payload)}`);
+            const leadName = event.payload?.leadName;
+
+            if (!leadName) {
+                logger.warn('⚠️ Received call:participants but leadName is missing or empty');
+                return;
+            }
+
+            // If session doesn't exist yet, buffer the leadName
+            if (!session || !currentCallId) {
+                bufferedLeadName = leadName;
+                logger.info(`👤 Buffering lead name (session not ready): ${leadName}`);
+                return;
+            }
+
+            session.leadName = leadName;
+            // Also update local variable reference if it matches
+            if (sessionData && sessionData.callId === session.callId) {
+                sessionData.leadName = leadName;
+            }
+
+            logger.info(`👤 Lead identified and set in session: ${leadName}`);
+            await redis.set(`call:${currentCallId}`, session, 3600 * 4);
+        }
+
         async function handleAudioSegment(event: any, ws: WebSocket) {
-            // Each segment is a COMPLETE, INDEPENDENT WebM file
             const audioBuffer = Buffer.from(event.payload.audio, 'base64');
-            const speaker = event.payload.speaker || 'unknown'; // Get speaker info
+            const role = event.payload.role || event.payload.speaker || 'unknown'; // 'lead' | 'seller'
 
-            logger.info(`📦 Received complete audio segment: ${audioBuffer.length} bytes, Speaker: ${speaker}`);
+            logger.info(`📦 [${role}] Audio segment: ${audioBuffer.length} bytes`);
 
-            // Validate WebM header (should ALWAYS be 1a45dfa3)
             const headerHex = audioBuffer.slice(0, 4).toString('hex');
-            logger.debug(`📁 File header: ${headerHex} (expected: 1a45dfa3)`);
-
             if (headerHex !== '1a45dfa3') {
-                logger.warn(`⚠️ Unexpected header: ${headerHex} - attempting transcription anyway`);
+                logger.warn(`⚠️ Unexpected header: ${headerHex}`);
             }
 
             try {
-                // Prompt Chaining: Use previous transcription as prompt/context
-                const previousContext = sessionData?.lastTranscription || "Transcreva o áudio. Identifique como 'Vendedor:' e 'Cliente:' se possível.";
+                const previousText = role === 'lead'
+                    ? (sessionData?.lastLeadTranscription || "Transcreva o áudio.")
+                    : (sessionData?.lastSellerTranscription || "Transcreva o áudio.");
 
-                const text = await whisperClient.transcribe(audioBuffer, previousContext);
+                const text = await whisperClient.transcribe(audioBuffer, previousText);
 
                 if (text && text.trim().length > 0) {
-
-                    // Filter Hallucinations
                     if (isHallucination(text)) {
                         logger.warn(`🚫 Hallucination filtered: "${text}"`);
                         return;
                     }
+                    if (shouldDiscard(text.trim(), role, sessionData ?? null)) {
+                        return;
+                    }
 
-                    logger.info(`✨ Transcription result: ${text} (${speaker})`);
-
-                    // Update context for next segment
                     if (sessionData) {
-                        // Keep last ~200 chars for context
-                        sessionData.lastTranscription = text.slice(-200);
+                        if (role === 'lead') {
+                            sessionData.lastLeadTranscription = text.slice(-200);
+                        } else {
+                            sessionData.lastSellerTranscription = text.slice(-200);
+                        }
+                    }
+
+                    const speakerLabel = role === 'seller'
+                        ? 'Você'
+                        : (sessionData?.leadName || 'Cliente');
+
+                    if (role === 'lead' && speakerLabel === 'Cliente') {
+                        logger.debug(`🔍 Speaker is 'Cliente'. sessionData.leadName is: ${sessionData?.leadName}. Buffered was: ${bufferedLeadName}`);
+                    }
+
+                    logger.info(`✨ [${speakerLabel}]: "${text}"`);
+
+                    // Publish transcript to Redis for manager monitoring
+                    if (callId) {
+                        await redis.publish(`call:${callId}:stream`, {
+                            text,
+                            speaker: speakerLabel,
+                            role,
+                            timestamp: Date.now()
+                        });
                     }
 
                     ws.send(JSON.stringify({
                         type: 'transcript:chunk',
                         payload: {
-                            text: text,
+                            text,
                             isFinal: true,
-                            speaker: speaker // 🏷️ Return speaker to client
+                            speaker: speakerLabel,
+                            role
                         }
                     }));
                 } else {
                     logger.debug('⏭️ Empty transcription (silence)');
                 }
             } catch (err: any) {
-                logger.error({ message: err?.message, stack: err?.stack }, '❌ Segment transcription failed');
+                logger.error({ message: err?.message, stack: err?.stack }, `❌ [${role}] Transcription failed`);
             }
         }
+    });
+
+    // ========================================
+    // MANAGER WEBSOCKET ROUTE - WHISPER SYSTEM
+    // ========================================
+
+    fastify.get('/ws/manager', { websocket: true }, async (socket, req) => {
+        logger.info('👔 Manager WebSocket connection attempt');
+
+        const token = (req.query as any).token;
+        if (!token) {
+            socket.close(1008, 'Token required');
+            return;
+        }
+
+        const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+        if (error || !user) {
+            socket.close(1008, 'Invalid token');
+            return;
+        }
+
+        // TODO: Verify user is actually a manager/has manager permissions
+        // For now, all authenticated users can access
+
+        logger.info(`✅ Manager authenticated: ${user.id}`);
+
+        let subscribedCallId: string | null = null;
+        let streamHandler: ((message: any) => void) | null = null;
+        let mediaHandler: ((message: any) => void) | null = null; // NEW: For video streaming
+
+        socket.on('message', async (message: string) => {
+            try {
+                const event = JSON.parse(message.toString());
+
+                switch (event.type) {
+                    case 'manager:join':
+                        // Manager wants to join/monitor a specific call
+                        const { callId } = event.payload || {};
+                        if (!callId) {
+                            socket.send(JSON.stringify({
+                                type: 'error',
+                                payload: { message: 'callId is required' }
+                            }));
+                            return;
+                        }
+
+                        // Unsubscribe from previous call if any
+                        if (subscribedCallId && streamHandler) {
+                            await redis.unsubscribe(`call:${subscribedCallId}:stream`, streamHandler);
+                        }
+                        if (subscribedCallId && mediaHandler) {
+                            await redis.unsubscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
+                        }
+
+                        // Subscribe to new call's transcript stream
+                        subscribedCallId = callId;
+                        streamHandler = (transcriptData: any) => {
+                            // Forward transcript to manager
+                            socket.send(JSON.stringify({
+                                type: 'transcript:stream',
+                                payload: transcriptData
+                            }));
+                        };
+
+                        await redis.subscribe(`call:${subscribedCallId}:stream`, streamHandler);
+
+                        // NEW: Subscribe to media stream (video + audio)
+                        mediaHandler = (mediaData: any) => {
+                            // Forward media chunk to manager
+                            socket.send(JSON.stringify({
+                                type: 'media:chunk',
+                                payload: mediaData
+                            }));
+                        };
+
+                        await redis.subscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
+
+                        logger.info(`👔 Manager ${user.id} joined call ${callId} (transcript + media)`);
+
+                        socket.send(JSON.stringify({
+                            type: 'manager:joined',
+                            payload: { callId }
+                        }));
+                        break;
+
+                    case 'manager:whisper':
+                        // Manager sends a coaching tip/whisper to the seller
+                        if (!subscribedCallId) {
+                            socket.send(JSON.stringify({
+                                type: 'error',
+                                payload: { message: 'Not subscribed to any call' }
+                            }));
+                            return;
+                        }
+
+                        const { content, urgency = 'normal' } = event.payload || {};
+                        if (!content) {
+                            socket.send(JSON.stringify({
+                                type: 'error',
+                                payload: { message: 'content is required' }
+                            }));
+                            return;
+                        }
+
+                        // Publish whisper to the command channel
+                        await redis.publish(`call:${subscribedCallId}:commands`, {
+                            type: 'whisper',
+                            content,
+                            urgency,
+                            managerId: user.id,
+                            timestamp: Date.now()
+                        });
+
+                        logger.info(`💬 Manager ${user.id} sent whisper to call ${subscribedCallId}`);
+
+                        socket.send(JSON.stringify({
+                            type: 'whisper:sent',
+                            payload: { callId: subscribedCallId }
+                        }));
+                        break;
+
+                    default:
+                        logger.warn(`Unknown event type from manager: ${event.type}`);
+                }
+            } catch (err: any) {
+                logger.error({ error: err }, '❌ Error handling manager message');
+            }
+        });
+
+        socket.on('close', async (code, reason) => {
+            logger.info({ code, reason: reason?.toString() }, '👔 Manager WS Disconnected');
+
+            // Cleanup subscriptions
+            if (subscribedCallId && streamHandler) {
+                await redis.unsubscribe(`call:${subscribedCallId}:stream`, streamHandler);
+            }
+            if (subscribedCallId && mediaHandler) {
+                await redis.unsubscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
+            }
+        });
+
+        socket.on('error', (err) => {
+            logger.error({ err }, '👔 Manager WS Error');
+        });
     });
 }

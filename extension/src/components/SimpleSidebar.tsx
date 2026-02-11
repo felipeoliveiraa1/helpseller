@@ -1,5 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { authService } from '../services/auth';
+
+const SIDEBAR_W = 360;
+const SIDEBAR_H = '80vh';
+const MIN_W = 48;
+const MIN_H = 56;
+
+/** Pega o elemento host do painel (dentro do Shadow DOM usa rootNode.host) */
+function getHostFromEvent(e: React.MouseEvent): HTMLDivElement | null {
+    const root = (e.target as HTMLElement).getRootNode();
+    if (root && 'host' in root) return (root as ShadowRoot).host as HTMLDivElement;
+    return document.getElementById('sales-copilot-root') as HTMLDivElement | null;
+}
+
+function getHost(): HTMLDivElement | null {
+    return document.getElementById('sales-copilot-root') as HTMLDivElement | null;
+}
 
 export default function SimpleSidebar() {
     // Auth state
@@ -14,6 +30,79 @@ export default function SimpleSidebar() {
     const [coachSuggestion, setCoachSuggestion] = useState('Aguardando transcrição...');
     const [leadTemp, setLeadTemp] = useState<'hot' | 'warm' | 'cold'>('warm');
     const [isRecording, setIsRecording] = useState(false);
+    const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
+
+    // Janela: minimizada + arrastar
+    const [isMinimized, setIsMinimized] = useState(false);
+    const dragRef = useRef({ startX: 0, startY: 0, startLeft: 0, startTop: 0, panelW: SIDEBAR_W, panelH: 300 });
+
+    useEffect(() => {
+        const host = getHost();
+        if (!host) return;
+        chrome.storage.local.get(['sidebarPosition', 'sidebarMinimized'], (r: { sidebarPosition?: { left: number; top: number }; sidebarMinimized?: boolean }) => {
+            const pos = r.sidebarPosition;
+            const defaultLeft = Math.max(0, window.innerWidth - SIDEBAR_W - 16);
+            host.style.left = (pos?.left ?? defaultLeft) + 'px';
+            host.style.top = (pos?.top ?? 16) + 'px';
+            const min = r.sidebarMinimized ?? false;
+            setIsMinimized(min);
+            host.style.width = min ? MIN_W + 'px' : SIDEBAR_W + 'px';
+            host.style.height = min ? MIN_H + 'px' : SIDEBAR_H;
+        });
+    }, []);
+
+    useEffect(() => {
+        const host = getHost();
+        if (!host) return;
+        host.style.width = isMinimized ? MIN_W + 'px' : SIDEBAR_W + 'px';
+        host.style.height = isMinimized ? MIN_H + 'px' : SIDEBAR_H;
+        chrome.storage.local.set({ sidebarMinimized: isMinimized });
+    }, [isMinimized]);
+
+    const handleDragStart = (e: React.MouseEvent) => {
+        if ((e.target as HTMLElement).closest('button')) return;
+        const host = getHostFromEvent(e);
+        if (!host) return;
+        e.preventDefault();
+        const w = isMinimized ? MIN_W : SIDEBAR_W;
+        const leftStr = host.style.left || '';
+        const topStr = host.style.top || '';
+        const left = leftStr ? parseFloat(leftStr) : window.innerWidth - w - 16;
+        const top = topStr ? parseFloat(topStr) : 16;
+        const startLeft = Number.isNaN(left) ? 0 : Math.max(0, left);
+        const startTop = Number.isNaN(top) ? 0 : Math.max(0, top);
+        dragRef.current = { startX: e.clientX, startY: e.clientY, startLeft, startTop, panelW: w, panelH: isMinimized ? MIN_H : 200 };
+        const onMove = (e2: MouseEvent) => {
+            const dx = e2.clientX - dragRef.current.startX;
+            const dy = e2.clientY - dragRef.current.startY;
+            const h = getHost();
+            if (h) {
+                const maxLeft = window.innerWidth - dragRef.current.panelW - 8;
+                const maxTop = window.innerHeight - dragRef.current.panelH - 8;
+                const newLeft = Math.max(0, Math.min(maxLeft, dragRef.current.startLeft + dx));
+                const newTop = Math.max(0, Math.min(maxTop, dragRef.current.startTop + dy));
+                h.style.left = newLeft + 'px';
+                h.style.top = newTop + 'px';
+            }
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            const h = getHost();
+            if (h) {
+                chrome.storage.local.set({
+                    sidebarPosition: {
+                        left: parseFloat(h.style.left || '0') || 0,
+                        top: parseFloat(h.style.top || '0') || 0
+                    }
+                });
+            }
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    };
+
+    const toggleMinimize = () => setIsMinimized((p) => !p);
 
     // Check session on mount
     useEffect(() => {
@@ -77,6 +166,10 @@ export default function SimpleSidebar() {
                 }
             } else if (msg.type === 'STATUS_UPDATE') {
                 setIsRecording(msg.status === 'RECORDING');
+                if (msg.status === 'RECORDING' && typeof msg.micAvailable === 'boolean') {
+                    setMicAvailable(msg.micAvailable);
+                }
+                if (msg.status !== 'RECORDING') setMicAvailable(null);
             }
         };
         chrome.runtime.onMessage.addListener(listener);
@@ -184,26 +277,70 @@ export default function SimpleSidebar() {
         );
     }
 
+    if (isMinimized) {
+        return (
+            <div
+                onMouseDown={handleDragStart}
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    backgroundColor: '#1e293b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                    borderRight: '1px solid #334155',
+                    cursor: 'move',
+                    userSelect: 'none'
+                }}
+            >
+                <button
+                    onClick={toggleMinimize}
+                    title="Expandir"
+                    style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: '#334155',
+                        color: '#e2e8f0',
+                        fontSize: '18px',
+                        cursor: 'pointer'
+                    }}
+                >
+                    ◀
+                </button>
+            </div>
+        );
+    }
+
     // Main sidebar (logged in)
     return (
         <div style={{
             width: '100%',
-            height: '100vh',
+            height: '100%',
+            minHeight: 0,
             backgroundColor: '#1e293b',
             display: 'flex',
             flexDirection: 'column',
             fontFamily: 'system-ui, -apple-system, sans-serif',
             color: '#e2e8f0'
         }}>
-            {/* Header */}
-            <div style={{
-                padding: '16px',
-                borderBottom: '1px solid #334155',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-            }}>
+            {/* Header = arrastar por aqui + minimizar / sair */}
+            <div
+                onMouseDown={handleDragStart}
+                style={{
+                    padding: '16px',
+                    borderBottom: '1px solid #334155',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'move',
+                    userSelect: 'none'
+                }}
+            >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ opacity: 0.7, marginRight: '4px' }} title="Arraste aqui para mover">⋮⋮</span>
                     <span style={{ fontSize: '24px' }}>{isRecording ? '🎙️' : '⏸️'}</span>
                     <div>
                         <div style={{ fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -214,8 +351,23 @@ export default function SimpleSidebar() {
                         </div>
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '20px' }}>{getTempIcon(leadTemp)}</span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <button
+                        onClick={toggleMinimize}
+                        title="Minimizar"
+                        style={{
+                            padding: '4px 8px',
+                            fontSize: '14px',
+                            backgroundColor: 'transparent',
+                            border: '1px solid #475569',
+                            borderRadius: '4px',
+                            color: '#94a3b8',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        −
+                    </button>
+                    <span style={{ fontSize: '18px' }}>{getTempIcon(leadTemp)}</span>
                     <button
                         onClick={handleLogout}
                         style={{
@@ -255,6 +407,11 @@ export default function SimpleSidebar() {
                 >
                     {isRecording ? '⏹️ Parar Gravação' : '▶️ Iniciar Gravação'}
                 </button>
+                {isRecording && micAvailable !== null && (
+                    <div style={{ fontSize: '11px', color: micAvailable ? '#22c55e' : '#f59e0b', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {micAvailable ? '🎙️ Microfone permitido (sua voz = Você)' : '⚠️ Microfone não permitido – sua voz pode aparecer como Cliente'}
+                    </div>
+                )}
             </div>
 
             {/* Coach Suggestion */}
@@ -279,7 +436,8 @@ export default function SimpleSidebar() {
                         </div>
                     ) : (
                         transcripts.map((t, i) => {
-                            const isSeller = t.speaker === 'seller';
+                            const isSeller = t.role === 'seller' || t.speaker === 'Você';
+                            const label = t.speaker ?? (isSeller ? 'Você' : 'Cliente');
                             return (
                                 <div
                                     key={i}
@@ -292,7 +450,7 @@ export default function SimpleSidebar() {
                                     }}
                                 >
                                     <span style={{ fontSize: '10px', color: '#64748b', marginBottom: '2px', marginLeft: '4px', marginRight: '4px' }}>
-                                        {isSeller ? 'Você' : 'Cliente'}
+                                        {label}
                                     </span>
                                     <div
                                         style={{

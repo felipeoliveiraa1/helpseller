@@ -1,12 +1,20 @@
 /// <reference lib="dom" />
 
-let mediaStream: MediaStream | null = null;
-let mediaRecorder: MediaRecorder | null = null;
-let audioContext: AudioContext | null = null;
+let tabRecorder: MediaRecorder | null = null;
+let micRecorder: MediaRecorder | null = null;
+let mediaStreamRecorder: MediaRecorder | null = null; // NEW: For video + audio streaming
+let tabStream: MediaStream | null = null;
+let micStream: MediaStream | null = null;
 let playbackContext: AudioContext | null = null;
+let tabAnalyser: AnalyserNode | null = null;
+let micAnalyser: AnalyserNode | null = null;
 let isRecording = false;
+let sellerPaused = false; // Mic mutado no Meet → não enviar segmentos do seller
+let isStreamingMedia = false; // NEW: Track if video streaming is active
 
-const RECORDING_INTERVAL_MS = 3000; // 3 seconds per segment
+const RECORDING_INTERVAL_MS = 3000;
+const SILENCE_THRESHOLD_LEAD = 5;
+const SILENCE_THRESHOLD_SELLER = 15; // Maior para ignorar eco do lead no mic
 
 function log(...args: any[]) {
     console.log(...args);
@@ -20,14 +28,44 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'INIT_RECORDING') {
         log('📩 INIT_RECORDING received');
         startTranscription(message.streamId);
+
+        // Check initial storage state
+        chrome.storage.local.get(['micMuted'], (result) => {
+            if (result.micMuted !== undefined) {
+                sellerPaused = !!result.micMuted;
+                log(`🎤 Initial mic state from storage: ${sellerPaused ? 'MUTED' : 'active'}`);
+            }
+        });
+
     } else if (message.type === 'STOP_RECORDING') {
         log('📩 STOP_RECORDING received');
         stopTranscription();
+    } else if (message.type === 'MIC_MUTE_STATE') {
+        sellerPaused = !!message.muted;
+        log(`🎤 Seller recording ${sellerPaused ? 'PAUSED (mic muted)' : 'RESUMED'}`);
     }
 });
 
-// Signal that we are ready to receive messages
+// Robust state sync via storage
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.micMuted) {
+        sellerPaused = !!changes.micMuted.newValue;
+        log(`🎤 [STORAGE SYNC] Seller recording ${sellerPaused ? 'PAUSED (mic muted)' : 'RESUMED'}`);
+    }
+});
+
 chrome.runtime.sendMessage({ type: 'OFFSCREEN_READY' }).catch(() => { });
+
+function getAudioLevel(analyser: AnalyserNode | null): number {
+    if (!analyser) return 0;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+        sum += data[i] * data[i];
+    }
+    return Math.sqrt(sum / data.length);
+}
 
 async function startTranscription(streamId: string) {
     if (isRecording) {
@@ -36,10 +74,8 @@ async function startTranscription(streamId: string) {
     }
 
     try {
-        // === 1. Capture Tab Audio ===
-        log('🎤 Capturing tab audio...');
-        let tabStream: MediaStream | null = null;
-
+        // === 1. Capturar Tab Audio (Lead) ===
+        log('🎤 Capturing tab audio (Lead channel)...');
         try {
             tabStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
@@ -50,32 +86,31 @@ async function startTranscription(streamId: string) {
                 } as any,
                 video: false
             });
-            log('✅ Tab audio captured');
+            log('✅ Tab audio captured (Lead)');
         } catch (errA: any) {
-            log('⚠️ Tab capture method A failed:', errA.message);
-            // Fallback method
             tabStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    // @ts-ignore
-                    chromeMediaSource: 'tab',
-                    chromeMediaSourceId: streamId
-                },
+                audio: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } as any,
                 video: false
             });
-            log('✅ Tab audio captured (fallback)');
+            log('✅ Tab audio captured (Lead, fallback)');
         }
 
         if (!tabStream) throw new Error('Failed to acquire tab stream');
 
-        // === 2. Route tab audio back to speakers ===
+        // === 2. Redirecionar áudio da aba aos speakers ===
         playbackContext = new AudioContext();
         const tabPlayback = playbackContext.createMediaStreamSource(tabStream);
         tabPlayback.connect(playbackContext.destination);
         await playbackContext.resume();
-        log('🔊 Tab audio routed back to speakers');
+        log('🔊 Tab audio routed to speakers');
 
-        // === 3. Capture Microphone (optional) ===
-        let micStream: MediaStream | null = null;
+        // === 3. Analisador de volume para tab ===
+        const tabCtx = new AudioContext();
+        tabAnalyser = tabCtx.createAnalyser();
+        tabAnalyser.fftSize = 2048;
+        tabCtx.createMediaStreamSource(tabStream).connect(tabAnalyser);
+
+        // === 4. Capturar Microfone (Vendedor) ===
         try {
             micStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
@@ -84,66 +119,37 @@ async function startTranscription(streamId: string) {
                     autoGainControl: true
                 }
             });
-            log('✅ Microphone captured');
+            log('✅ Microphone captured (Seller)');
+            const micCtx = new AudioContext();
+            micAnalyser = micCtx.createAnalyser();
+            micAnalyser.fftSize = 2048;
+            micCtx.createMediaStreamSource(micStream).connect(micAnalyser);
         } catch (err: any) {
             log('⚠️ Microphone unavailable:', err.message);
         }
 
-        // === 4. Mix Streams ===
-        let finalStream: MediaStream;
-        if (micStream) {
-            audioContext = new AudioContext();
-            const tabSource = audioContext.createMediaStreamSource(tabStream);
-            const micSource = audioContext.createMediaStreamSource(micStream);
-            const destination = audioContext.createMediaStreamDestination();
-            tabSource.connect(destination);
-            micSource.connect(destination);
-            await audioContext.resume();
-            finalStream = destination.stream;
-            log('✅ Streams mixed (Tab + Mic)');
-        } else {
-            finalStream = tabStream;
-            log('✅ Using tab audio only');
-        }
-
-        mediaStream = finalStream;
         isRecording = true;
 
-        // === 5. Detect supported mimeType ===
         const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']
             .find(type => MediaRecorder.isTypeSupported(type)) || '';
         log('📋 Using mimeType:', mimeType || 'default');
 
-        // === 6. Setup Volume Analysis for Silence Detection & Diarization ===
-        // We need TWO analysers: one for Tab (Lead), one for Mic (Seller)
-
-        let tabAnalyser: AnalyserNode | null = null;
-        let micAnalyser: AnalyserNode | null = null;
-        const analysisContext = audioContext || new AudioContext();
-
-        // Setup Tab Analyser
-        if (tabStream) {
-            tabAnalyser = analysisContext.createAnalyser();
-            tabAnalyser.fftSize = 2048;
-            const source = analysisContext.createMediaStreamSource(tabStream);
-            source.connect(tabAnalyser);
-        }
-
-        // Setup Mic Analyser (if available)
+        // === 5. Dois ciclos de gravação paralelos ===
+        startRecordingCycle(tabStream, mimeType, 'lead', tabAnalyser);
         if (micStream) {
-            micAnalyser = analysisContext.createAnalyser();
-            micAnalyser.fftSize = 2048;
-            const source = analysisContext.createMediaStreamSource(micStream);
-            source.connect(micAnalyser);
+            startRecordingCycle(micStream, mimeType, 'seller', micAnalyser);
         }
 
-        // === 7. Start recording cycle (Stop/Restart approach) ===
-        startRecordingCycle(finalStream, mimeType, tabAnalyser, micAnalyser);
+        chrome.runtime.sendMessage({
+            type: 'RECORDING_STARTED',
+            micAvailable: !!micStream
+        }).catch(() => { });
 
-        chrome.runtime.sendMessage({ type: 'RECORDING_STARTED' }).catch(() => { });
+        // === 6. NEW: Start Video + Audio Streaming for Manager ===
+        await startMediaStreaming(streamId);
 
     } catch (err: any) {
-        log('❌ Failed to start:', err.name, err.message, err.stack);
+        log('❌ Failed:', err.name, err.message);
         chrome.runtime.sendMessage({
             type: 'TRANSCRIPTION_ERROR',
             error: `${err.name}: ${err.message}`
@@ -151,184 +157,195 @@ async function startTranscription(streamId: string) {
     }
 }
 
-function startRecordingCycle(stream: MediaStream, mimeType: string, tabAnalyser: AnalyserNode | null, micAnalyser: AnalyserNode | null) {
-    // Creates a new MediaRecorder, records for N seconds,
-    // stops, sends the complete blob, and restarts
+// NEW: Capture and stream video + audio for manager supervision
+async function startMediaStreaming(streamId: string) {
+    try {
+        log('📹 Starting video + audio streaming for manager...');
 
-    function getAudioLevel(analyser: AnalyserNode | null): number {
-        if (!analyser) return 0;
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(data);
-        // Calculate RMS
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) {
-            sum += data[i] * data[i];
-        }
-        return Math.sqrt(sum / data.length);
-    }
+        // Capture display media (video + audio from tab)
+        const displayStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                mandatory: {
+                    chromeMediaSource: 'tab',
+                    chromeMediaSourceId: streamId
+                }
+            } as any,
+            video: {
+                mandatory: {
+                    chromeMediaSource: 'tab',
+                    chromeMediaSourceId: streamId,
+                    maxWidth: 1280,
+                    maxHeight: 720,
+                    maxFrameRate: 15 // Lower FPS for bandwidth efficiency
+                }
+            } as any
+        });
 
-    function recordSegment() {
-        if (!isRecording) return;
+        log('✅ Display media captured for streaming');
 
-        const recorder = new MediaRecorder(
-            stream,
-            mimeType ? { mimeType } : {}
-        );
+        // Use WebM with VP9 codec for efficient streaming
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+            ? 'video/webm;codecs=vp9,opus'
+            : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+                ? 'video/webm;codecs=vp8,opus'
+                : 'video/webm';
 
-        const chunks: Blob[] = [];
+        log('📋 Media streaming mimeType:', mimeType);
 
-        // Volume tracking for both channels
-        let maxTabLevel = 0;
-        let maxMicLevel = 0;
-        let tabEnergy = 0;
-        let micEnergy = 0;
-        let samples = 0;
+        mediaStreamRecorder = new MediaRecorder(displayStream, {
+            mimeType,
+            videoBitsPerSecond: 750000, // 750 kbps - balance between quality and bandwidth
+            audioBitsPerSecond: 64000   // 64 kbps audio
+        });
 
-        // Sample audio level during recording
-        const volumeChecker = setInterval(() => {
-            const tabLevel = getAudioLevel(tabAnalyser);
-            const micLevel = getAudioLevel(micAnalyser);
-
-            if (tabLevel > maxTabLevel) maxTabLevel = tabLevel;
-            if (micLevel > maxMicLevel) maxMicLevel = micLevel;
-
-            tabEnergy += tabLevel;
-            micEnergy += micLevel;
-            samples++;
-        }, 100);
-
-        recorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                chunks.push(event.data);
+        mediaStreamRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                // Send WebM chunk to backend for relay to manager
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64 = (reader.result as string).split(',')[1];
+                    chrome.runtime.sendMessage({
+                        type: 'MEDIA_STREAM_CHUNK',
+                        data: base64,
+                        size: event.data.size,
+                        timestamp: Date.now()
+                    }).catch((err) => {
+                        log('❌ Error sending media chunk:', err.message);
+                    });
+                };
+                reader.readAsDataURL(event.data);
             }
         };
 
-        recorder.onstop = async () => {
+        mediaStreamRecorder.onerror = (event: any) => {
+            log('❌ Media streaming error:', event.error?.message);
+            stopMediaStreaming();
+        };
+
+        // Start recording with 100ms chunks for low latency
+        mediaStreamRecorder.start(100);
+        isStreamingMedia = true;
+
+        log('✅ Media streaming started (100ms chunks)');
+
+    } catch (err: any) {
+        log('⚠️ Video streaming unavailable:', err.message);
+        log('⚠️ Manager will only see transcripts, no video');
+    }
+}
+
+function stopMediaStreaming() {
+    if (mediaStreamRecorder) {
+        if (mediaStreamRecorder.state !== 'inactive') {
+            mediaStreamRecorder.stop();
+        }
+        mediaStreamRecorder.stream.getTracks().forEach(t => t.stop());
+        mediaStreamRecorder = null;
+    }
+    isStreamingMedia = false;
+    log('🛑 Media streaming stopped');
+}
+
+function startRecordingCycle(
+    stream: MediaStream,
+    mimeType: string,
+    role: 'lead' | 'seller',
+    analyser: AnalyserNode | null
+) {
+    function recordSegment() {
+        if (!isRecording) return;
+
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+        const chunks: Blob[] = [];
+        let maxAudioLevel = 0;
+
+        const volumeChecker = setInterval(() => {
+            const level = getAudioLevel(analyser);
+            if (level > maxAudioLevel) maxAudioLevel = level;
+        }, 100);
+
+        recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) chunks.push(event.data);
+        };
+
+        recorder.onstop = () => {
             clearInterval(volumeChecker);
 
-            if (chunks.length === 0) {
+            if (role === 'seller' && sellerPaused) {
+                log('⏭️ [seller] Skipped — mic muted in Meet');
                 if (isRecording) recordSegment();
                 return;
             }
 
-            // Determine Dominant Speaker
-            // We use average energy (more robust than max)
-            const avgTab = samples > 0 ? tabEnergy / samples : 0;
-            const avgMic = samples > 0 ? micEnergy / samples : 0;
-
-            // Adjusted threshold: User requested 5 (Balanced).
-            const SILENCE_THRESHOLD = 5;
-            const maxLevel = Math.max(maxTabLevel, maxMicLevel);
-
-            if (maxLevel < SILENCE_THRESHOLD) {
-                // Log strictly if debugging, otherwise generic
-                if (samples % 10 === 0) { // Log occasionally to avoid spam
-                    log(`⏭️ Silent segment skipped (Max: ${maxLevel.toFixed(1)})`);
-                }
+            const threshold = role === 'seller' ? SILENCE_THRESHOLD_SELLER : SILENCE_THRESHOLD_LEAD;
+            if (chunks.length === 0 || maxAudioLevel < threshold) {
+                log(`⏭️ [${role}] Silent/echo segment skipped (level: ${maxAudioLevel.toFixed(1)}, threshold: ${threshold})`);
                 if (isRecording) recordSegment();
                 return;
             }
 
-            // Classification Logic (Refined)
-            let speaker = 'unknown';
-
-            // Check if mic is missing
-            if (!micAnalyser) {
-                if (samples % 50 === 0) log('⚠️ Mic Analyser missing - defaulting to lead/unknown');
-            }
-
-            // Case 1: Clear Separation (Only one channel active above threshold)
-            if (maxMicLevel >= SILENCE_THRESHOLD && maxTabLevel < SILENCE_THRESHOLD) {
-                speaker = 'seller';
-            } else if (maxTabLevel >= SILENCE_THRESHOLD && maxMicLevel < SILENCE_THRESHOLD) {
-                speaker = 'lead';
-            }
-            // Case 2: Both active - Compare Volume
-            else {
-                // Favor Seller (Mic) - if Mic is active, it's likely the user speaking.
-                // We relax the requirement: if Mic is at least 70% of Tab volume, assume Seller.
-                // This helps when Tab volume is high (e.g. loud video) but User is also speaking.
-                if (maxMicLevel > maxTabLevel * 0.7) {
-                    speaker = 'seller';
-                } else {
-                    speaker = 'lead';
-                }
-            }
-
-            log(`🗣️ Speaker: ${speaker} (Mic: ${maxMicLevel.toFixed(0)}/${avgMic.toFixed(0)}, Tab: ${maxTabLevel.toFixed(0)}/${avgTab.toFixed(0)})`);
-
-            // Create a COMPLETE blob (with valid WebM header)
             const completeBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-            log(`📦 Complete segment: ${completeBlob.size} bytes`);
+            log(`📦 [${role}] Segment: ${completeBlob.size} bytes, level: ${maxAudioLevel.toFixed(1)}`);
 
-            // Convert to Base64 and send
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64 = (reader.result as string).split(',')[1];
                 chrome.runtime.sendMessage({
-                    type: 'AUDIO_SEGMENT',  // Complete segment, not chunk!
+                    type: 'AUDIO_SEGMENT',
                     data: base64,
                     size: completeBlob.size,
-                    speaker: speaker // 🏷️ SEND SPEAKER INFO
-                }).catch(err => log('❌ Error sending segment:', err.message));
+                    role: role
+                }).catch(err => log('❌ Error:', (err as Error).message));
             };
             reader.readAsDataURL(completeBlob);
 
-            // Start next segment
-            if (isRecording) {
-                recordSegment();
-            }
+            if (isRecording) recordSegment();
         };
 
         recorder.onerror = (event: any) => {
-            log('❌ MediaRecorder error:', event.error?.message);
-            // Try to restart
-            if (isRecording) {
-                setTimeout(() => recordSegment(), 500);
-            }
+            log(`❌ [${role}] Recorder error:`, event.error?.message);
+            if (isRecording) setTimeout(() => recordSegment(), 500);
         };
 
-        // Record WITHOUT timeslice (record everything into a single blob)
         recorder.start();
-        mediaRecorder = recorder;
+        if (role === 'lead') tabRecorder = recorder as MediaRecorder;
+        else micRecorder = recorder as MediaRecorder;
 
-        // Stop after N seconds to generate the complete blob
         setTimeout(() => {
-            if (recorder.state === 'recording') {
-                recorder.stop();
-            }
+            if (recorder.state === 'recording') recorder.stop();
         }, RECORDING_INTERVAL_MS);
     }
 
-    // Start the first segment
     recordSegment();
-    log(`🚀 Recording cycle started (${RECORDING_INTERVAL_MS / 1000}s segments)`);
+    log(`🚀 [${role}] Recording cycle started`);
 }
 
 function stopTranscription() {
     log('🛑 Stopping transcription...');
     isRecording = false;
 
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        mediaRecorder = null;
-    }
+    [tabRecorder, micRecorder].forEach(r => {
+        if (r && r.state !== 'inactive') r.stop();
+    });
+    tabRecorder = null;
+    micRecorder = null;
 
-    if (audioContext) {
-        audioContext.close().catch(() => { });
-        audioContext = null;
-    }
+    // NEW: Stop media streaming
+    stopMediaStreaming();
 
     if (playbackContext) {
         playbackContext.close().catch(() => { });
         playbackContext = null;
     }
 
-    if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
-        mediaStream = null;
-    }
+    [tabStream, micStream].forEach(s => {
+        if (s) s.getTracks().forEach(t => t.stop());
+    });
+    tabStream = null;
+    micStream = null;
+    tabAnalyser = null;
+    micAnalyser = null;
 
-    log('✅ Transcription stopped');
+    log('✅ Stopped');
     chrome.runtime.sendMessage({ type: 'RECORDING_STOPPED' }).catch(() => { });
 }

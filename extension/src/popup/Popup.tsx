@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { authService } from '../services/auth';
-import { wsClient } from '../services/websocket';
+
 import { Loader2, Mic, MicOff, LogOut } from 'lucide-react';
 
 export default function Popup() {
@@ -125,8 +125,8 @@ export default function Popup() {
                 <button
                     onClick={toggleCapture}
                     className={`w-full py-3 px-4 rounded-md flex items-center justify-center space-x-2 font-medium transition-colors ${status === 'RECORDING'
-                            ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}
                 >
                     {status === 'RECORDING' ? <><MicOff size={18} /> <span>End Call</span></> : <><Mic size={18} /> <span>Start Call</span></>}

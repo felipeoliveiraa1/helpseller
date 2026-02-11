@@ -101,6 +101,111 @@ class RedisClient {
             return this.memoryCache.has(key);
         }
     }
+
+    // ========================================
+    // PUB/SUB METHODS FOR MANAGER WHISPER
+    // ========================================
+
+    private subscribers: Map<string, Redis> = new Map();
+    private subscriptionHandlers: Map<string, Set<(message: string) => void>> = new Map();
+
+    /**
+     * Publishes a message to a Redis channel
+     * Used for broadcasting transcripts and commands
+     */
+    async publish(channel: string, message: any): Promise<void> {
+        if (this.useMemory || !this.client) {
+            logger.warn('⚠️ Pub/Sub not available in memory mode');
+            return;
+        }
+
+        try {
+            const serialized = JSON.stringify(message);
+            await this.client.publish(channel, serialized);
+            logger.info(`📡 Published to ${channel}`);
+        } catch (error) {
+            logger.error({ error }, `Failed to publish to ${channel}`);
+        }
+    }
+
+    /**
+     * Subscribes to a Redis channel
+     * Creates a dedicated subscriber client for each unique channel
+     */
+    async subscribe(channel: string, handler: (message: any) => void): Promise<void> {
+        if (this.useMemory || !this.client) {
+            logger.warn('⚠️ Pub/Sub not available in memory mode');
+            return;
+        }
+
+        try {
+            // Create dedicated subscriber client if doesn't exist
+            if (!this.subscribers.has(channel)) {
+                const subscriberClient = new Redis(env.REDIS_URL);
+
+                subscriberClient.on('message', (ch, msg) => {
+                    if (ch === channel) {
+                        try {
+                            const parsed = JSON.parse(msg);
+                            const handlers = this.subscriptionHandlers.get(channel);
+                            if (handlers) {
+                                handlers.forEach(h => h(parsed));
+                            }
+                        } catch (error) {
+                            logger.error({ error }, `Failed to parse message from ${channel}`);
+                        }
+                    }
+                });
+
+                await subscriberClient.subscribe(channel);
+                this.subscribers.set(channel, subscriberClient);
+                this.subscriptionHandlers.set(channel, new Set());
+
+                logger.info(`✅ Subscribed to ${channel}`);
+            }
+
+            // Add handler to set
+            const handlers = this.subscriptionHandlers.get(channel)!;
+            handlers.add(handler);
+        } catch (error) {
+            logger.error({ error }, `Failed to subscribe to ${channel}`);
+        }
+    }
+
+    /**
+     * Unsubscribes a specific handler from a channel
+     */
+    async unsubscribe(channel: string, handler: (message: any) => void): Promise<void> {
+        const handlers = this.subscriptionHandlers.get(channel);
+        if (handlers) {
+            handlers.delete(handler);
+
+            // If no more handlers, close the subscriber client
+            if (handlers.size === 0) {
+                const subscriber = this.subscribers.get(channel);
+                if (subscriber) {
+                    await subscriber.unsubscribe(channel);
+                    subscriber.disconnect();
+                    this.subscribers.delete(channel);
+                    this.subscriptionHandlers.delete(channel);
+                    logger.info(`🔌 Unsubscribed from ${channel}`);
+                }
+            }
+        }
+    }
+
+    /**
+     * Cleanup all subscriptions (useful on shutdown)
+     */
+    async cleanupSubscriptions(): Promise<void> {
+        for (const [channel, subscriber] of this.subscribers.entries()) {
+            await subscriber.unsubscribe(channel);
+            subscriber.disconnect();
+        }
+        this.subscribers.clear();
+        this.subscriptionHandlers.clear();
+        logger.info('🧹 All Redis subscriptions cleaned up');
+    }
 }
 
 export const redis = new RedisClient();

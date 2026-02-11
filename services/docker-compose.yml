@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  core-api:
+    build: ./services/core-api
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+    depends_on:
+      - redis
+    volumes:
+      - ./services/core-api:/app
+      - /app/node_modules
+
+  ai-service:
+    build: ./services/ai-service
+    ports:
+      - "3003:3003"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - redis
+    volumes:
+      - ./services/ai-service:/app
+      - /app/.venv
+
+  streaming:
+    build: ./services/streaming
+    ports:
+      - "3002:3002"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    volumes:
+      - ./services/streaming:/app
+      - /app/node_modules
+
+  gateway:
+    build: ./services/gateway
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - CORE_API_URL=http://core-api:3004
+    depends_on:
+      - redis
+      - core-api
+    volumes:
+      - ./services/gateway:/app
+      - /app/node_modules
+
+volumes:
+  redis-data:

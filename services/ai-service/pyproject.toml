@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "closeia-ai-service"
+version = "1.0.0"
+description = "AI Service for Whisper transcription and LLM coaching"
+authors = ["Closeia Team"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.109.0"
+uvicorn = "^0.27.0"
+openai = "^1.10.0"
+redis = "^5.0.1"
+python-dotenv = "^1.0.0"
+pydantic = "^2.5.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

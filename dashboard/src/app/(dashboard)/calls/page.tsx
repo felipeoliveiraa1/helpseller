@@ -67,7 +67,7 @@ export default function CallsPage() {
                 started_at,
                 ended_at,
                 profiles:user_id (
-                    full_name,
+                    name,
                     email
                 )
             `)
@@ -80,12 +80,13 @@ export default function CallsPage() {
             console.log('Active calls found:', data);
             setCalls(data as any);
         } else if (error) {
-            console.error('Error fetching calls:', {
+        } else if (error) {
+            console.error('❌ Error fetching calls object:', error);
+            console.error('❌ Error details:', {
                 message: error.message,
                 details: error.details,
                 hint: error.hint,
-                code: error.code,
-                full: JSON.stringify(error)
+                code: error.code
             });
         }
     };
@@ -201,7 +202,7 @@ export default function CallsPage() {
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
                                             <div className="font-medium">
-                                                {call.profiles?.full_name || 'Unknown User'}
+                                                {call.profiles?.name || 'Unknown User'}
                                             </div>
                                             <div className="text-xs text-gray-500">
                                                 {call.profiles?.email}

@@ -158,11 +158,11 @@ async function startTranscription(streamId: string) {
 }
 
 // NEW: Capture and stream video + audio for manager supervision
+// NEW: Capture and stream video + audio for manager supervision
 async function startMediaStreaming(streamId: string) {
     try {
         log('📹 Starting video + audio streaming for manager...');
 
-        // Capture display media (video + audio from tab)
         const displayStream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 mandatory: {
@@ -176,57 +176,83 @@ async function startMediaStreaming(streamId: string) {
                     chromeMediaSourceId: streamId,
                     maxWidth: 1280,
                     maxHeight: 720,
-                    maxFrameRate: 15 // Lower FPS for bandwidth efficiency
+                    maxFrameRate: 30 // Increased to 30 for smoother video if bandwidth allows
                 }
             } as any
         });
 
         log('✅ Display media captured for streaming');
 
-        // Use WebM with VP9 codec for efficient streaming
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-            ? 'video/webm;codecs=vp9,opus'
-            : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-                ? 'video/webm;codecs=vp8,opus'
-                : 'video/webm';
+        // Helper to start a recording cycle
+        const startRecorderCycle = () => {
+            if (!isStreamingMedia) return;
 
-        log('📋 Media streaming mimeType:', mimeType);
+            // Determine supported mime type (doing this inside to be safe/consistent)
+            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+                ? 'video/webm;codecs=vp9,opus'
+                : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+                    ? 'video/webm;codecs=vp8,opus'
+                    : 'video/webm';
 
-        mediaStreamRecorder = new MediaRecorder(displayStream, {
-            mimeType,
-            videoBitsPerSecond: 750000, // 750 kbps - balance between quality and bandwidth
-            audioBitsPerSecond: 64000   // 64 kbps audio
-        });
+            // Create new recorder
+            const recorder = new MediaRecorder(displayStream, {
+                mimeType,
+                videoBitsPerSecond: 1000000, // 1 Mbps
+                audioBitsPerSecond: 64000
+            });
 
-        mediaStreamRecorder.ondataavailable = (event) => {
-            if (event.data && event.data.size > 0) {
-                // Send WebM chunk to backend for relay to manager
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const base64 = (reader.result as string).split(',')[1];
-                    chrome.runtime.sendMessage({
-                        type: 'MEDIA_STREAM_CHUNK',
-                        data: base64,
-                        size: event.data.size,
-                        timestamp: Date.now()
-                    }).catch((err) => {
-                        log('❌ Error sending media chunk:', err.message);
-                    });
-                };
-                reader.readAsDataURL(event.data);
-            }
+            mediaStreamRecorder = recorder; // Update global ref
+
+            let isFirstChunk = true;
+
+            recorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = (reader.result as string).split(',')[1];
+
+                        // First chunk of a cycle is the header/init segment
+                        const isHeader = isFirstChunk;
+                        isFirstChunk = false;
+
+                        chrome.runtime.sendMessage({
+                            type: 'MEDIA_STREAM_CHUNK',
+                            data: base64,
+                            size: event.data.size,
+                            timestamp: Date.now(),
+                            isHeader: isHeader // Flag essential for backend caching
+                        }).catch((err) => {
+                            log('❌ Error sending media chunk:', err.message);
+                        });
+                    };
+                    reader.readAsDataURL(event.data);
+                }
+            };
+
+            recorder.onerror = (event: any) => {
+                log('❌ Media streaming error:', event.error?.message);
+                // Try to restart cycle on error
+                setTimeout(startRecorderCycle, 1000);
+            };
+
+            // Start recording (100ms chunks)
+            recorder.start(100);
+
+            // Restart recorder every 5 seconds to force new header/keyframe
+            setTimeout(() => {
+                if (recorder.state !== 'inactive') {
+                    recorder.stop();
+                    if (isStreamingMedia) {
+                        startRecorderCycle();
+                    }
+                }
+            }, 5000);
         };
 
-        mediaStreamRecorder.onerror = (event: any) => {
-            log('❌ Media streaming error:', event.error?.message);
-            stopMediaStreaming();
-        };
-
-        // Start recording with 100ms chunks for low latency
-        mediaStreamRecorder.start(100);
         isStreamingMedia = true;
+        startRecorderCycle();
 
-        log('✅ Media streaming started (100ms chunks)');
+        log('✅ Media streaming started (5s restart cycle)');
 
     } catch (err: any) {
         log('⚠️ Video streaming unavailable:', err.message);

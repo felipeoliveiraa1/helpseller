@@ -1,8 +1,3 @@
-/**
- * MediaStreamPlayer - Real-time WebM video player for manager supervision
- * Receives chunks via WebSocket and plays using MediaSource API
- */
-
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -18,26 +13,64 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
     const mediaSourceRef = useRef<MediaSource | null>(null);
     const sourceBufferRef = useRef<SourceBuffer | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
+    const queueRef = useRef<Uint8Array[]>([]);
     const [isPlaying, setIsPlaying] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Process the queue when SourceBuffer is ready
+    const processQueue = () => {
+        const sourceBuffer = sourceBufferRef.current;
+        const queue = queueRef.current;
+
+        if (sourceBuffer && !sourceBuffer.updating && queue.length > 0) {
+            try {
+                const chunk = queue.shift();
+                if (chunk) {
+                    sourceBuffer.appendBuffer(chunk);
+                }
+            } catch (err) {
+                console.error('Error appending buffer:', err);
+            }
+        }
+    };
+
     useEffect(() => {
         if (!videoRef.current) return;
+
+        // Reset state
+        queueRef.current = [];
+        setError(null);
+        setIsPlaying(false);
 
         // Create MediaSource
         const mediaSource = new MediaSource();
         mediaSourceRef.current = mediaSource;
         videoRef.current.src = URL.createObjectURL(mediaSource);
 
-        mediaSource.addEventListener('sourceopen', () => {
+        const handleSourceOpen = () => {
             console.log('📹 MediaSource opened');
+            URL.revokeObjectURL(videoRef.current!.src); // Cleanup URL
 
             try {
-                // Create SourceBuffer for WebM
-                const sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp9,opus"');
-                sourceBufferRef.current = sourceBuffer;
+                // Try VP9 first, fallback to VP8
+                const mimeType = MediaSource.isTypeSupported('video/webm; codecs="vp9,opus"')
+                    ? 'video/webm; codecs="vp9,opus"'
+                    : 'video/webm; codecs="vp8,opus"';
 
-                sourceBuffer.mode = 'sequence'; // Automatic timestamp management
+                console.log(`📋 Using mimeType for playback: ${mimeType}`);
+
+                const sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+                sourceBufferRef.current = sourceBuffer;
+                sourceBuffer.mode = 'sequence'; // Ensure segments are played in order
+
+                // Event listener to process queue when update finishes
+                sourceBuffer.addEventListener('updateend', () => {
+                    processQueue();
+                });
+
+                sourceBuffer.addEventListener('error', (e) => {
+                    console.error('SourceBuffer error:', e);
+                });
 
                 console.log('✅ SourceBuffer created');
 
@@ -53,25 +86,30 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                     }));
                 };
 
-                ws.onmessage = (event) => {
+                ws.onmessage = async (event) => {
                     try {
                         const message = JSON.parse(event.data);
 
                         if (message.type === 'media:chunk') {
-                            // Receive WebM chunk
-                            const chunk = message.payload.chunk;
-                            const buffer = Uint8Array.from(atob(chunk), c => c.charCodeAt(0));
+                            const chunkBase64 = message.payload.chunk;
+                            // Convert Base64 to Uint8Array
+                            const binaryString = atob(chunkBase64);
+                            const len = binaryString.length;
+                            const bytes = new Uint8Array(len);
+                            for (let i = 0; i < len; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
 
-                            if (sourceBuffer && !sourceBuffer.updating) {
-                                sourceBuffer.appendBuffer(buffer);
+                            // Add to queue
+                            queueRef.current.push(bytes);
 
-                                // Auto-play once we have enough data
-                                if (videoRef.current && videoRef.current.paused && videoRef.current.readyState >= 2) {
-                                    videoRef.current.play().catch(err => {
-                                        console.warn('Auto-play prevented:', err);
-                                    });
-                                    setIsPlaying(true);
-                                }
+                            // Try to process immediately
+                            processQueue();
+
+                            // Auto-play logic
+                            if (videoRef.current && videoRef.current.paused && queueRef.current.length > 2) {
+                                videoRef.current.play().catch(() => { });
+                                setIsPlaying(true);
                             }
                         }
                     } catch (err) {
@@ -91,49 +129,59 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
 
             } catch (err: any) {
                 console.error('Failed to create SourceBuffer:', err);
-                setError(err.message);
+                setError(`Playback error: ${err.message}`);
             }
-        });
+        };
+
+        mediaSource.addEventListener('sourceopen', handleSourceOpen);
 
         return () => {
             // Cleanup
             if (wsRef.current) {
                 wsRef.current.close();
             }
-            if (mediaSourceRef.current && mediaSourceRef.current.readyState === 'open') {
-                mediaSourceRef.current.endOfStream();
+            if (sourceBufferRef.current) {
+                try {
+                    sourceBufferRef.current.removeEventListener('updateend', processQueue);
+                } catch (e) { }
             }
+            if (mediaSourceRef.current && mediaSourceRef.current.readyState === 'open') {
+                try {
+                    mediaSourceRef.current.endOfStream();
+                } catch (e) { }
+            }
+            mediaSource.removeEventListener('sourceopen', handleSourceOpen);
         };
     }, [callId, wsUrl, token]);
 
     return (
-        <div className="relative w-full bg-black rounded-lg overflow-hidden">
+        <div className="relative w-full bg-black rounded-lg overflow-hidden border border-gray-800 shadow-xl aspect-video">
             {error && (
-                <div className="absolute top-2 left-2 bg-red-500/90 text-white px-3 py-1 rounded text-sm z-10">
+                <div className="absolute top-2 left-2 bg-red-500/90 text-white px-3 py-1 rounded text-sm z-20 font-medium">
                     {error}
                 </div>
             )}
 
             {!isPlaying && !error && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 z-10">
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-10 backdrop-blur-sm">
                     <div className="text-white text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-2"></div>
-                        <p>Connecting to call...</p>
+                        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-emerald-500 mx-auto mb-3"></div>
+                        <p className="text-gray-300 text-sm font-medium animate-pulse">Connecting to live feed...</p>
                     </div>
                 </div>
             )}
 
             <video
                 ref={videoRef}
-                className="w-full h-auto"
+                className="w-full h-full object-contain"
+                autoPlay
                 controls
-                muted={false}
                 playsInline
             />
 
             {isPlaying && (
-                <div className="absolute top-2 left-2 bg-green-500/90 text-white px-3 py-1 rounded text-sm flex items-center gap-2">
-                    <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                <div className="absolute top-3 right-3 bg-red-600/90 text-white px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm animate-pulse z-20">
+                    <span className="w-2 h-2 bg-white rounded-full"></span>
                     LIVE
                 </div>
             )}

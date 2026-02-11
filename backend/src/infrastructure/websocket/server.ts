@@ -146,21 +146,21 @@ function shouldDiscard(
     return false;
 }
 
-export async function websocketRoutes(fastify: FastifyInstance) {
-    // Initialize AI Engine
-    const openaiClient = new OpenAIClient();
-    const objectionMatcher = new ObjectionMatcher();
-    const coachEngine = new CoachEngine(
-        new TriggerDetector(),
-        objectionMatcher,
-        new PromptBuilder(),
-        openaiClient,
-        new ResponseParser()
-    );
-    const postCallAnalyzer = new PostCallAnalyzer(openaiClient);
-    const whisperClient = new WhisperClient();
-    const successTracker = new ObjectionSuccessTracker(supabaseAdmin); // NEW: Track conversion success
+// Initialize Services (Singleton pattern to avoid memory leaks)
+const openaiClient = new OpenAIClient();
+const objectionMatcher = new ObjectionMatcher();
+const coachEngine = new CoachEngine(
+    new TriggerDetector(),
+    objectionMatcher,
+    new PromptBuilder(),
+    openaiClient,
+    new ResponseParser()
+);
+const postCallAnalyzer = new PostCallAnalyzer(openaiClient);
+const whisperClient = new WhisperClient();
+const successTracker = new ObjectionSuccessTracker(supabaseAdmin);
 
+export async function websocketRoutes(fastify: FastifyInstance) {
     fastify.get('/ws/call', { websocket: true }, async (socket, req) => {
         logger.info('🔌 New WebSocket connection attempt');
 
@@ -212,11 +212,25 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     case 'media:stream':
                         // NEW: Relay video + audio chunks to managers via Redis pub/sub
                         if (callId && event.payload?.chunk) {
-                            await redis.publish(`call:${callId}:media_raw`, {
+                            const payload = {
                                 chunk: event.payload.chunk,
                                 size: event.payload.size,
-                                timestamp: event.payload.timestamp
-                            });
+                                timestamp: event.payload.timestamp,
+                                isHeader: event.payload.isHeader
+                            };
+
+                            // Cache header if present
+                            if (event.payload.isHeader) {
+                                await redis.set(
+                                    `call:${callId}:media_header`,
+                                    JSON.stringify(payload),
+                                    'EX',
+                                    14400 // 4 hours
+                                );
+                                logger.info(`📼 Video Header cached for call ${callId}`);
+                            }
+
+                            await redis.publish(`call:${callId}:media_raw`, payload);
                         }
                         break;
                 }
@@ -664,6 +678,18 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         };
 
                         await redis.subscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
+
+                        // Check for cached media header and send immediately
+                        const cachedHeader = await redis.get(`call:${callId}:media_header`);
+                        if (cachedHeader) {
+                            logger.info(`📼 Sending cached media header to manager for call ${callId}`);
+                            socket.send(JSON.stringify({
+                                type: 'media:chunk',
+                                payload: JSON.parse(cachedHeader)
+                            }));
+                        } else {
+                            logger.warn(`⚠️ No media header cached for call ${callId}`);
+                        }
 
                         logger.info(`👔 Manager ${user.id} joined call ${callId} (transcript + media)`);
 

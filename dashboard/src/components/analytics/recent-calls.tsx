@@ -1,28 +1,30 @@
-export function RecentCalls() {
-    // Mock Data
-    const calls = [
-        { name: 'João Silva', email: 'joao@example.com', amount: '85', date: '2 min ago' },
-        { name: 'Maria Souza', email: 'maria@example.com', amount: '92', date: '15 min ago' },
-        { name: 'Pedro Santos', email: 'pedro@example.com', amount: '64', date: '1 hr ago' },
-        { name: 'Ana Oliveira', email: 'ana@example.com', amount: '78', date: '2 hrs ago' },
-        { name: 'Carlos Lima', email: 'carlos@example.com', amount: '99', date: '3 hrs ago' },
-    ]
+const MOCK_CALLS = [
+  { name: 'João Silva', email: 'joao@example.com', score: '85', date: '2 min atrás' },
+  { name: 'Maria Souza', email: 'maria@example.com', score: '92', date: '15 min atrás' },
+  { name: 'Pedro Santos', email: 'pedro@example.com', score: '64', date: '1 hr atrás' },
+  { name: 'Ana Oliveira', email: 'ana@example.com', score: '78', date: '2 hrs atrás' },
+  { name: 'Carlos Lima', email: 'carlos@example.com', score: '99', date: '3 hrs atrás' },
+]
 
-    return (
-        <div className="space-y-8">
-            {calls.map((call, index) => (
-                <div key={index} className="flex items-center">
-                    <div className="ml-4 space-y-1">
-                        <p className="text-sm font-medium leading-none">{call.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                            {call.email}
-                        </p>
-                    </div>
-                    <div className="ml-auto font-medium text-green-600">
-                        Score: {call.amount}
-                    </div>
-                </div>
-            ))}
+export function RecentCalls() {
+  return (
+    <div className="space-y-6">
+      {MOCK_CALLS.map((call, index) => (
+        <div key={index} className="flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 text-primary rounded-xl flex items-center justify-center font-bold flex-shrink-0">
+              {call.name.charAt(0)}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold truncate">{call.name}</p>
+              <p className="text-xs text-slate-500 truncate">{call.email}</p>
+            </div>
+          </div>
+          <span className="text-sm font-bold text-green-500 flex-shrink-0">
+            {call.score}
+          </span>
         </div>
-    )
+      ))}
+    </div>
+  )
 }

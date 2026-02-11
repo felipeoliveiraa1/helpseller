@@ -1,28 +1,25 @@
-import { createBrowserClient } from '@/lib/supabase/client'
-import { User, Session } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
+import type { User, Session } from '@supabase/supabase-js'
 import { useEffect, useState } from 'react'
 
 export function useAuth() {
-    const [user, setUser] = useState<User | null>(null)
-    const [session, setSession] = useState<Session | null>(null)
-    const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
 
-    useEffect(() => {
-        const supabase = createBrowserClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
+  useEffect(() => {
+    const supabase = createClient()
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            (_event, session) => {
-                setSession(session)
-                setUser(session?.user ?? null)
-                setLoading(false)
-            }
-        )
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
+      setUser(newSession?.user ?? null)
+      setLoading(false)
+    })
 
-        return () => subscription.unsubscribe()
-    }, [])
+    return () => subscription.unsubscribe()
+  }, [])
 
-    return { user, session, loading }
+  return { user, session, loading }
 }

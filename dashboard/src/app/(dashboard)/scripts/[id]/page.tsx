@@ -15,8 +15,11 @@ import { toast } from 'sonner'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { scriptSchema, ScriptFormValues } from '@/lib/validations/script'
+import type { Database } from '@/types/database'
 import { ChevronLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+
+type ScriptRow = Database['public']['Tables']['scripts']['Row']
 
 export default function ScriptEditorPage() {
     const params = useParams()
@@ -40,7 +43,7 @@ export default function ScriptEditorPage() {
     })
 
     // Fetch existing script if editing
-    const { data: script, isLoading: isLoadingScript } = useQuery({
+    const { data: script, isLoading: isLoadingScript } = useQuery<ScriptRow | null>({
         queryKey: ['script', scriptId],
         queryFn: () => getScript(supabase, scriptId),
         enabled: !isNew,
@@ -67,7 +70,8 @@ export default function ScriptEditorPage() {
             if (!user) throw new Error('Usuario nao autenticado')
 
             // Get user's org (simple approximation for now, usually stored in profile/metadata)
-            const { data: profile } = await supabase.from('profiles').select('organization_id').eq('id', user.id).single()
+            const { data: profileData } = await supabase.from('profiles').select('organization_id').eq('id', user.id).single()
+            const profile = profileData as { organization_id: string | null } | null
 
             if (!profile?.organization_id && isNew) {
                 // For dev: auto-create org if missing or handle error

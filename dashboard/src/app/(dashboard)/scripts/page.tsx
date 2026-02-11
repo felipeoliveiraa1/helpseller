@@ -1,5 +1,6 @@
 'use client'
 
+import { DashboardHeader } from '@/components/layout/dashboard-header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Plus, FileText, MoreVertical, Trash, Edit } from 'lucide-react'
@@ -14,12 +15,15 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import type { Database } from '@/types/database'
+
+type ScriptRow = Database['public']['Tables']['scripts']['Row']
 
 export default function ScriptsPage() {
     const supabase = createClient()
     const queryClient = useQueryClient()
 
-    const { data: scripts, isLoading } = useQuery({
+    const { data: scripts, isLoading } = useQuery<ScriptRow[]>({
         queryKey: ['scripts'],
         queryFn: () => getScripts(supabase),
     })
@@ -41,10 +45,11 @@ export default function ScriptsPage() {
 
     return (
         <div className="space-y-6">
+            <DashboardHeader title="Scripts" />
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Scripts de Vendas</h2>
-                    <p className="text-muted-foreground">
+                    <h2 className="text-2xl font-bold tracking-tight">Scripts de Vendas</h2>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
                         Gerencie seus playbooks e roteiros de vendas.
                     </p>
                 </div>

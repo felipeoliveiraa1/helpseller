@@ -1,12 +1,12 @@
 import { z } from "zod"
 
 export const scriptSchema = z.object({
-    name: z.string().min(3, "Nome deve ter pelo menos 3 caracteres"),
-    description: z.string().optional(),
-    coach_personality: z.string().default("Strategic"),
-    coach_tone: z.string().default("Here is a tip"),
-    intervention_level: z.string().default("Medium"),
-    is_active: z.boolean().default(true),
+  name: z.string().min(3, 'Nome deve ter pelo menos 3 caracteres'),
+  description: z.string().optional(),
+  coach_personality: z.string(),
+  coach_tone: z.string(),
+  intervention_level: z.string(),
+  is_active: z.boolean(),
 })
 
 export type ScriptFormValues = z.infer<typeof scriptSchema>

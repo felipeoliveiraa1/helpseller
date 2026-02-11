@@ -1,78 +1,127 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import {
-    LayoutDashboard,
-    FileText,
-    Phone,
-    Users,
-    BarChart2,
-    Settings,
-    LogOut
-} from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/use-auth'
 
-const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Scripts', href: '/scripts', icon: FileText },
-    { name: 'Calls', href: '/calls', icon: Phone },
-    { name: 'Equipe', href: '/team', icon: Users },
-    { name: 'Analytics', href: '/analytics', icon: BarChart2 },
-    { name: 'Configurações', href: '/settings', icon: Settings },
-]
+const navSections = [
+  {
+    label: 'Home',
+    items: [
+      { name: 'Dashboard', href: '/', icon: 'dashboard' },
+    ],
+  },
+  {
+    label: 'App',
+    items: [
+      { name: 'Scripts', href: '/scripts', icon: 'description' },
+      { name: 'Chamadas', href: '/calls', icon: 'call' },
+      { name: 'Analytics', href: '/analytics', icon: 'bar_chart' },
+      { name: 'Equipe', href: '/team', icon: 'people' },
+    ],
+  },
+  {
+    label: 'Conta',
+    items: [
+      { name: 'Configurações', href: '/settings', icon: 'settings' },
+    ],
+  },
+] as const
+
+function isActivePath(pathname: string, href: string): boolean {
+  if (href === '/') return pathname === '/'
+  return pathname.startsWith(href)
+}
 
 export function Sidebar() {
-    const pathname = usePathname()
-    const router = useRouter()
-    const supabase = createClient()
+  const pathname = usePathname()
+  const router = useRouter()
+  const supabase = createClient()
+  const { user } = useAuth()
 
-    const handleLogout = async () => {
-        await supabase.auth.signOut()
-        router.push('/login')
-        router.refresh()
-    }
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }
 
-    return (
-        <div className="flex flex-col h-full bg-slate-900 text-white w-64 border-r border-slate-800">
-            <div className="flex items-center justify-center h-16 border-b border-slate-800">
-                <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
-                    Sales Copilot
-                </span>
-            </div>
+  const displayName =
+    user?.user_metadata?.full_name ??
+    user?.email?.split('@')[0] ??
+    'Usuário'
+  const role = user?.user_metadata?.role ?? 'Membro'
 
-            <div className="flex-1 flex flex-col overflow-y-auto px-3 py-4 space-y-1">
-                {navigation.map((item) => {
-                    const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
-                    return (
-                        <Link
-                            key={item.name}
-                            href={item.href}
-                            className={cn(
-                                'flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                                isActive
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                            )}
-                        >
-                            <item.icon className="mr-3 h-5 w-5" aria-hidden="true" />
-                            {item.name}
-                        </Link>
-                    )
-                })}
-            </div>
-
-            <div className="p-4 border-t border-slate-800">
-                <button
-                    onClick={handleLogout}
-                    className="flex w-full items-center px-3 py-2 text-sm font-medium text-slate-400 rounded-md hover:bg-slate-800 hover:text-white transition-colors"
-                >
-                    <LogOut className="mr-3 h-5 w-5" />
-                    Sair
-                </button>
-            </div>
+  return (
+    <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col fixed h-full z-10">
+      <div className="p-6 flex items-center gap-3">
+        <div className="w-8 h-8 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
+          <span className="text-white font-bold text-xl">C</span>
         </div>
-    )
+        <span className="text-xl font-bold tracking-tight">CloseIA</span>
+      </div>
+      <nav className="flex-1 px-4 py-4 space-y-6 overflow-y-auto">
+        {navSections.map((section) => (
+          <div key={section.label}>
+            <p className="px-2 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              {section.label}
+            </p>
+            <div className="space-y-1">
+              {section.items.map((item) => {
+                const isActive = isActivePath(pathname, item.href)
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors',
+                      isActive
+                        ? 'bg-indigo-50 dark:bg-indigo-900/30 text-primary'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    )}
+                  >
+                    <span className="material-icons-outlined text-[20px]">
+                      {item.icon}
+                    </span>
+                    {item.name}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+      <div className="p-4 border-t border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl mb-4">
+          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+            <span className="text-primary font-semibold text-sm">
+              {displayName.charAt(0).toUpperCase()}
+            </span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold truncate">{displayName}</p>
+            <p className="text-xs text-slate-500 truncate">{role}</p>
+          </div>
+        </div>
+        <div className="flex justify-between items-center px-2">
+          <Link
+            href="/settings"
+            className="text-slate-500 hover:text-primary transition-colors flex items-center gap-1 text-sm"
+          >
+            <span className="material-icons-outlined text-[18px]">settings</span>
+            Configurações
+          </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="text-slate-500 hover:text-red-500 transition-colors flex items-center gap-1 text-sm"
+          >
+            <span className="material-icons-outlined text-[18px]">logout</span>
+            Sair
+          </button>
+        </div>
+      </div>
+    </aside>
+  )
 }

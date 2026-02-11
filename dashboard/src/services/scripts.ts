@@ -15,7 +15,8 @@ export const getScripts = async (supabase: SupabaseClient<Database>) => {
 export const createScript = async (supabase: SupabaseClient<Database>, script: ScriptFormValues & { organization_id: string }) => {
     const { data, error } = await supabase
         .from('scripts')
-        .insert(script)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .insert(script as any)
         .select()
         .single()
 
@@ -46,6 +47,7 @@ export const getScript = async (supabase: SupabaseClient<Database>, id: string) 
 export const updateScript = async (supabase: SupabaseClient<Database>, id: string, script: Partial<ScriptFormValues>) => {
     const { data, error } = await supabase
         .from('scripts')
+        // @ts-expect-error - Supabase client typings mismatch with Database generic
         .update(script)
         .eq('id', id)
         .select()

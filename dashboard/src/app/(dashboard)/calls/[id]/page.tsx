@@ -54,6 +54,7 @@ interface CallSummary {
     buying_signals?: string[];
     lead_sentiment?: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | 'MIXED';
     result?: 'CONVERTED' | 'FOLLOW_UP' | 'LOST' | 'UNKNOWN';
+    next_steps?: string[];
     ai_notes?: string;
 }
 
@@ -330,15 +331,16 @@ export default function CallDetailsPage() {
                             </CardHeader>
                             <CardContent>
                                 <ul className="space-y-2">
-                                    {/* This is a placeholder. Ideally we'd parse this from ai_notes or a separate JSON field */}
-                                    <li className="flex items-start gap-2 text-sm text-gray-700">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-gray-400 mt-1.5" />
-                                        Revisar os pontos de dor mencionados.
-                                    </li>
-                                    <li className="flex items-start gap-2 text-sm text-gray-700">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-gray-400 mt-1.5" />
-                                        Agendar follow-up conforme sugerido.
-                                    </li>
+                                    {call.summary?.next_steps?.length ? (
+                                        call.summary.next_steps.map((step, i) => (
+                                            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                                                <CheckCircle2 className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                                                {step}
+                                            </li>
+                                        ))
+                                    ) : (
+                                        <li className="text-gray-400 text-sm italic">Nenhum próximo passo detectado.</li>
+                                    )}
                                 </ul>
                             </CardContent>
                         </Card>

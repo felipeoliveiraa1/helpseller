@@ -14,6 +14,7 @@ export class PostCallAnalyzer {
   "buying_signals": ["sinais detectados"],
   "lead_sentiment": "POSITIVE" | "NEUTRAL" | "NEGATIVE" | "MIXED",
   "result": "CONVERTED" | "FOLLOW_UP" | "LOST" | "UNKNOWN",
+  "next_steps": ["ação 1", "ação 2"],
   "ai_notes": "resumo livre com recomendações para a próxima interação"
 }`;
 

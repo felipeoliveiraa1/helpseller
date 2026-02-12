@@ -3,6 +3,9 @@
 import { DashboardHeader } from '@/components/layout/dashboard-header'
 import { Overview } from '@/components/analytics/overview'
 import { RecentCalls } from '@/components/analytics/recent-calls'
+import { SellerDashboard } from '@/components/analytics/seller-dashboard'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 const HERO_STATS = [
   { value: '1.234', label: 'Total de Chamadas', sub: null },
@@ -13,9 +16,41 @@ const HERO_STATS = [
 ]
 
 export default function DashboardPage() {
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
+
+  useEffect(() => {
+    async function checkRole() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+        if (profile) setUserRole((profile as any).role)
+      }
+      setLoading(false)
+    }
+    checkRole()
+  }, [])
+
+  if (loading) return <div className="p-8">Carregando...</div>
+
+  if (userRole === 'SELLER') {
+    return (
+      <>
+        <DashboardHeader title="Dashboard" />
+        <SellerDashboard stats={{}} />
+      </>
+    )
+  }
+
   return (
     <>
-      <DashboardHeader title="Dashboard" />
+      <DashboardHeader title="Dashboard (Visão Gestor)" />
       <section
         className="mb-8 p-8 rounded-3xl overflow-hidden relative bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: 'url(/bg2.jpg)' }}
@@ -49,9 +84,18 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
-      </section>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-sm">
+        return (
+        <>
+          <DashboardHeader title="Dashboard (Visão Gestor)" />
+
+          {/*... (existing hero section) ...*/}
+
+          <div className="mb-8">
+            <ObjectionAnalytics />
+          </div>
+
+          {/* ... rest of existing dashboard ... */}
+
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold">Visão de Chamadas</h3>
             <button type="button" className="text-slate-400" aria-label="Mais">
@@ -126,9 +170,8 @@ export default function DashboardPage() {
             {[40, 60, 50, 85, 45, 65, 30].map((h, i) => (
               <div
                 key={i}
-                className={`w-full rounded-t-lg chart-bar flex-1 ${
-                  i === 3 ? 'bg-primary' : 'bg-indigo-100 dark:bg-indigo-900/30'
-                }`}
+                className={`w-full rounded-t-lg chart-bar flex-1 ${i === 3 ? 'bg-primary' : 'bg-indigo-100 dark:bg-indigo-900/30'
+                  }`}
                 style={{ height: `${h}%` }}
               />
             ))}

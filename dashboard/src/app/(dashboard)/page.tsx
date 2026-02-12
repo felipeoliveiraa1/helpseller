@@ -4,6 +4,7 @@ import { DashboardHeader } from '@/components/layout/dashboard-header'
 import { Overview } from '@/components/analytics/overview'
 import { RecentCalls } from '@/components/analytics/recent-calls'
 import { SellerDashboard } from '@/components/analytics/seller-dashboard'
+import { ObjectionAnalytics } from '@/components/analytics/objection-analytics'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -238,7 +239,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-    </div >
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm relative overflow-hidden">

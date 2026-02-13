@@ -18,6 +18,9 @@ let micIsMuted = false; // Track mic mute state
 let lastCallStartParams: { platform: string, scriptId: string } | null = null;
 let cachedObjections: CachedObjection[] = [];
 
+let isCallConfirmed = false;
+let audioSegmentBuffer: any[] = [];
+
 // Re-enviar dados iniciais quando o WebSocket reconectar
 onWsConnect(() => {
     // 1. Re-send call:start if we were recording
@@ -39,8 +42,20 @@ onWsConnect(() => {
 // Listen for messages from WebSocket
 onWsMessage(async (data: any) => {
     if (data.type === 'call:started') {
+        console.log('✅ Call started confirmed by backend. CallId:', data.payload?.callId);
+        isCallConfirmed = true;
+
+        // Flush buffered audio segments
+        if (audioSegmentBuffer.length > 0) {
+            console.log(`Open floodgates: Sending ${audioSegmentBuffer.length} buffered audio segments...`);
+            for (const segment of audioSegmentBuffer) {
+                send('audio:segment', segment);
+            }
+            audioSegmentBuffer = [];
+        }
+
         // When call starts, fetch and cache objections for edge processing
-        const { scriptId } = data.payload || {};
+        const { scriptId } = lastCallStartParams || {};
         if (scriptId) {
             try {
                 const token = await authService.getFreshToken();
@@ -141,6 +156,20 @@ onWsMessage(async (data: any) => {
             }).catch(() => { });
         }
     }
+
+    // Handle errors from backend
+    if (data.type === 'error') {
+        console.error('❌ BACKEND ERROR:', data.payload);
+        // Optionally notify sidebar
+        const state = await getState();
+        if (state.currentTabId) {
+            chrome.tabs.sendMessage(state.currentTabId, {
+                type: 'STATUS_UPDATE',
+                status: 'ERROR',
+                error: data.payload.message || 'Erro no servidor'
+            }).catch(() => { });
+        }
+    }
 });
 
 // State Management Helpers
@@ -179,7 +208,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log(`📩 Background received message: ${message.type}`, { senderId: sender.id, senderUrl: sender.url });
 
     if (message.type === 'START_CAPTURE') {
-        startCapture();
+        startCapture(sender.tab?.id);
     } else if (message.type === 'STOP_CAPTURE') {
         stopCapture();
     } else if (message.type === 'OFFSCREEN_READY') {
@@ -206,11 +235,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else if (message.type === 'AUDIO_SEGMENT') {
         const role = message.role || message.speaker || 'unknown';
         console.log(`📤 Sending audio segment: ${message.size} bytes, role: ${role}`);
-        send('audio:segment', {
+
+        const segmentPayload = {
             audio: message.data,
             size: message.size,
             role
-        });
+        };
+
+        if (isCallConfirmed) {
+            send('audio:segment', segmentPayload);
+        } else {
+            console.log('⏳ Buffering audio segment (call not confirmed yet)...');
+            audioSegmentBuffer.push(segmentPayload);
+        }
+
     } else if (message.type === 'MEDIA_STREAM_CHUNK') {
         // NEW: Relay video + audio chunks to backend for manager streaming
         console.log(`📹 Sending media chunk: ${message.size} bytes`);
@@ -257,10 +295,16 @@ async function handleOffscreenReady() {
     console.log('✅ [Event]: OFFSCREEN_READY signal received.');
 }
 
-async function startCapture() {
+async function startCapture(explicitTabId?: number) {
     if (isProcessing) {
         console.warn('⚠️ startCapture ignored: already processing');
         return;
+    }
+
+    // Capture tab ID from sender if provided (fixes issue when background loses state but sidebar is active)
+    if (explicitTabId) {
+        console.log(`📌 Using explicit tab ID from sender: ${explicitTabId}`);
+        await setState({ currentTabId: explicitTabId });
     }
 
     const state = await getState();
@@ -284,6 +328,10 @@ async function startCapture() {
         // 1. Update Status
         await setState({ isRecording: true });
         broadcastStatus('RECORDING');
+
+        // RESET STATE
+        isCallConfirmed = false;
+        audioSegmentBuffer = [];
 
         // 2. Connect WebSocket FIRST (Bug 3 Fix)
         const session = await authService.getSession() as any;
@@ -388,12 +436,18 @@ async function startCapture() {
 
     } catch (err: any) {
         console.error('❌ startCapture failed:', err);
-        broadcastStatus('ERROR');
+
+        if (err.message && err.message.includes('Extension has not been invoked')) {
+            broadcastStatus('PERMISSION_REQUIRED');
+        } else {
+            broadcastStatus('ERROR');
+        }
+
         await setState({ isRecording: false });
 
         // Clean up if failed
         if (offscreenDocument) {
-            await stopCapture();
+            await stopCapture(); // Ensure cleanup
         }
     } finally {
         isProcessing = false;

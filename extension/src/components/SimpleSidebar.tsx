@@ -171,6 +171,10 @@ export default function SimpleSidebar() {
                     setMicAvailable(msg.micAvailable);
                 }
                 if (msg.status !== 'RECORDING') setMicAvailable(null);
+
+                if (msg.status === 'PERMISSION_REQUIRED') {
+                    alert('⚠️ Permissão necessária!\n\nPor favor, clique no ícone da extensão "Sales Copilot" na barra do navegador para autorizar a captura da aba.');
+                }
             } else if (msg.type === 'MANAGER_WHISPER') {
                 // Handle new whisper
                 setManagerWhisper({

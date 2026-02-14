@@ -33,6 +33,7 @@ const PROMO_ITEMS = [
 export function RightSidebar() {
   return (
     <aside
+      suppressHydrationWarning
       className="w-80 shrink-0 bg-black border-l border-white/5 p-6 overflow-y-auto scrollbar-hide"
       style={{ borderColor: 'rgba(255,255,255,0.05)' }}
     >

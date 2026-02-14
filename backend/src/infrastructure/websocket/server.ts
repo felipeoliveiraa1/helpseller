@@ -253,7 +253,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                                 chunk: event.payload.chunk,
                                 size: event.payload.size,
                                 timestamp: event.payload.timestamp,
-                                isHeader: event.payload.isHeader
+                                isHeader: !!event.payload.isHeader // Ensure boolean
                             };
 
                             // Cache header if present
@@ -994,7 +994,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         if (cachedHeader) {
                             logger.info(`📼 Sending cached media header to manager for call ${callId}`);
                             socket.send(JSON.stringify({
-                                type: 'media:chunk',
+                                type: 'media:chunk', // Critical for MediaStreamPlayer
                                 payload: JSON.parse(cachedHeader)
                             }));
                         } else {

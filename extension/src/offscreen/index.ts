@@ -165,7 +165,7 @@ async function startTranscription(streamId: string) {
         }).catch(() => { });
 
         // === 6. Start Video + Audio Streaming for Manager using the SAME stream ===
-        // await startMediaStreaming(combinedStream); // DISABLED TEMPORARILY per user request
+        await startMediaStreaming(combinedStream); // Re-enabled per user request
 
     } catch (err: any) {
         log('❌ Failed:', err.name, err.message);
@@ -236,8 +236,8 @@ async function startMediaStreaming(displayStream: MediaStream) {
                 setTimeout(startRecorderCycle, 1000);
             };
 
-            // Start recording (100ms chunks)
-            recorder.start(100);
+            // Start recording (500ms chunks) - Optimized for WebSocket
+            recorder.start(500);
 
             // Restart recorder every 5 seconds to force new header/keyframe
             setTimeout(() => {

@@ -64,6 +64,7 @@ export function Sidebar() {
 
   return (
     <aside
+      suppressHydrationWarning
       className="w-64 shrink-0 bg-black border-r border-white/5 flex flex-col"
       style={{ borderColor: 'rgba(255,255,255,0.05)' }}
     >

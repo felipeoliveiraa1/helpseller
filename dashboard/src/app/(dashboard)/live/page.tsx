@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Phone, MessageSquare, Clock, AlertTriangle } from 'lucide-react';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
+import { MediaStreamPlayer } from '@/components/MediaStreamPlayer';
 
 const NEON_PINK = '#ff007a';
 const CARD_STYLE = { backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' };
@@ -27,17 +28,42 @@ interface Call {
 }
 
 export default function LivePage() {
+    // 1. ESTADOS
+    const [isMounted, setIsMounted] = useState(false);
     const [activeCalls, setActiveCalls] = useState<Call[]>([]);
     const [selectedCall, setSelectedCall] = useState<Call | null>(null);
     const [whisperMessage, setWhisperMessage] = useState('');
     const [transcripts, setTranscripts] = useState<any[]>([]);
     const [ws, setWs] = useState<WebSocket | null>(null);
     const [role, setRole] = useState<string | null>(null);
+    const [token, setToken] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
 
-    // 1. Check Role & Fetch Calls
+    const fetchActiveCalls = async () => {
+        const { data } = await supabase
+            .from('calls')
+            .select(`
+                *,
+                user:profiles!user_id(name, email),
+                script:scripts!calls_script_relationship(name)
+            `)
+            .eq('status', 'ACTIVE')
+            .order('started_at', { ascending: false });
+
+        if (data) setActiveCalls(data as any);
+    };
+
+    // 2. EFEITOS
     useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    // Check Role & Fetch Calls
+    useEffect(() => {
+        // hydration check inside effect is fine as it doesn't change hook count
+        if (!isMounted) return;
+
         async function init() {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
@@ -56,29 +82,16 @@ export default function LivePage() {
 
         const interval = setInterval(fetchActiveCalls, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, [isMounted]);
 
-    const fetchActiveCalls = async () => {
-        const { data } = await supabase
-            .from('calls')
-            .select(`
-                *,
-                user:profiles!user_id(name, email),
-                script:scripts!calls_script_relationship(name)
-            `)
-            .eq('status', 'ACTIVE')
-            .order('started_at', { ascending: false });
-
-        if (data) setActiveCalls(data as any);
-    };
-
-    // 2. WebSocket Connection for Monitoring
+    // WebSocket Connection
     useEffect(() => {
-        if (!selectedCall) return;
+        if (!isMounted || !selectedCall) return;
 
         const connectWS = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) return;
+            setToken(session.access_token);
 
             // Close existing
             if (ws) ws.close();
@@ -111,7 +124,10 @@ export default function LivePage() {
         return () => {
             if (ws) ws.close();
         };
-    }, [selectedCall]);
+    }, [selectedCall, isMounted]);
+
+    // 3. RETORNOS ANTECIPADOS (Apenas após TODOS os hooks)
+    if (!isMounted) return null;
 
     const sendWhisper = () => {
         if (!ws || !whisperMessage.trim()) return;
@@ -177,11 +193,10 @@ export default function LivePage() {
                             activeCalls.map(call => (
                                 <div
                                     key={call.id}
-                                    className={`rounded-xl border p-4 cursor-pointer transition-all ${
-                                        selectedCall?.id === call.id
-                                            ? 'ring-2 ring-neon-pink bg-neon-pink/10 border-neon-pink/50'
-                                            : 'border-white/10 hover:bg-white/5 bg-black/20'
-                                    }`}
+                                    className={`rounded-xl border p-4 cursor-pointer transition-all ${selectedCall?.id === call.id
+                                        ? 'ring-2 ring-neon-pink bg-neon-pink/10 border-neon-pink/50'
+                                        : 'border-white/10 hover:bg-white/5 bg-black/20'
+                                        }`}
                                     onClick={() => setSelectedCall(call)}
                                 >
                                     <div className="flex justify-between items-start gap-2 mb-2">
@@ -220,6 +235,17 @@ export default function LivePage() {
                         </div>
                     ) : (
                         <>
+                            {/* Media Stream Player */}
+                            <div className="w-full shrink-0">
+                                {token && (
+                                    <MediaStreamPlayer
+                                        callId={selectedCall.id}
+                                        wsUrl="ws://localhost:3001/ws/manager"
+                                        token={token}
+                                    />
+                                )}
+                            </div>
+
                             <Card className="flex-1 flex flex-col overflow-hidden rounded-[24px] border shadow-none" style={CARD_STYLE}>
                                 <CardHeader className="py-4 border-b border-white/10">
                                     <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -240,11 +266,10 @@ export default function LivePage() {
                                     ) : (
                                         transcripts.map((msg, idx) => (
                                             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`max-w-[85%] p-3 rounded-xl text-sm ${
-                                                    msg.role === 'user'
-                                                        ? 'bg-white/10 border border-white/10 rounded-tr-none'
-                                                        : 'bg-neon-pink/10 border border-neon-pink/20 rounded-tl-none'
-                                                }`}>
+                                                <div className={`max-w-[85%] p-3 rounded-xl text-sm ${msg.role === 'user'
+                                                    ? 'bg-white/10 border border-white/10 rounded-tr-none'
+                                                    : 'bg-neon-pink/10 border border-neon-pink/20 rounded-tl-none'
+                                                    }`}>
                                                     <p className="font-bold text-[10px] text-gray-400 mb-1 uppercase">
                                                         {msg.role === 'user' ? 'Cliente' : 'Vendedor'}
                                                     </p>

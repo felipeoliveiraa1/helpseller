@@ -45,17 +45,19 @@ CREATE POLICY "Sellers view own summaries" ON public.call_summaries
     )
   );
 
--- OBJECTIONS POLICIES (Assuming similar structure or org-based)
--- If objections are global/org-wide:
+-- OBJECTIONS POLICIES (Linked via scripts)
 DROP POLICY IF EXISTS "Managers view all org objections" ON public.objections;
 CREATE POLICY "Managers view all org objections" ON public.objections
   FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid()
-      AND role = 'MANAGER'
-      AND organization_id = objections.organization_id
+      SELECT 1 FROM scripts
+      WHERE scripts.id = objections.script_id
+      AND scripts.organization_id = (
+        SELECT organization_id FROM profiles 
+        WHERE id = auth.uid() 
+        AND role = 'MANAGER'
+      )
     )
   );
 
@@ -64,8 +66,11 @@ CREATE POLICY "Sellers view all org objections" ON public.objections
   FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid()
-      AND organization_id = objections.organization_id
+      SELECT 1 FROM scripts
+      WHERE scripts.id = objections.script_id
+      AND scripts.organization_id = (
+        SELECT organization_id FROM profiles 
+        WHERE id = auth.uid()
+      )
     )
   );

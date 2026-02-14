@@ -60,6 +60,7 @@ const start = async () => {
     try {
         await server.listen({ port: env.PORT, host: '0.0.0.0' });
         logger.info(`🚀 Server running on port ${env.PORT}`);
+        console.log('🔄 SERVER RESTARTED - CHECKING WATCHER');
     } catch (err) {
         logger.error(err);
         process.exit(1);

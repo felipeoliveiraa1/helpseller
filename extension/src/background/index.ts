@@ -281,7 +281,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 chrome.tabs.sendMessage(state.currentTabId, {
                     type: 'TRANSCRIPT_RESULT',
                     data: message.data
-                }).catch(() => { });
+                }).catch((err) => {
+                    console.error('❌ Failed to send transcript to sidebar:', err);
+                });
             }
         });
     }
@@ -444,10 +446,13 @@ async function startCapture(explicitTabId?: number) {
             // Retry mechanisms for call:start
             let attempts = 0;
             const retryInterval = setInterval(() => {
-                if (isCallConfirmed || !isProcessing) { // Stop if confirmed or capture stopped
-                    clearInterval(retryInterval);
-                    return;
-                }
+                // Fix: Check isRecording from state, not isProcessing (which is false after setup)
+                getState().then(currentState => {
+                    if (isCallConfirmed || !currentState.isRecording) {
+                        clearInterval(retryInterval);
+                        return;
+                    }
+                });
                 attempts++;
                 if (attempts > 5) {
                     console.error('❌ Call start failed after 5 attempts (backend timeout)');

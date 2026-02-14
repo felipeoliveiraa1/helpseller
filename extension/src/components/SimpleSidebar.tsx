@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { authService } from '../services/auth';
+import { CardItem } from './CardItem';
+import { type CoachCard } from '../stores/coaching-store';
 
 const SIDEBAR_W = 360;
 const SIDEBAR_H = '80vh';
@@ -27,7 +29,8 @@ export default function SimpleSidebar() {
 
     // Recording state
     const [transcripts, setTranscripts] = useState<any[]>([]);
-    const [coachSuggestion, setCoachSuggestion] = useState('Aguardando transcrição...');
+    // Use Cards instead of single suggestion string
+    const [cards, setCards] = useState<CoachCard[]>([]);
     const [managerWhisper, setManagerWhisper] = useState<{ content: string; urgency: string; timestamp: number } | null>(null);
     const [leadTemp, setLeadTemp] = useState<'hot' | 'warm' | 'cold'>('warm');
     const [isRecording, setIsRecording] = useState(false);
@@ -146,6 +149,7 @@ export default function SimpleSidebar() {
     useEffect(() => {
         const listener = (msg: any) => {
             if (msg.type === 'TRANSCRIPT_RESULT') {
+                console.log('📝 Sidebar received transcript:', msg.data);
                 const newTranscript = {
                     text: msg.data.text,
                     isFinal: msg.data.isFinal,
@@ -156,13 +160,37 @@ export default function SimpleSidebar() {
 
                 // Mock: Update coach suggestion based on transcript
                 if (msg.data.text.toLowerCase().includes('preço')) {
-                    setCoachSuggestion('💡 Foque no valor, não no preço. Destaque os benefícios.');
+                    const newCard: CoachCard = {
+                        id: Math.random().toString(36),
+                        type: 'objection',
+                        title: 'Objeção de Preço',
+                        description: 'Foque no valor, não no preço. Destaque os benefícios.',
+                        timestamp: Date.now(),
+                        isDismissed: false
+                    };
+                    setCards(prev => [newCard, ...prev]);
                     setLeadTemp('warm');
                 } else if (msg.data.text.toLowerCase().includes('interessante')) {
-                    setCoachSuggestion('🔥 Lead engajado! Pergunte sobre o timeline de decisão.');
+                    const newCard: CoachCard = {
+                        id: Math.random().toString(36),
+                        type: 'signal',
+                        title: 'Sinal de Compra',
+                        description: 'Lead engajado! Pergunte sobre o timeline de decisão.',
+                        timestamp: Date.now(),
+                        isDismissed: false
+                    };
+                    setCards(prev => [newCard, ...prev]);
                     setLeadTemp('hot');
                 } else if (msg.data.text.toLowerCase().includes('não')) {
-                    setCoachSuggestion('⚠️ Possível objeção. Faça perguntas abertas para entender.');
+                    const newCard: CoachCard = {
+                        id: Math.random().toString(36),
+                        type: 'alert',
+                        title: 'Possível Objeção',
+                        description: 'Faça perguntas abertas para entender.',
+                        timestamp: Date.now(),
+                        isDismissed: false
+                    };
+                    setCards(prev => [newCard, ...prev]);
                     setLeadTemp('cold');
                 }
             } else if (msg.type === 'STATUS_UPDATE') {
@@ -183,10 +211,20 @@ export default function SimpleSidebar() {
                     timestamp: msg.data.timestamp
                 });
             } else if (msg.type === 'COACHING_MESSAGE') {
-                // Handle AI coaching from backend
-                const { content, isTopRecommendation } = msg.data;
-                const prefix = isTopRecommendation ? '🏆 ' : '';
-                setCoachSuggestion(prefix + content);
+                // Handle AI coaching from backend -> Create a Card
+                const { content, isTopRecommendation, type, title } = msg.data;
+
+                const newCard: CoachCard = {
+                    id: Math.random().toString(36).substring(7),
+                    type: type || (isTopRecommendation ? 'tip' : 'signal'),
+                    title: title || (isTopRecommendation ? 'Sugerido' : 'Dica'),
+                    description: content,
+                    timestamp: Date.now(),
+                    isDismissed: false,
+                    metadata: msg.data
+                };
+
+                setCards(prev => [newCard, ...prev].slice(0, 10)); // Limit to last 10
 
                 // Update temp based on urgency or type if needed
                 if (msg.data.urgency === 'high') setLeadTemp('hot');
@@ -467,28 +505,45 @@ export default function SimpleSidebar() {
                 </div>
             )}
 
-            {/* Coach Suggestion */}
+            {/* Cards Area (fixed height or flexible) */}
             <div style={{
-                padding: '16px',
+                maxHeight: '40%', // Take up to 40% of height for cards
+                overflowY: 'auto',
+                padding: '16px 16px 0 16px',
                 borderBottom: '1px solid #334155',
-                background: coachSuggestion.includes('🏆') ? 'linear-gradient(to right, rgba(234, 179, 8, 0.1), transparent)' : 'transparent'
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
             }}>
                 <div style={{
                     fontSize: '12px',
                     fontWeight: '600',
-                    marginBottom: '8px',
-                    color: coachSuggestion.includes('🏆') ? '#fbbf24' : '#94a3b8',
+                    marginBottom: '4px',
+                    color: '#94a3b8',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
+                    letterSpacing: '0.05em'
                 }}>
-                    {coachSuggestion.includes('🏆') ? '🏆 Melhor Recomendação' : '💡 Sugestão do Coach'}
+                    💡 Insights
                 </div>
-                <div style={{ fontSize: '14px', lineHeight: '1.5', color: '#e2e8f0' }}>
-                    {coachSuggestion}
-                </div>
+
+                {cards.length === 0 ? (
+                    <div style={{ fontSize: '14px', color: '#64748b', fontStyle: 'italic', paddingBottom: '16px' }}>
+                        Aguardando análise...
+                    </div>
+                ) : (
+                    cards.map(card => (
+                        <div key={card.id}>
+                            {/* We wrap CardItem because it expects Tailwind classes which might not leak fully into ShadowDOM heavily unless injected style block covers it. 
+                                CardItem uses utility classes 'bg-emerald-900/40' etc. Ensure style tag in content script covers this. 
+                                For now, assuming utility classes work because we injected them in content/index.tsx 
+                            */}
+                            <CardItem
+                                card={card}
+                                onDismiss={(id) => setCards(prev => prev.filter(c => c.id !== id))}
+                            />
+                        </div>
+                    ))
+                )}
             </div>
 
             {/* Transcription */}

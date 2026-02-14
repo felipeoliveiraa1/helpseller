@@ -3,9 +3,17 @@ import { ShoppingCart, Zap, Lightbulb, AlertTriangle, Sparkles, X, Users } from 
 import { type CoachCard, useCoachingStore } from '../stores/coaching-store';
 import { cn } from '@/lib/utils'; // Assuming we have utils from previous prompt setup or standard vite init
 
-export function CardItem({ card }: { card: CoachCard }) {
-    const dismiss = useCoachingStore(state => state.dismissCard);
+export function CardItem({ card, onDismiss }: { card: CoachCard; onDismiss?: (id: string) => void }) {
+    const storeDismiss = useCoachingStore(state => state.dismissCard);
     const [visible, setVisible] = useState(false);
+
+    const handleDismiss = () => {
+        if (onDismiss) {
+            onDismiss(card.id);
+        } else {
+            storeDismiss(card.id);
+        }
+    };
 
     useEffect(() => {
         const timer = setTimeout(() => setVisible(true), 50);
@@ -78,7 +86,7 @@ export function CardItem({ card }: { card: CoachCard }) {
                 <div className="flex items-center space-x-2">
                     <span className="text-[10px] opacity-50">Just now</span>
                     <button
-                        onClick={() => dismiss(card.id)}
+                        onClick={handleDismiss}
                         className="hover:bg-white/10 rounded p-0.5 transition-colors"
                     >
                         <X size={14} />

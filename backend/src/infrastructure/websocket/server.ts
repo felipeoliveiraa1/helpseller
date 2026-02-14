@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 // DEBUG LOGGING
-const LOG_FILE = path.join(process.cwd(), 'backend-websocket-debug.log');
+const LOG_FILE = path.join(process.cwd(), 'backend-websocket-debug-v2.log');
 function debugLog(msg: string) {
     try {
         fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
@@ -203,6 +203,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         socket.on('message', async (message: string) => {
             try {
                 const msgString = message.toString();
+                console.log('👀 RAW SOCKET MESSAGE SERVER-SIDE:', msgString.substring(0, 100));
+
                 if (!msgString.includes('media:stream') && !msgString.includes('audio:segment')) {
                     console.log('RAW MSG RECEIVED:', msgString);
                 }
@@ -301,6 +303,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             logger.info({ payload: event.payload }, '📞 handleCallStart initiated');
 
             try {
+                console.log('📞 handleCallStart CALLED with:', event.payload);
                 const { scriptId, platform } = event.payload;
 
                 // 1. Get User Profile & Org
@@ -330,7 +333,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         .limit(1)
                         .maybeSingle();
 
-                    if (defaultScript) finalScriptId = defaultScript.id;
+                    if (defaultScript) {
+                        finalScriptId = defaultScript.id;
+                        console.log('✅ Found default script:', finalScriptId);
+                    } else {
+                        console.warn('⚠️ No default script found for org:', orgId);
+                    }
                 }
 
                 // 3. Insert Call into DB
@@ -681,9 +689,14 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                         // 4. (Optional) Real-time DB Update for dashboard if needed
                         // Ideally we batch this or update on 'call:end', but for debugging:
-                        await supabaseAdmin.from('calls').update({
+                        const { error: updateError } = await supabaseAdmin.from('calls').update({
                             transcript: sessionData?.transcript || []
                         }).eq('id', callId);
+
+                        if (updateError) {
+                            logger.error({ updateError, callId }, '❌ DB UPDATE ERROR: Failed to save transcript');
+                            debugLog(`[DB ERROR] ${updateError.message} (${updateError.code})`);
+                        }
                     }
 
                     ws.send(JSON.stringify({

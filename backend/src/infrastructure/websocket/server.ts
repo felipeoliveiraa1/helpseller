@@ -728,11 +728,37 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     }
 
                     // 1. Dynamic Speaker Label Resolution
-                    const currentLeadName = sessionData?.leadName || bufferedLeadName || 'Cliente';
+                    const dynamicSpeakerName = (audioBuffer as any).speakerName; // This comes from metadata attached before buffer processing, OR we need to pass it in transcribe?
+                    // Wait, audioBuffer is a Buffer array. We can't attach properties to it easily if it's just raw data.
+                    // The 'speakerName' comes in the WebSocket message 'audio:segment'.
+                    // We need to store it when we receive 'audio:segment' and associate it with this buffer?
+                    // Currently 'audioBuffer' is accumulated.
+                    // If we want dynamic speaker name per segment, we should process the segment immediately or store the name with the buffer.
+
+                    // Actually, the current architecture buffers audio in `audioBuffer`. 
+                    // AND `handleAudioSegment` processes the *accumulated* buffer.
+                    // If we have multiple segments with different speakers, they might get mixed?
+                    // But we process every 3 seconds roughly.
+
+                    // Let's check where `audioBuffer` comes from. It's a local variable in the websocket connection scope.
+                    // And `handleAudioSegment` is called... wait, `handleAudioSegment` IS NOT THE NAME.
+                    // The function is inside `ws.on('message')`.
+
+                    // Let's modify the message handler to capture `speakerName` and use it.
+                    // Since we process audio in chunks, we might have a race condition if we just set a variable.
+                    // BUT, typically one user speaks at a time for the duration of the buffer (3s).
+                    // So we can update `sessionData.currentActiveSpeaker` or similar.
+
+                    // Let's see the `audio:segment` handler.
+                    // Let's assume the payload comes with `speakerName`.
+                    // 1. Dynamic Speaker Label Resolution
+                    // Prioritize the name sent with the audio segment (active speaker detection)
+                    const dynamicSpeaker = event.payload.speakerName;
+                    const currentLeadName = dynamicSpeaker || sessionData?.leadName || bufferedLeadName || 'Cliente';
                     const speakerLabel = role === 'seller' ? 'Você' : currentLeadName;
 
                     if (role === 'lead') {
-                        logger.info(`🔍 [Participant Debug] Role: lead. Session LeadName: '${sessionData?.leadName}'. Buffered: '${bufferedLeadName}'. Final Label: '${speakerLabel}'`);
+                        logger.info(`🔍 [Participant Debug] Role: lead. Dynamic: '${dynamicSpeaker}'. Session: '${sessionData?.leadName}'. Buffered: '${bufferedLeadName}'. Final: '${speakerLabel}'`);
                     }
 
                     logger.info(`✨ [${speakerLabel}]: "${text}"`);

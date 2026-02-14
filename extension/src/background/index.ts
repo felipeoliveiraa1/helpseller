@@ -207,88 +207,107 @@ let isProcessing = false;
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log(`📩 Background received message: ${message.type}`, { senderId: sender.id, senderUrl: sender.url });
 
-    if (message.type === 'START_CAPTURE') {
-        startCapture(message.tabId || sender.tab?.id);
-    } else if (message.type === 'STOP_CAPTURE') {
-        stopCapture();
-    } else if (message.type === 'OFFSCREEN_READY') {
-        console.log('✅ [Event]: OFFSCREEN_READY - Generating fresh StreamID...');
-        handleOffscreenReady();
-    } else if (message.type === 'OFFSCREEN_LOG') {
-        console.log('🖥️ [Offscreen]:', message.message);
-    } else if (message.type === 'RECORDING_STARTED') {
-        const micAvailable = !!message.micAvailable;
-        console.log('🎙️ Recording started, microfone:', micAvailable ? 'permitido' : 'não disponível');
-        getState().then(state => {
-            if (state.currentTabId) {
-                chrome.tabs.sendMessage(state.currentTabId, {
-                    type: 'STATUS_UPDATE',
-                    status: 'RECORDING',
-                    micAvailable
-                }).catch(() => { });
+    // Handle async operations
+    const handleAsync = async () => {
+        if (message.type === 'START_CAPTURE') {
+            startCapture(message.tabId || sender.tab?.id);
+        } else if (message.type === 'STOP_CAPTURE') {
+            stopCapture();
+        } else if (message.type === 'OFFSCREEN_READY') {
+            console.log('✅ [Event]: OFFSCREEN_READY - Generating fresh StreamID...');
+            handleOffscreenReady();
+        } else if (message.type === 'OFFSCREEN_LOG') {
+            console.log('🖥️ [Offscreen]:', message.message);
+        } else if (message.type === 'RECORDING_STARTED') {
+            const micAvailable = !!message.micAvailable;
+            console.log('🎙️ Recording started, microfone:', micAvailable ? 'permitido' : 'não disponível');
+            getState().then(state => {
+                if (state.currentTabId) {
+                    chrome.tabs.sendMessage(state.currentTabId, {
+                        type: 'STATUS_UPDATE',
+                        status: 'RECORDING',
+                        micAvailable
+                    }).catch(() => { });
+                }
+            });
+            chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', status: 'RECORDING', micAvailable }).catch(() => { });
+        } else if (message.type === 'AUDIO_CHUNK') {
+            // Legacy handler - kept for compatibility
+            send('audio:chunk', { audio: message.data });
+        } else if (message.type === 'AUDIO_SEGMENT') {
+            const role = message.role || message.speaker || 'unknown';
+            console.log(`📤 Sending audio segment: ${message.size} bytes, role: ${role}`);
+
+            const segmentPayload = {
+                audio: message.data,
+                size: message.size,
+                role,
+                speakerName: message.speakerName // PASS THROUGH DYNAMIC SPEAKER NAME
+            };
+
+            if (isCallConfirmed) {
+                send('audio:segment', segmentPayload);
+            } else {
+                console.log('⏳ Buffering audio segment (call not confirmed yet)...');
+                audioSegmentBuffer.push(segmentPayload);
             }
-        });
-        chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', status: 'RECORDING', micAvailable }).catch(() => { });
-    } else if (message.type === 'AUDIO_CHUNK') {
-        // Legacy handler - kept for compatibility
-        send('audio:chunk', { audio: message.data });
-    } else if (message.type === 'AUDIO_SEGMENT') {
-        const role = message.role || message.speaker || 'unknown';
-        console.log(`📤 Sending audio segment: ${message.size} bytes, role: ${role}`);
 
-        const segmentPayload = {
-            audio: message.data,
-            size: message.size,
-            role
-        };
+        } else if (message.type === 'MEDIA_STREAM_CHUNK') {
+            // NEW: Relay video + audio chunks to backend for manager streaming
+            console.log(`📹 Sending media chunk: ${message.size} bytes`);
+            send('media:stream', {
+                chunk: message.data,
+                size: message.size,
+                timestamp: message.timestamp
+            });
+        } else if (message.type === 'PARTICIPANT_INFO') {
+            currentLeadName = message.leadName || '';
+            console.log('👤 Lead name:', currentLeadName);
+            send('call:participants', {
+                leadName: message.leadName || 'Lead',
+                selfName: message.selfName,
+                allParticipants: message.allParticipants || []
+            });
+        } else if (message.type === 'MIC_STATE') {
+            micIsMuted = message.muted;
+            console.log('🎤 Mic state:', message.muted ? 'MUTED' : 'ACTIVE');
 
-        if (isCallConfirmed) {
-            send('audio:segment', segmentPayload);
-        } else {
-            console.log('⏳ Buffering audio segment (call not confirmed yet)...');
-            audioSegmentBuffer.push(segmentPayload);
+            // Use storage for robust communication with offscreen
+            chrome.storage.local.set({ micMuted: message.muted }).catch(() => { });
+
+            // Fallback: still try to send message just in case, but storage is primary
+            chrome.runtime.sendMessage({ type: 'MIC_MUTE_STATE', muted: message.muted }).catch(() => { });
+        } else if (message.type === 'TRANSCRIPT_RESULT') {
+            send('transcript:chunk', message.data);
+            getState().then(state => {
+                if (state.currentTabId) {
+                    chrome.tabs.sendMessage(state.currentTabId, {
+                        type: 'TRANSCRIPT_RESULT',
+                        data: message.data
+                    }).catch((err) => {
+                        console.error('❌ Failed to send transcript to sidebar:', err);
+                    });
+                }
+            });
+        } else if (message.type === 'QUERY_ACTIVE_SPEAKER') {
+            // Relay request to Content Script
+            const state = await getState();
+            if (state.currentTabId) {
+                try {
+                    const response = await chrome.tabs.sendMessage(state.currentTabId, { type: 'GET_ACTIVE_SPEAKER' });
+                    sendResponse({ speakerName: response?.activeSpeaker });
+                } catch (err) {
+                    console.warn('Failed to query active speaker from content script:', err);
+                    sendResponse({ speakerName: null });
+                }
+            } else {
+                sendResponse({ speakerName: null });
+            }
         }
+    };
 
-    } else if (message.type === 'MEDIA_STREAM_CHUNK') {
-        // NEW: Relay video + audio chunks to backend for manager streaming
-        console.log(`📹 Sending media chunk: ${message.size} bytes`);
-        send('media:stream', {
-            chunk: message.data,
-            size: message.size,
-            timestamp: message.timestamp
-        });
-    } else if (message.type === 'PARTICIPANT_INFO') {
-        currentLeadName = message.leadName || '';
-        console.log('👤 Lead name:', currentLeadName);
-        send('call:participants', {
-            leadName: message.leadName || 'Lead',
-            selfName: message.selfName,
-            allParticipants: message.allParticipants || []
-        });
-    } else if (message.type === 'MIC_STATE') {
-        micIsMuted = message.muted;
-        console.log('🎤 Mic state:', message.muted ? 'MUTED' : 'ACTIVE');
-
-        // Use storage for robust communication with offscreen
-        chrome.storage.local.set({ micMuted: message.muted }).catch(() => { });
-
-        // Fallback: still try to send message just in case, but storage is primary
-        chrome.runtime.sendMessage({ type: 'MIC_MUTE_STATE', muted: message.muted }).catch(() => { });
-    } else if (message.type === 'TRANSCRIPT_RESULT') {
-        send('transcript:chunk', message.data);
-        getState().then(state => {
-            if (state.currentTabId) {
-                chrome.tabs.sendMessage(state.currentTabId, {
-                    type: 'TRANSCRIPT_RESULT',
-                    data: message.data
-                }).catch((err) => {
-                    console.error('❌ Failed to send transcript to sidebar:', err);
-                });
-            }
-        });
-    }
-
-    return false;
+    handleAsync();
+    return true; // Keep channel open
 });
 
 async function handleOffscreenReady() {

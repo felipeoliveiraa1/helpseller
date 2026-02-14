@@ -319,13 +319,24 @@ function startRecordingCycle(
             log(`📦 [${role}] Segment: ${completeBlob.size} bytes, level: ${maxAudioLevel.toFixed(1)}`);
 
             const reader = new FileReader();
-            reader.onloadend = () => {
+            reader.onloadend = async () => { // Make onloadend async
                 const base64 = (reader.result as string).split(',')[1];
+
+                // Query active speaker from content script via background
+                let activeSpeaker: string | null = null;
+                try {
+                    const speakerResponse = await chrome.runtime.sendMessage({ type: 'QUERY_ACTIVE_SPEAKER' }).catch(() => null);
+                    activeSpeaker = speakerResponse?.speakerName || null;
+                } catch (e: any) {
+                    log('❌ Error querying active speaker:', e.message);
+                }
+
                 chrome.runtime.sendMessage({
                     type: 'AUDIO_SEGMENT',
                     data: base64,
                     size: completeBlob.size,
-                    role: role
+                    role: role,
+                    speakerName: activeSpeaker // Inject dynamic speaker name
                 }).catch(err => log('❌ Error:', (err as Error).message));
             };
             reader.readAsDataURL(completeBlob);

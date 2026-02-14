@@ -6,9 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Users, UserPlus, check, ShieldAlert, Loader2 } from 'lucide-react'
+import { Users, UserPlus, Check, ShieldAlert, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { useToast } from '@/components/ui/use-toast'
 import { api } from '@/lib/api'
 
 export default function TeamPage() {
@@ -18,7 +17,6 @@ export default function TeamPage() {
     email: '',
     password: ''
   })
-  const { toast } = useToast()
   const supabase = createClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -26,24 +24,25 @@ export default function TeamPage() {
     setLoading(true)
 
     try {
-      // api.post handles auth internally
-      await api.post('/api/admin/create-user', formData)
+      // Get current session for auth header
+      const { data: { session } } = await supabase.auth.getSession()
 
-      toast({
-        title: "Usuário criado com sucesso!",
-        description: `O vendedor ${formData.name} foi adicionado à equipe.`,
-      })
+      if (!session) {
+        alert("Erro de autenticação: Sua sessão expirou.")
+        return
+      }
+
+      // api.post handles auth internally
+      await api.post('/admin/create-user', formData)
+
+      alert(`Usuário criado com sucesso! O vendedor ${formData.name} foi adicionado à equipe.`)
 
       // Reset form
       setFormData({ name: '', email: '', password: '' })
 
     } catch (error: any) {
       console.error('Error creating user:', error)
-      toast({
-        title: "Erro ao criar usuário",
-        description: error.message,
-        variant: "destructive"
-      })
+      alert(`Erro ao criar usuário: ${error.message}`)
     } finally {
       setLoading(false)
     }

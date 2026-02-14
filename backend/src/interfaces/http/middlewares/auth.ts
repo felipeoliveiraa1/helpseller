@@ -23,8 +23,11 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
         const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
 
         if (error || !user) {
+            console.error('Auth Debug: Invalid Token', error);
             throw new UnauthorizedError('Invalid token');
         }
+
+        console.log('Auth Debug: User found', user.id);
 
         // Get User Profile with Organization
         const { data: profile, error: profileError } = await supabaseAdmin
@@ -34,14 +37,18 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
             .single();
 
         if (profileError || !profile) {
+            console.error('Auth Debug: Profile not found or error', profileError);
             logger.error(`❌ Profile not found for user ${user.id}`);
             throw new UnauthorizedError('Profile not found');
         }
+
+        console.log('Auth Debug: Profile found', profile.role);
 
         // Attach user profile to request
         request.user = profile;
 
     } catch (error) {
+        console.error('Auth Debug: Middleware Catch', error);
         if (error instanceof UnauthorizedError) {
             return reply.status(401).send({ error: error.message });
         }

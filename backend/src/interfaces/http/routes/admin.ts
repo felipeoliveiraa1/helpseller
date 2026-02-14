@@ -16,31 +16,86 @@ export async function adminRoutes(fastify: FastifyInstance) {
         }
 
         try {
-            // 1. Create User in Supabase Auth
-            const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-                email,
-                password,
-                email_confirm: true, // Auto-confirm for simplicity in this flow
-                user_metadata: {
-                    full_name: name,
-                    role: 'SELLER', // Enforce role
-                    organization_id: organization_id // Enforce same org
-                }
-            });
+            console.log('Admin Debug: Creating user...', { email, role, organization_id });
 
-            if (authError) throw authError;
+            // 1. Create User in Supabase Auth
+            // Try with auto-confirm first
+            let authData, authError;
+
+            try {
+                console.log('Admin Debug: Attempting creation with auto-confirm...');
+                const result = await supabaseAdmin.auth.admin.createUser({
+                    email,
+                    password,
+                    email_confirm: true,
+                    user_metadata: {
+                        full_name: name,
+                        role: 'SELLER',
+                        organization_id: organization_id
+                    }
+                });
+                authData = result.data;
+                authError = result.error;
+            } catch (err: any) {
+                console.error('Admin Debug: Auto-confirm attempt failed', err);
+                // Fallback if auto-confirm fails (e.g. key issue)
+                if (err.message?.includes('service_role key')) {
+                    console.log('Admin Debug: Retrying without auto-confirm');
+                    const result = await supabaseAdmin.auth.admin.createUser({
+                        email,
+                        password,
+                        email_confirm: false,
+                        user_metadata: {
+                            full_name: name,
+                            role: 'SELLER',
+                            organization_id: organization_id
+                        }
+                    });
+                    authData = result.data;
+                    authError = result.error;
+                } else {
+                    throw err;
+                }
+            }
+
+            if (authError) {
+                console.error('Admin Debug: Auth Error returned', authError);
+                if (authError.message?.includes('service_role key')) {
+                    console.log('Admin Debug: Retrying without auto-confirm (from error obj)');
+                    const result = await supabaseAdmin.auth.admin.createUser({
+                        email,
+                        password,
+                        email_confirm: false,
+                        user_metadata: {
+                            full_name: name,
+                            role: 'SELLER',
+                            organization_id: organization_id
+                        }
+                    });
+                    authData = result.data;
+                    authError = result.error;
+                }
+            }
+
+            if (authError) {
+                console.error('Admin Debug: Final Auth Error', authError);
+                throw authError; // This will start the catch block below
+            };
+
+            console.log('Admin Debug: User created, ID:', authData.user.id);
 
             // 2. Create Profile in public.profiles (if not handled by trigger)
             // Ideally, a Supabase trigger handles this, but we can double check or enforce additional data here if needed.
             // For now, we assume the trigger on auth.users -> public.profiles exists or we rely on metadata sync.
             // However, to be safe and ensure the profile exists instantly for the UI:
 
+            console.log('Admin Debug: Creating/Verifying profile...');
             const { error: profileError } = await supabaseAdmin
                 .from('profiles')
                 .insert({
                     id: authData.user.id,
                     email: email,
-                    name: name,
+                    full_name: name,
                     role: 'SELLER',
                     organization_id: organization_id
                 })
@@ -48,14 +103,21 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 .single();
 
             // Ignore duplicate key error if trigger already created it
-            if (profileError && !profileError.message.includes('duplicate key')) {
-                // If trigger failed or didn't exist, we might want to log it but not fail the request if auth succeeded
-                request.log.warn({ profileError }, 'Profile creation warning');
+            if (profileError) {
+                if (!profileError.message.includes('duplicate key')) {
+                    console.error('Admin Debug: Profile creation error', profileError);
+                    request.log.warn({ profileError }, 'Profile creation warning');
+                } else {
+                    console.log('Admin Debug: Profile already exists (duplicate key)');
+                }
+            } else {
+                console.log('Admin Debug: Profile created successfully');
             }
 
             return { success: true, user: { id: authData.user.id, email: authData.user.email } };
 
         } catch (error: any) {
+            console.error('Admin Debug: Catch Block Error', error);
             request.log.error({ error }, 'Failed to create user');
             return reply.code(500).send({ error: error.message || 'Failed to create user' });
         }

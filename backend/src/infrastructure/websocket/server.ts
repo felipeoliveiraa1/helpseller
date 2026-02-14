@@ -306,6 +306,15 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 console.log('📞 handleCallStart CALLED with:', event.payload);
                 const { scriptId, platform } = event.payload;
 
+                // 0. Check if call already exists for this connection (Idempotency)
+                if (callId) {
+                    logger.warn(`⚠️ Call already initialized for this connection. ID: ${callId}. Ignoring duplicate call:start.`);
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'call:started', payload: { callId: callId } }));
+                    }
+                    return;
+                }
+
                 // 1. Get User Profile & Org
                 const { data: profile, error: profileError } = await supabaseAdmin
                     .from('profiles')
@@ -320,12 +329,68 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     return;
                 }
 
-                const orgId = profile.organization_id; // Allow null if schema permits, or handle default
+                const orgId = profile.organization_id;
 
-                // 2. Resolve Script ID
+                // 1.5. Check for EXISTING ACTIVE CALL (Resume Logic)
+                // Look for a call started in the last hour that is still ACTIVE
+                const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+                const { data: existingCall } = await supabaseAdmin
+                    .from('calls')
+                    .select('id, script_id, platform, started_at')
+                    .eq('user_id', userId)
+                    .eq('status', 'ACTIVE')
+                    .gte('started_at', oneHourAgo)
+                    .order('started_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (existingCall) {
+                    logger.info(`🔄 Found existing ACTIVE call: ${existingCall.id}. Attempting to resume...`);
+
+                    // Check if session data exists in Redis
+                    const existingSession = await redis.get(`call:${existingCall.id}:session`);
+
+                    if (existingSession) {
+                        logger.info(`✅ Resumed session for call ${existingCall.id}`);
+                        callId = existingCall.id;
+                        sessionData = existingSession;
+
+                        // Re-subscribe to commands
+                        commandHandler = (command: any) => {
+                            if (command.type === 'whisper') {
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({
+                                        type: 'coach:whisper',
+                                        payload: {
+                                            source: 'manager',
+                                            content: command.content,
+                                            urgency: command.urgency,
+                                            timestamp: command.timestamp
+                                        }
+                                    }));
+                                }
+                            }
+                        };
+                        await redis.subscribe(`call:${callId}:commands`, commandHandler);
+
+                        // Confirm to client
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'call:started', payload: { callId: callId } }));
+                        }
+                        return; // EXIT HERE - RESUME COMPLETE
+                    } else {
+                        logger.warn(`⚠️ Active call found (${existingCall.id}) but Redis session missing. Closing it and starting new.`);
+                        // Close the stale call
+                        await supabaseAdmin.from('calls').update({
+                            status: 'COMPLETED',
+                            ended_at: new Date().toISOString()
+                        }).eq('id', existingCall.id);
+                    }
+                }
+
+                // 2. Resolve Script ID (New Call)
                 let finalScriptId = scriptId;
                 if (!scriptId || scriptId === 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') {
-                    // Try to find a default script for the org
                     const { data: defaultScript } = await supabaseAdmin
                         .from('scripts')
                         .select('id')
@@ -335,9 +400,6 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                     if (defaultScript) {
                         finalScriptId = defaultScript.id;
-                        console.log('✅ Found default script:', finalScriptId);
-                    } else {
-                        console.warn('⚠️ No default script found for org:', orgId);
                     }
                 }
 
@@ -405,6 +467,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     }
                 };
                 await redis.subscribe(`call:${callId}:commands`, commandHandler);
+
 
                 // 7. Confirm to Client
                 if (ws.readyState === WebSocket.OPEN) {

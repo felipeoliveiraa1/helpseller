@@ -281,13 +281,13 @@ export default function LivePage() {
                                         </p>
                                     ) : (
                                         transcripts.map((msg, idx) => (
-                                            <div key={idx} className={`flex ${msg.role === 'seller' ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`max-w-[85%] p-3 rounded-xl text-sm ${msg.role === 'seller'
-                                                    ? 'bg-neon-pink/10 border border-neon-pink/20 rounded-tr-none'
-                                                    : 'bg-white/10 border border-white/10 rounded-tl-none'
+                                            <div key={idx} className={`flex ${msg.role === 'lead' ? 'justify-start' : 'justify-end'}`}>
+                                                <div className={`max-w-[85%] p-3 rounded-xl text-sm ${msg.role === 'lead'
+                                                    ? 'bg-white/10 border border-white/10 rounded-tl-none'
+                                                    : 'bg-neon-pink/10 border border-neon-pink/20 rounded-tr-none'
                                                     }`}>
                                                     <p className="font-bold text-[10px] text-gray-400 mb-1 uppercase">
-                                                        {msg.speaker || (msg.role === 'seller' ? 'Você' : 'Cliente')}
+                                                        {msg.speaker || (msg.role === 'lead' ? 'Cliente' : 'Você')}
                                                     </p>
                                                     <span className="text-white">{msg.text}</span>
                                                 </div>

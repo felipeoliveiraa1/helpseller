@@ -305,6 +305,10 @@ function startRecordingCycle(
             }
 
             const threshold = role === 'seller' ? SILENCE_THRESHOLD_SELLER : SILENCE_THRESHOLD_LEAD;
+
+            // 🔍 DEBUG: SEMPRE logar o nível de áudio
+            log(`🔊 [${role}] Audio level: ${maxAudioLevel.toFixed(1)} (threshold: ${threshold}, chunks: ${chunks.length})`);
+
             if (chunks.length === 0 || maxAudioLevel < threshold) {
                 log(`⏭️ [${role}] Silent/echo segment skipped (level: ${maxAudioLevel.toFixed(1)}, threshold: ${threshold})`);
                 if (isRecording) recordSegment();

@@ -33,10 +33,17 @@ server.register(cors, {
 
         // Check if origin matches allowed list
         const allowedOrigins = env.CORS_ORIGIN.split(',');
-        if (allowedOrigins.indexOf(origin) !== -1 || env.CORS_ORIGIN === '*') {
+
+        // Logic: Exato match, Wildcard, ou Chrome Extension
+        if (
+            allowedOrigins.indexOf(origin) !== -1 ||
+            env.CORS_ORIGIN === '*' ||
+            origin.startsWith('chrome-extension://')
+        ) {
             cb(null, true);
         } else {
-            cb(new Error('Not allowed by CORS'), false);
+            console.log(`🚫 CORS BLOCKED: ${origin}`);
+            cb(new Error(`Not allowed by CORS: ${origin}`), false);
         }
     },
 });

@@ -1,6 +1,10 @@
 import Redis from 'ioredis';
 import { env } from '../../shared/config/env.js';
 import { logger } from '../../shared/utils/logger.js';
+import fs from 'fs';
+import path from 'path';
+
+const DUMP_FILE = path.join(process.cwd(), 'redis-dump.json');
 
 class RedisClient {
     private client: Redis | null = null;
@@ -11,6 +15,7 @@ class RedisClient {
         if (!env.REDIS_URL || env.REDIS_URL.includes('undefined') || env.REDIS_URL.startsWith('memory:')) {
             logger.warn('⚠️ REDIS_URL set to memory mode. Using in-memory cache (No Pub/Sub).');
             this.useMemory = true;
+            this.loadDump();
             return;
         }
 
@@ -19,6 +24,8 @@ class RedisClient {
             retryStrategy: (times) => {
                 if (times > 3) {
                     logger.warn('⚠️ Redis connection failed after retries. Using in-memory cache.');
+                    this.useMemory = true;
+                    this.loadDump(); // Load dump if falling back
                     return null;
                 }
                 return Math.min(times * 50, 2000);
@@ -31,8 +38,34 @@ class RedisClient {
             if (!this.useMemory) {
                 logger.warn('⚠️ Redis unreachable, switching to temporary in-memory storage.');
                 this.useMemory = true;
+                this.loadDump(); // Load dump if falling back
             }
         });
+    }
+
+    private loadDump() {
+        try {
+            if (fs.existsSync(DUMP_FILE)) {
+                const data = fs.readFileSync(DUMP_FILE, 'utf-8');
+                const json = JSON.parse(data);
+                for (const [key, value] of Object.entries(json)) {
+                    this.memoryCache.set(key, value as string);
+                }
+                logger.info(`💾 Loaded ${this.memoryCache.size} keys from redis-dump.json`);
+            }
+        } catch (e) {
+            logger.error('Failed to load redis dump', e);
+        }
+    }
+
+    private saveDump() {
+        if (!this.useMemory) return;
+        try {
+            const obj = Object.fromEntries(this.memoryCache);
+            fs.writeFileSync(DUMP_FILE, JSON.stringify(obj, null, 2));
+        } catch (e) {
+            logger.error('Failed to save redis dump', e);
+        }
     }
 
     public getClient() {
@@ -43,8 +76,12 @@ class RedisClient {
         const serialized = JSON.stringify(value);
         if (this.useMemory || !this.client) {
             this.memoryCache.set(key, serialized);
+            this.saveDump(); // Persist immediately
             if (ttlSeconds) {
-                setTimeout(() => this.memoryCache.delete(key), ttlSeconds * 1000);
+                setTimeout(() => {
+                    this.memoryCache.delete(key);
+                    this.saveDump();
+                }, ttlSeconds * 1000);
             }
         } else {
             try {
@@ -56,6 +93,7 @@ class RedisClient {
             } catch (e) {
                 this.useMemory = true;
                 this.memoryCache.set(key, serialized);
+                this.saveDump();
             }
         }
     }
@@ -81,11 +119,13 @@ class RedisClient {
     async del(key: string): Promise<void> {
         if (this.useMemory || !this.client) {
             this.memoryCache.delete(key);
+            this.saveDump();
         } else {
             try {
                 await this.client.del(key);
             } catch (e) {
                 this.memoryCache.delete(key);
+                this.saveDump();
             }
         }
     }
@@ -115,7 +155,7 @@ class RedisClient {
      */
     async publish(channel: string, message: any): Promise<void> {
         if (this.useMemory || !this.client) {
-            logger.warn('⚠️ Pub/Sub not available in memory mode');
+            // logger.warn('⚠️ Pub/Sub not available in memory mode');
             return;
         }
 
@@ -134,7 +174,7 @@ class RedisClient {
      */
     async subscribe(channel: string, handler: (message: any) => void): Promise<void> {
         if (this.useMemory || !this.client) {
-            logger.warn('⚠️ Pub/Sub not available in memory mode');
+            // logger.warn('⚠️ Pub/Sub not available in memory mode');
             return;
         }
 

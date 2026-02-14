@@ -355,6 +355,20 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         callId = existingCall.id;
                         sessionData = existingSession;
 
+                        // Check if we have a buffered lead name to apply
+                        if (bufferedLeadName) {
+                            sessionData.leadName = bufferedLeadName;
+                            logger.info(`👤 Applied buffered lead name to resumed session: ${bufferedLeadName}`);
+                            await redis.set(`call:${callId}:session`, sessionData, 3600);
+                        } else if (!sessionData.leadName) {
+                            // Try to see if it was saved in Redis while we were processing
+                            const refreshedSession = await redis.get<CallSession>(`call:${callId}:session`);
+                            if (refreshedSession?.leadName) {
+                                sessionData.leadName = refreshedSession.leadName;
+                                logger.info(`👤 Recovered lead name from Redis race condition: ${sessionData.leadName}`);
+                            }
+                        }
+
                         // Re-subscribe to commands
                         commandHandler = (command: any) => {
                             if (command.type === 'whisper') {
@@ -372,6 +386,14 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                             }
                         };
                         await redis.subscribe(`call:${callId}:commands`, commandHandler);
+
+                        // Check if we have a buffered lead name to apply
+                        if (bufferedLeadName) {
+                            sessionData.leadName = bufferedLeadName;
+                            logger.info(`👤 Applied buffered lead name to resumed session: ${bufferedLeadName}`);
+                            // Update Redis with the new name
+                            await redis.set(`call:${callId}:session`, sessionData, 3600);
+                        }
 
                         // Confirm to client
                         if (ws.readyState === WebSocket.OPEN) {
@@ -486,7 +508,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             if (!currentCallId || !sessionData) {
                 // Try reload from redis if local var missing (reconnection scenario)
                 if (currentCallId) {
-                    sessionData = await redis.get(`call:${currentCallId}`);
+                    sessionData = await redis.get(`call:${currentCallId}:session`);
                 }
                 if (!sessionData) return;
             }
@@ -514,7 +536,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             }
 
             // 4. Persist State
-            await redis.set(`call:${currentCallId}`, sessionData, 3600 * 4);
+            await redis.set(`call:${currentCallId}:session`, sessionData, 3600 * 4);
         }
 
         async function handleCallEnd(currentCallId: string | null, ws: WebSocket) {
@@ -604,7 +626,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 });
             }
             // 7. Clear Redis
-            await redis.del(`call:${currentCallId}`);
+            await redis.del(`call:${currentCallId}:session`);
         }
 
         async function handleAudioChunk(event: any, ws: WebSocket) {
@@ -668,7 +690,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             }
 
             logger.info(`👤 Lead identified and set in session: ${leadName}`);
-            await redis.set(`call:${currentCallId}`, session, 3600 * 4);
+            await redis.set(`call:${currentCallId}:session`, session, 3600 * 4);
         }
 
         async function handleAudioSegment(event: any, ws: WebSocket) {
@@ -714,6 +736,10 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     const speakerLabel = role === 'seller'
                         ? 'Você'
                         : (sessionData?.leadName || 'Cliente');
+
+                    if (role === 'lead') {
+                        logger.info(`🔍 [Participant Debug] Role: lead. Session LeadName: '${sessionData?.leadName}'. Buffered: '${bufferedLeadName}'. Final Label: '${speakerLabel}'`);
+                    }
 
                     if (role === 'lead' && speakerLabel === 'Cliente') {
                         logger.debug(`🔍 Speaker is 'Cliente'. sessionData.leadName is: ${sessionData?.leadName}. Buffered was: ${bufferedLeadName}`);

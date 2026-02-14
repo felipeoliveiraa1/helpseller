@@ -41,7 +41,7 @@ export default function LivePage() {
     const supabase = createClient();
 
     const fetchActiveCalls = async () => {
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from('calls')
             .select(`
                 *,
@@ -50,6 +50,10 @@ export default function LivePage() {
             `)
             .eq('status', 'ACTIVE')
             .order('started_at', { ascending: false });
+
+        if (error) {
+            console.error('❌ Error fetching active calls:', error);
+        }
 
         if (data) setActiveCalls(data as any);
     };
@@ -89,6 +93,17 @@ export default function LivePage() {
         if (!isMounted || !selectedCall) return;
 
         const connectWS = async () => {
+            // Fetch initial transcripts
+            const { data: callData } = await supabase
+                .from('calls')
+                .select('transcript')
+                .eq('id', selectedCall.id)
+                .single();
+
+            if (callData?.transcript) {
+                setTranscripts(callData.transcript as any[]);
+            }
+
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) return;
             setToken(session.access_token);
@@ -238,11 +253,12 @@ export default function LivePage() {
                             {/* Media Stream Player */}
                             <div className="w-full shrink-0">
                                 {isMounted && selectedCall && token && (
-                                    <MediaStreamPlayer
+                                    /*<MediaStreamPlayer
                                         callId={selectedCall.id}
                                         wsUrl="ws://localhost:3001/ws/manager"
                                         token={token}
-                                    />
+                                    />*/
+                                    <div className="text-center text-gray-500 py-4">Vídeo desativado temporariamente</div>
                                 )}
                             </div>
 

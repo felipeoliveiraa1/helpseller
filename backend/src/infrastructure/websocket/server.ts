@@ -296,6 +296,31 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             logger.error({ err }, '🔌 WS Error');
         });
 
+        // Helper to setup command subscription
+        const setupCommandSubscription = async (targetCallId: string, socket: WebSocket) => {
+            // Cleanup previous if any
+            if (commandHandler) {
+                await redis.unsubscribe(`call:${callId}:commands`, commandHandler);
+            }
+
+            commandHandler = (command: any) => {
+                if (command.type === 'whisper') {
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({
+                            type: 'coach:whisper',
+                            payload: {
+                                source: 'manager',
+                                content: command.content,
+                                urgency: command.urgency,
+                                timestamp: command.timestamp
+                            }
+                        }));
+                    }
+                }
+            };
+            await redis.subscribe(`call:${targetCallId}:commands`, commandHandler);
+        };
+
         // --- Handlers ---
 
         async function handleCallStart(event: any, userId: string, ws: WebSocket) {
@@ -304,7 +329,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
             try {
                 console.log('📞 handleCallStart CALLED with:', event.payload);
-                const { scriptId, platform, leadName } = event.payload;
+                const { scriptId, platform, leadName, externalId } = event.payload;
 
                 // 0. Check if call already exists for this connection (Idempotency)
                 if (callId) {
@@ -331,7 +356,63 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                 const orgId = profile.organization_id;
 
-                // 1.5. Check for EXISTING ACTIVE CALL (Resume Logic)
+                // 1.1. Check for external_id match (Meet ID Reuse)
+                if (externalId) {
+                    const { data: existingExternalCall } = await supabaseAdmin
+                        .from('calls')
+                        .select('id, script_id, platform, transcript, started_at, status')
+                        .eq('user_id', userId)
+                        .eq('external_id', externalId)
+                        .order('started_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (existingExternalCall) {
+                        logger.info(`🔗 Found existing call by External ID (${externalId}): ${existingExternalCall.id}`);
+
+                        // Reactivate if needed
+                        if (existingExternalCall.status !== 'ACTIVE') {
+                            await supabaseAdmin.from('calls')
+                                .update({ status: 'ACTIVE', ended_at: null })
+                                .eq('id', existingExternalCall.id);
+                        }
+
+                        callId = existingExternalCall.id;
+
+                        // Reconstruct Session Data
+                        // Try Redis first
+                        let currentSession = await redis.get(`call:${callId}:session`);
+                        if (!currentSession) {
+                            // Reconstruct from DB
+                            logger.info(`♻️ Reconstructing session from DB for call ${callId}`);
+                            const dbTranscript = existingExternalCall.transcript || [];
+
+                            sessionData = {
+                                callId: callId,
+                                userId: userId,
+                                scriptId: existingExternalCall.script_id || scriptId || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                                transcript: Array.isArray(dbTranscript) ? dbTranscript : [],
+                                currentStep: 0,
+                                startupTime: Date.now(),
+                                leadName: leadName || 'Cliente'
+                            };
+                            await redis.set(`call:${callId}:session`, sessionData, 3600);
+                        } else {
+                            sessionData = currentSession;
+                        }
+
+                        // Subscribe to commands
+                        await setupCommandSubscription(callId, ws);
+
+                        // Confirm
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'call:started', payload: { callId: callId } }));
+                        }
+                        return;
+                    }
+                }
+
+                // 1.5. Check for EXISTING ACTIVE CALL (Resume Logic - Fallback if no externalId)
                 // Look for a call started in the last hour that is still ACTIVE
                 const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
                 const { data: existingCall } = await supabaseAdmin
@@ -372,22 +453,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         }
 
                         // Re-subscribe to commands
-                        commandHandler = (command: any) => {
-                            if (command.type === 'whisper') {
-                                if (ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({
-                                        type: 'coach:whisper',
-                                        payload: {
-                                            source: 'manager',
-                                            content: command.content,
-                                            urgency: command.urgency,
-                                            timestamp: command.timestamp
-                                        }
-                                    }));
-                                }
-                            }
-                        };
-                        await redis.subscribe(`call:${callId}:commands`, commandHandler);
+                        await setupCommandSubscription(callId, ws);
 
                         // Confirm to client
                         if (ws.readyState === WebSocket.OPEN) {
@@ -429,6 +495,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         platform: platform || 'OTHER',
                         status: 'ACTIVE',
                         started_at: new Date().toISOString(),
+                        external_id: externalId
                     })
                     .select()
                     .single();

@@ -165,7 +165,7 @@ async function startTranscription(streamId: string) {
         }).catch(() => { });
 
         // === 6. Start Video + Audio Streaming for Manager using the SAME stream ===
-        await startMediaStreaming(combinedStream); // Re-enabled per user request
+        // await startMediaStreaming(combinedStream); // Re-enabled per user request
 
     } catch (err: any) {
         log('❌ Failed:', err.name, err.message);

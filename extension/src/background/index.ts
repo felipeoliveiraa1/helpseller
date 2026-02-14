@@ -454,10 +454,15 @@ async function startCapture(explicitTabId?: number) {
 
         // 6. Send Call Start Metadata
         if (session?.access_token) {
+            // Extract External ID (Google Meet)
+            const meetIdMatch = tab.url?.match(/meet\.google\.com\/([a-z0-9-]+)/);
+            const externalId = meetIdMatch ? meetIdMatch[1] : null; // e.g. "ssy-uryv-rab"
+
             lastCallStartParams = {
                 platform: urlToPlatform(tab.url),
                 scriptId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', // Script Padrão criado no banco
-                leadName: currentLeadName
+                leadName: currentLeadName,
+                externalId: externalId
             } as any;
 
             console.log('📤 Sending call:start:', lastCallStartParams);

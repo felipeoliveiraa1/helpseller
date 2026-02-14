@@ -171,7 +171,7 @@ export default function LivePage() {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6" suppressHydrationWarning={true}>
             <DashboardHeader title="Torre de Comando (Ao Vivo)" />
 
             <div className="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-12rem)]">
@@ -237,7 +237,7 @@ export default function LivePage() {
                         <>
                             {/* Media Stream Player */}
                             <div className="w-full shrink-0">
-                                {token && (
+                                {isMounted && selectedCall && token && (
                                     <MediaStreamPlayer
                                         callId={selectedCall.id}
                                         wsUrl="ws://localhost:3001/ws/manager"

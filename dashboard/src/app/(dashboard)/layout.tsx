@@ -8,7 +8,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="dark flex h-screen overflow-hidden bg-[#121212] text-white">
+    <div className="dark flex h-screen overflow-hidden bg-[#121212] text-white" suppressHydrationWarning={true}>
       <div className="hidden md:flex">
         <Sidebar />
       </div>

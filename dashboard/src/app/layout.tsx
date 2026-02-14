@@ -28,7 +28,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        suppressHydrationWarning
+        suppressHydrationWarning={true}
         className={`${urbanist.className} antialiased`}
       >
         <Providers>{children}</Providers>

@@ -555,50 +555,18 @@ export default function SimpleSidebar() {
                 )}
             </div>
 
-            {/* Transcription */}
-            <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
-                <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '12px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    📝 Transcrição
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {transcripts.length === 0 ? (
-                        <div style={{ fontSize: '14px', color: '#64748b', fontStyle: 'italic' }}>
-                            Aguardando áudio...
-                        </div>
-                    ) : (
-                        transcripts.map((t, i) => {
-                            const isSeller = t.role === 'seller' || t.speaker === 'Você';
-                            const label = t.speaker ?? (isSeller ? 'Você' : 'Cliente');
-                            return (
-                                <div
-                                    key={i}
-                                    style={{
-                                        alignSelf: isSeller ? 'flex-end' : 'flex-start',
-                                        maxWidth: '85%',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: isSeller ? 'flex-end' : 'flex-start'
-                                    }}
-                                >
-                                    <span style={{ fontSize: '10px', color: '#64748b', marginBottom: '2px', marginLeft: '4px', marginRight: '4px' }}>
-                                        {label}
-                                    </span>
-                                    <div
-                                        style={{
-                                            padding: '8px 12px',
-                                            backgroundColor: isSeller ? '#3b82f6' : '#334155',
-                                            borderRadius: isSeller ? '12px 12px 0 12px' : '12px 12px 12px 0',
-                                            fontSize: '13px',
-                                            lineHeight: '1.5',
-                                            color: '#f1f5f9'
-                                        }}
-                                    >
-                                        {t.text}
-                                    </div>
-                                </div>
-                            );
-                        })
-                    )}
+            {/* IA Status Indicator (transcript hidden — saved to DB only) */}
+            <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    padding: '10px 14px',
+                    backgroundColor: 'rgba(59,130,246,0.1)',
+                    border: '1px solid rgba(59,130,246,0.2)',
+                    borderRadius: '12px',
+                    fontSize: '12px', color: '#93c5fd'
+                }}>
+                    <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#3b82f6', animation: 'pulse 2s infinite' }} />
+                    🧠 IA analisando conversa em tempo real...
                 </div>
             </div>
         </div>

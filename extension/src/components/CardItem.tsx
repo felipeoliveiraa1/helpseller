@@ -66,7 +66,7 @@ export function CardItem({ card, onDismiss }: { card: CoachCard; onDismiss?: (id
                 "relative w-full rounded-lg border p-3 mb-3 transition-all duration-300 transform",
                 getCardStyles(card.type, card.metadata),
                 visible ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
-                (card.type === 'signal' || card.type === 'manager-whisper') && "animate-pulse-border"
+                (card.type === 'signal' || card.type === 'manager-whisper' || card.type === 'objection') && "animate-pulse-border"
             )}
         >
             <div className="flex items-start justify-between mb-1">
@@ -84,9 +84,9 @@ export function CardItem({ card, onDismiss }: { card: CoachCard; onDismiss?: (id
                     )}
                     {card.metadata?.phase && (
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${card.metadata.phase === 'S' ? 'text-cyan-300 bg-cyan-900/50' :
-                                card.metadata.phase === 'P' ? 'text-amber-300 bg-amber-900/50' :
-                                    card.metadata.phase === 'I' ? 'text-red-300 bg-red-900/50' :
-                                        'text-green-300 bg-green-900/50'
+                            card.metadata.phase === 'P' ? 'text-amber-300 bg-amber-900/50' :
+                                card.metadata.phase === 'I' ? 'text-red-300 bg-red-900/50' :
+                                    'text-green-300 bg-green-900/50'
                             }`}>
                             SPIN:{card.metadata.phase}
                         </span>

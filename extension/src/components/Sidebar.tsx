@@ -3,7 +3,7 @@ import { useCoachingStore } from '../stores/coaching-store';
 import { SidebarHeader } from './SidebarHeader';
 import { StageIndicator } from './StageIndicator';
 import { CoachPanel } from './CoachPanel';
-import { TranscriptMini } from './TranscriptMini';
+// TranscriptMini removed — seller focuses only on SPIN coaching tips
 import { NextStepFooter } from './NextStepFooter';
 import { MinimizedBar } from './MinimizedBar';
 
@@ -50,7 +50,7 @@ export default function Sidebar() {
             <SidebarHeader />
             <StageIndicator />
             <CoachPanel />
-            <TranscriptMini transcripts={transcripts} />
+            {/* TranscriptMini removed — CoachPanel is now the primary interface */}
             <NextStepFooter />
         </div>
     );

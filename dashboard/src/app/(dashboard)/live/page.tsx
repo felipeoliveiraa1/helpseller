@@ -324,12 +324,18 @@ export default function LivePage() {
                                         </div>
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                                            <div className="w-12 h-12 rounded-full bg-neon-pink/10 flex items-center justify-center animate-pulse">
-                                                <Clock className="w-6 h-6 text-neon-pink" />
+                                            <div className="w-16 h-16 rounded-full bg-neon-pink/10 flex items-center justify-center">
+                                                <Clock className="w-8 h-8 text-neon-pink animate-spin" style={{ animationDuration: '3s' }} />
                                             </div>
                                             <div>
-                                                <h4 className="text-white font-medium">Aguardando Inteligência</h4>
-                                                <p className="text-xs text-gray-500 mt-1">A IA está analisando a conversa em tempo real...</p>
+                                                <h4 className="text-white font-semibold text-lg">IA Analisando em Tempo Real</h4>
+                                                <p className="text-sm text-gray-400 mt-2 max-w-xs">
+                                                    O resumo estratégico será gerado a cada <strong className="text-neon-pink">20 segundos</strong> com os insights mais relevantes da chamada.
+                                                </p>
+                                                <div className="mt-4 flex items-center justify-center gap-2">
+                                                    <span className="w-2 h-2 rounded-full bg-neon-pink animate-pulse" />
+                                                    <span className="text-xs text-gray-500">Monitorando áudio...</span>
+                                                </div>
                                             </div>
                                         </div>
                                     )}

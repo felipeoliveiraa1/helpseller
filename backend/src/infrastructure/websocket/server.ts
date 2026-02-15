@@ -296,6 +296,34 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 await redis.unsubscribe(`call:${callId}:commands`, commandHandler);
                 commandHandler = null;
             }
+
+            // Finalize call if not explicitly ended (client crash / disconnect)
+            if (callId && sessionData) {
+                try {
+                    const { data: callRow } = await supabaseAdmin
+                        .from('calls')
+                        .select('status')
+                        .eq('id', callId)
+                        .single();
+
+                    if (callRow && (callRow as any).status === 'ACTIVE') {
+                        const endedAt = new Date();
+                        let durationSeconds: number | undefined;
+                        if (sessionData.startedAt) {
+                            durationSeconds = Math.round((endedAt.getTime() - sessionData.startedAt) / 1000);
+                        }
+                        await supabaseAdmin.from('calls').update({
+                            status: 'COMPLETED',
+                            ended_at: endedAt.toISOString(),
+                            duration_seconds: durationSeconds || null,
+                            transcript: sessionData.transcript,
+                        }).eq('id', callId);
+                        logger.info(`🔒 Auto-finalized call ${callId} on disconnect (${durationSeconds}s)`);
+                    }
+                } catch (e: any) {
+                    logger.error({ message: e?.message }, '❌ Failed to auto-finalize call on disconnect');
+                }
+            }
         });
 
         socket.on('error', (err) => {
@@ -620,12 +648,18 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 payload: summary
             }));
 
-            // 5. Update DB
+            // 5. Update DB — compute duration_seconds
+            const endedAt = new Date();
+            let durationSeconds: number | undefined;
+            if (sessionData.startedAt) {
+                durationSeconds = Math.round((endedAt.getTime() - sessionData.startedAt) / 1000);
+            }
+
             await supabaseAdmin.from('calls').update({
                 status: 'COMPLETED',
-                ended_at: new Date().toISOString(),
+                ended_at: endedAt.toISOString(),
+                duration_seconds: durationSeconds || null,
                 transcript: sessionData.transcript, // Save full transcript
-                // summary: summary // If column exists
             }).eq('id', currentCallId);
 
             // 6. Save Summary to specific table

@@ -6,8 +6,7 @@ import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { MediaStreamPlayer } from '@/components/MediaStreamPlayer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Phone, MessageSquare, Clock } from 'lucide-react';
+import { Phone, Clock, Filter, Zap } from 'lucide-react';
 
 const NEON_PINK = '#ff007a';
 const CARD_STYLE = { backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' };
@@ -29,46 +28,78 @@ interface Call {
         lead_sentiment?: string;
         result?: string;
     };
+    objectionCount?: number;
+}
+
+interface TeamMember {
+    id: string;
+    full_name: string;
 }
 
 export default function CallsPage() {
     const [mounted, setMounted] = useState(false);
     const [calls, setCalls] = useState<Call[]>([]);
     const [selectedCall, setSelectedCall] = useState<Call | null>(null);
-    const [whisperMessage, setWhisperMessage] = useState('');
-    const [ws, setWs] = useState<WebSocket | null>(null);
     const [transcripts, setTranscripts] = useState<any[]>([]);
-    const [userRole, setUserRole] = useState<string>('SELLER'); // Default to safe role
+    const [ws, setWs] = useState<WebSocket | null>(null);
+
+    // Filters
+    const [userRole, setUserRole] = useState<string>('SELLER');
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [orgId, setOrgId] = useState<string | null>(null);
+    const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+    const [selectedSeller, setSelectedSeller] = useState<string>('all');
+
     const supabase = createClient();
 
-    // Fetch active calls and user role
+    // Fetch user role, org, team members
     useEffect(() => {
         setMounted(true);
-        const getUserRole = async () => {
+
+        const init = async () => {
             const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: profile } = await supabase
+            if (!user) return;
+
+            setCurrentUserId(user.id);
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role, organization_id')
+                .eq('id', user.id)
+                .single();
+
+            const role = (profile as any)?.role || 'SELLER';
+            const org = (profile as any)?.organization_id || null;
+            setUserRole(role);
+            setOrgId(org);
+
+            // If manager, load team members for filter
+            if (role !== 'SELLER' && org) {
+                const { data: members } = await supabase
                     .from('profiles')
-                    .select('role')
-                    .eq('id', user.id)
-                    .single();
-                if (profile) setUserRole((profile as any).role);
+                    .select('id, full_name')
+                    .eq('organization_id', org)
+                    .order('full_name');
+
+                setTeamMembers((members as any[]) || []);
             }
         };
-        getUserRole();
-        fetchActiveCalls();
 
-        // Poll for updates every 5 seconds
-        const interval = setInterval(() => {
-            fetchActiveCalls();
-        }, 5000);
-
-        return () => clearInterval(interval);
+        init();
     }, []);
 
-    const fetchActiveCalls = async () => {
-        // ... (existing logs removed for brevity)
-        const { data, error } = await supabase
+    // Fetch calls whenever filter changes
+    useEffect(() => {
+        if (!mounted) return;
+        fetchCalls();
+        const interval = setInterval(fetchCalls, 8000);
+        return () => clearInterval(interval);
+    }, [mounted, selectedSeller, currentUserId, orgId, userRole]);
+
+    const fetchCalls = async () => {
+        if (!currentUserId) return;
+
+        let query = supabase
             .from('calls')
             .select(`
                 *,
@@ -79,6 +110,21 @@ export default function CallsPage() {
             .in('status', ['ACTIVE', 'COMPLETED'])
             .order('started_at', { ascending: false })
             .limit(50);
+
+        // Apply filters
+        if (userRole === 'SELLER') {
+            // Sellers only see their own calls
+            query = query.eq('user_id', currentUserId);
+        } else {
+            // Managers: filter by org
+            if (orgId) query = query.eq('organization_id', orgId);
+            // Optionally filter by selected seller
+            if (selectedSeller !== 'all') {
+                query = query.eq('user_id', selectedSeller);
+            }
+        }
+
+        const { data, error } = await query;
 
         if (!error && data) {
             const formatted = (data as any[]).map(c => ({
@@ -102,8 +148,6 @@ export default function CallsPage() {
             );
 
             websocket.onopen = () => {
-                console.log('Manager WebSocket connected');
-                // Join the call
                 websocket.send(JSON.stringify({
                     type: 'manager:join',
                     payload: { callId: selectedCall.id }
@@ -112,23 +156,13 @@ export default function CallsPage() {
 
             websocket.onmessage = (event) => {
                 const message = JSON.parse(event.data);
-
                 if (message.type === 'transcript:stream') {
                     setTranscripts(prev => [...prev, message.payload]);
                 }
-
-                if (message.type === 'manager:joined') {
-                    console.log('Joined call:', message.payload.callId);
-                }
             };
 
-            websocket.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
-
-            websocket.onclose = () => {
-                console.log('Manager WebSocket disconnected');
-            };
+            websocket.onerror = () => { };
+            websocket.onclose = () => { };
 
             setWs(websocket);
         };
@@ -136,40 +170,44 @@ export default function CallsPage() {
         connectWebSocket();
 
         return () => {
-            if (ws) {
-                ws.close();
-            }
+            if (ws) ws.close();
         };
     }, [selectedCall]);
-
-    const sendWhisper = () => {
-        if (!ws || !whisperMessage.trim()) return;
-
-        ws.send(JSON.stringify({
-            type: 'manager:whisper',
-            payload: {
-                content: whisperMessage,
-                urgency: 'normal'
-            }
-        }));
-
-        setWhisperMessage('');
-    };
 
     const formatDuration = (startedAt: string, endedAt?: string) => {
         const start = new Date(startedAt).getTime();
         const end = endedAt ? new Date(endedAt).getTime() : Date.now();
         const diff = Math.floor((end - start) / 1000);
-
         const minutes = Math.floor(diff / 60);
         const seconds = diff % 60;
-
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     };
+
+    if (!mounted) return null;
 
     return (
         <div className="space-y-6" suppressHydrationWarning={true}>
             <DashboardHeader title="Chamadas" />
+
+            {/* Seller Filter (Manager only) */}
+            {userRole !== 'SELLER' && teamMembers.length > 0 && (
+                <div className="flex items-center gap-3 px-1">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <select
+                        value={selectedSeller}
+                        onChange={e => setSelectedSeller(e.target.value)}
+                        className="bg-[#1e1e1e] border border-white/10 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-neon-pink/50 appearance-none cursor-pointer min-w-[200px]"
+                        style={{ backgroundImage: 'url("data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3e%3cpath stroke=\'%236b7280\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3e%3c/svg%3e")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem' }}
+                    >
+                        <option value="all">Todos os vendedores</option>
+                        {teamMembers.map(m => (
+                            <option key={m.id} value={m.id}>{m.full_name || 'Sem nome'}</option>
+                        ))}
+                    </select>
+                    <span className="text-xs text-gray-500">{calls.length} chamada{calls.length !== 1 ? 's' : ''}</span>
+                </div>
+            )}
+
             <div className="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-12rem)]">
                 {/* Calls List Sidebar */}
                 <div
@@ -183,7 +221,7 @@ export default function CallsPage() {
                     <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide">
                         {calls.length === 0 ? (
                             <div className="text-center text-gray-500 py-8 text-sm" suppressHydrationWarning={true}>
-                                {mounted ? 'Nenhuma chamada encontrada' : ''}
+                                Nenhuma chamada encontrada
                             </div>
                         ) : (
                             calls.map((call) => (
@@ -218,16 +256,20 @@ export default function CallsPage() {
                                             </span>
                                         )}
                                     </div>
-                                    <div className="mt-2 flex items-center text-xs text-gray-500">
+                                    <div className="mt-2 flex items-center text-xs text-gray-500" suppressHydrationWarning={true}>
                                         <Clock className="w-3 h-3 mr-1 shrink-0" />
-                                        {new Date(call.started_at).toLocaleTimeString()} - {new Date(call.started_at).toLocaleDateString()}
+                                        <span suppressHydrationWarning={true}>
+                                            {new Date(call.started_at).toLocaleTimeString()} - {new Date(call.started_at).toLocaleDateString()}
+                                        </span>
                                     </div>
-                                    {call.status === 'COMPLETED' && call.summary?.lead_sentiment && (
+                                    {call.status === 'COMPLETED' && (
                                         <div className="mt-2 text-xs flex items-center gap-1 flex-wrap">
-                                            <span className="px-2 py-0.5 rounded bg-white/10 text-gray-400">
-                                                {call.summary.lead_sentiment}
-                                            </span>
-                                            {call.summary.result && (
+                                            {call.summary?.lead_sentiment && (
+                                                <span className="px-2 py-0.5 rounded bg-white/10 text-gray-400">
+                                                    {call.summary.lead_sentiment}
+                                                </span>
+                                            )}
+                                            {call.summary?.result && (
                                                 <span className="px-2 py-0.5 rounded bg-white/10 text-gray-400">
                                                     {call.summary.result}
                                                 </span>
@@ -237,7 +279,6 @@ export default function CallsPage() {
                                 </div>
                             ))
                         )}
-
                     </div>
                 </div>
 
@@ -291,7 +332,6 @@ export default function CallsPage() {
                                         )}
                                     </CardContent>
                                 </Card>
-
                             </div>
                         </div>
                     )}

@@ -911,180 +911,181 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             }
         }
 
-        // ========================================
-        // MANAGER WEBSOCKET ROUTE - WHISPER SYSTEM
-        // ========================================
+    }); // END OF /ws/call handler
 
-        fastify.get('/ws/manager', { websocket: true }, async (socket, req) => {
-            logger.info('👔 Manager WebSocket connection attempt');
+    // ========================================
+    // MANAGER WEBSOCKET ROUTE - WHISPER SYSTEM
+    // ========================================
 
-            const token = (req.query as any).token;
-            if (!token) {
-                socket.close(1008, 'Token required');
-                return;
-            }
+    fastify.get('/ws/manager', { websocket: true }, async (socket, req) => {
+        logger.info('👔 Manager WebSocket connection attempt');
 
-            const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-            if (error || !user) {
-                socket.close(1008, 'Invalid token');
-                return;
-            }
+        const token = (req.query as any).token;
+        if (!token) {
+            socket.close(1008, 'Token required');
+            return;
+        }
 
-            // TODO: Verify user is actually a manager/has manager permissions
-            // For now, all authenticated users can access
+        const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+        if (error || !user) {
+            socket.close(1008, 'Invalid token');
+            return;
+        }
 
-            logger.info(`✅ Manager authenticated: ${user.id}`);
+        // TODO: Verify user is actually a manager/has manager permissions
+        // For now, all authenticated users can access
 
-            let subscribedCallId: string | null = null;
-            let streamHandler: ((message: any) => void) | null = null;
-            let mediaHandler: ((message: any) => void) | null = null; // NEW: For video streaming
-            let liveSummaryHandler: ((message: any) => void) | null = null; // NEW: For live summaries
+        logger.info(`✅ Manager authenticated: ${user.id}`);
 
-            socket.on('message', async (message: string) => {
-                try {
-                    const event = JSON.parse(message.toString());
+        let subscribedCallId: string | null = null;
+        let streamHandler: ((message: any) => void) | null = null;
+        let mediaHandler: ((message: any) => void) | null = null; // NEW: For video streaming
+        let liveSummaryHandler: ((message: any) => void) | null = null; // NEW: For live summaries
 
-                    switch (event.type) {
-                        case 'manager:join':
-                            // Manager wants to join/monitor a specific call
-                            const { callId } = event.payload || {};
-                            if (!callId) {
-                                socket.send(JSON.stringify({
-                                    type: 'error',
-                                    payload: { message: 'callId is required' }
-                                }));
-                                return;
-                            }
+        socket.on('message', async (message: string) => {
+            try {
+                const event = JSON.parse(message.toString());
 
-                            // Unsubscribe from previous call if any
-                            if (subscribedCallId && streamHandler) {
-                                await redis.unsubscribe(`call:${subscribedCallId}:stream`, streamHandler);
-                            }
-                            if (subscribedCallId && mediaHandler) {
-                                await redis.unsubscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
-                            }
-                            if (subscribedCallId && liveSummaryHandler) {
-                                await redis.unsubscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
-                            }
-
-                            // Subscribe to new call's transcript stream
-                            subscribedCallId = callId;
-                            streamHandler = (transcriptData: any) => {
-                                // Forward transcript to manager
-                                socket.send(JSON.stringify({
-                                    type: 'transcript:stream',
-                                    payload: transcriptData
-                                }));
-                            };
-
-                            await redis.subscribe(`call:${subscribedCallId}:stream`, streamHandler);
-
-                            // NEW: Subscribe to media stream (video + audio)
-                            mediaHandler = (mediaData: any) => {
-                                // Forward media chunk to manager
-                                socket.send(JSON.stringify({
-                                    type: 'media:chunk',
-                                    payload: mediaData
-                                }));
-                            };
-
-                            await redis.subscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
-
-                            // NEW: Subscribe to live summary
-                            liveSummaryHandler = async (summaryData: any) => {
-                                // Send to manager if valid
-                                if (summaryData) {
-                                    logger.info({ summary: summaryData }, '📊 Broadcasting Live Summary');
-                                    socket.send(JSON.stringify({
-                                        type: 'call:live_summary',
-                                        payload: summaryData
-                                    }));
-                                }
-                            };
-                            await redis.subscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
-
-                            // Check for cached media header and send immediately
-                            const cachedHeader = await redis.get(`call:${callId}:media_header`);
-                            if (cachedHeader) {
-                                logger.info(`📼 Sending cached media header to manager for call ${callId}`);
-                                socket.send(JSON.stringify({
-                                    type: 'media:chunk', // Critical for MediaStreamPlayer
-                                    payload: JSON.parse(cachedHeader)
-                                }));
-                            } else {
-                                logger.warn(`⚠️ No media header cached for call ${callId}`);
-                            }
-
-                            logger.info(`👔 Manager ${user.id} joined call ${callId} (transcript + media)`);
-
+                switch (event.type) {
+                    case 'manager:join':
+                        // Manager wants to join/monitor a specific call
+                        const { callId } = event.payload || {};
+                        if (!callId) {
                             socket.send(JSON.stringify({
-                                type: 'manager:joined',
-                                payload: { callId }
+                                type: 'error',
+                                payload: { message: 'callId is required' }
                             }));
-                            break;
+                            return;
+                        }
 
-                        case 'manager:whisper':
-                            // Manager sends a coaching tip/whisper to the seller
-                            if (!subscribedCallId) {
-                                socket.send(JSON.stringify({
-                                    type: 'error',
-                                    payload: { message: 'Not subscribed to any call' }
-                                }));
-                                return;
-                            }
+                        // Unsubscribe from previous call if any
+                        if (subscribedCallId && streamHandler) {
+                            await redis.unsubscribe(`call:${subscribedCallId}:stream`, streamHandler);
+                        }
+                        if (subscribedCallId && mediaHandler) {
+                            await redis.unsubscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
+                        }
+                        if (subscribedCallId && liveSummaryHandler) {
+                            await redis.unsubscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
+                        }
 
-                            const { content, urgency = 'normal' } = event.payload || {};
-                            if (!content) {
-                                socket.send(JSON.stringify({
-                                    type: 'error',
-                                    payload: { message: 'content is required' }
-                                }));
-                                return;
-                            }
-
-                            // Publish whisper to the command channel
-                            await redis.publish(`call:${subscribedCallId}:commands`, {
-                                type: 'whisper',
-                                content,
-                                urgency,
-                                managerId: user.id,
-                                timestamp: Date.now()
-                            });
-
-                            logger.info(`💬 Manager ${user.id} sent whisper to call ${subscribedCallId}`);
-
+                        // Subscribe to new call's transcript stream
+                        subscribedCallId = callId;
+                        streamHandler = (transcriptData: any) => {
+                            // Forward transcript to manager
                             socket.send(JSON.stringify({
-                                type: 'whisper:sent',
-                                payload: { callId: subscribedCallId }
+                                type: 'transcript:stream',
+                                payload: transcriptData
                             }));
-                            break;
+                        };
 
-                        default:
-                            logger.warn(`Unknown event type from manager: ${event.type}`);
-                    }
-                } catch (err: any) {
-                    logger.error({ error: err }, '❌ Error handling manager message');
-                }
-            });
+                        await redis.subscribe(`call:${subscribedCallId}:stream`, streamHandler);
 
-            socket.on('close', async (code, reason) => {
-                logger.info({ code, reason: reason?.toString() }, '👔 Manager WS Disconnected');
+                        // NEW: Subscribe to media stream (video + audio)
+                        mediaHandler = (mediaData: any) => {
+                            // Forward media chunk to manager
+                            socket.send(JSON.stringify({
+                                type: 'media:chunk',
+                                payload: mediaData
+                            }));
+                        };
 
-                // Cleanup subscriptions
-                if (subscribedCallId && streamHandler) {
-                    await redis.unsubscribe(`call:${subscribedCallId}:stream`, streamHandler);
-                }
-                if (subscribedCallId && mediaHandler) {
-                    await redis.unsubscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
-                }
-                if (subscribedCallId && liveSummaryHandler) {
-                    await redis.unsubscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
-                }
-            });
+                        await redis.subscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
 
-            socket.on('error', (err) => {
-                logger.error({ err }, '👔 Manager WS Error');
-            });
+                        // NEW: Subscribe to live summary
+                        liveSummaryHandler = async (summaryData: any) => {
+                            // Send to manager if valid
+                            if (summaryData) {
+                                logger.info({ summary: summaryData }, '📊 Broadcasting Live Summary');
+                                socket.send(JSON.stringify({
+                                    type: 'call:live_summary',
+                                    payload: summaryData
+                                }));
+                            }
+                        };
+                        await redis.subscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
+
+                        // Check for cached media header and send immediately
+                        const cachedHeader = await redis.get(`call:${callId}:media_header`);
+                        if (cachedHeader) {
+                            logger.info(`📼 Sending cached media header to manager for call ${callId}`);
+                            socket.send(JSON.stringify({
+                                type: 'media:chunk', // Critical for MediaStreamPlayer
+                                payload: JSON.parse(cachedHeader)
+                            }));
+                        } else {
+                            logger.warn(`⚠️ No media header cached for call ${callId}`);
+                        }
+
+                        logger.info(`👔 Manager ${user.id} joined call ${callId} (transcript + media)`);
+
+                        socket.send(JSON.stringify({
+                            type: 'manager:joined',
+                            payload: { callId }
+                        }));
+                        break;
+
+                    case 'manager:whisper':
+                        // Manager sends a coaching tip/whisper to the seller
+                        if (!subscribedCallId) {
+                            socket.send(JSON.stringify({
+                                type: 'error',
+                                payload: { message: 'Not subscribed to any call' }
+                            }));
+                            return;
+                        }
+
+                        const { content, urgency = 'normal' } = event.payload || {};
+                        if (!content) {
+                            socket.send(JSON.stringify({
+                                type: 'error',
+                                payload: { message: 'content is required' }
+                            }));
+                            return;
+                        }
+
+                        // Publish whisper to the command channel
+                        await redis.publish(`call:${subscribedCallId}:commands`, {
+                            type: 'whisper',
+                            content,
+                            urgency,
+                            managerId: user.id,
+                            timestamp: Date.now()
+                        });
+
+                        logger.info(`💬 Manager ${user.id} sent whisper to call ${subscribedCallId}`);
+
+                        socket.send(JSON.stringify({
+                            type: 'whisper:sent',
+                            payload: { callId: subscribedCallId }
+                        }));
+                        break;
+
+                    default:
+                        logger.warn(`Unknown event type from manager: ${event.type}`);
+                }
+            } catch (err: any) {
+                logger.error({ error: err }, '❌ Error handling manager message');
+            }
+        });
+
+        socket.on('close', async (code, reason) => {
+            logger.info({ code, reason: reason?.toString() }, '👔 Manager WS Disconnected');
+
+            // Cleanup subscriptions
+            if (subscribedCallId && streamHandler) {
+                await redis.unsubscribe(`call:${subscribedCallId}:stream`, streamHandler);
+            }
+            if (subscribedCallId && mediaHandler) {
+                await redis.unsubscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
+            }
+            if (subscribedCallId && liveSummaryHandler) {
+                await redis.unsubscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
+            }
+        });
+
+        socket.on('error', (err) => {
+            logger.error({ err }, '👔 Manager WS Error');
         });
     });
 }

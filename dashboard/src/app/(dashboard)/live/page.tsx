@@ -27,6 +27,13 @@ interface Call {
     };
 }
 
+export interface LiveSummary {
+    status: string;
+    summary_points: string[];
+    sentiment: 'Positive' | 'Neutral' | 'Negative' | 'Tense';
+    spin_phase?: string;
+}
+
 export default function LivePage() {
     // 1. ESTADOS
     const [isMounted, setIsMounted] = useState(false);
@@ -34,6 +41,8 @@ export default function LivePage() {
     const [selectedCall, setSelectedCall] = useState<Call | null>(null);
     const [whisperMessage, setWhisperMessage] = useState('');
     const [transcripts, setTranscripts] = useState<any[]>([]);
+    const [liveSummary, setLiveSummary] = useState<LiveSummary | null>(null);
+    const [lastSummaryUpdate, setLastSummaryUpdate] = useState<number | null>(null);
     const [ws, setWs] = useState<WebSocket | null>(null);
     const [role, setRole] = useState<string | null>(null);
     const [token, setToken] = useState<string | null>(null);
@@ -128,13 +137,19 @@ export default function LivePage() {
                 if (msg.type === 'transcript:stream') {
                     setTranscripts(prev => [...prev, msg.payload]);
                 }
+                if (msg.type === 'call:live_summary') {
+                    setLiveSummary(msg.payload);
+                    setLastSummaryUpdate(Date.now());
+                }
             };
 
             setWs(socket);
         };
 
         connectWS();
+        connectWS();
         setTranscripts([]); // Reset transcripts on change
+        setLiveSummary(null); // Reset summary
 
         return () => {
             if (ws) ws.close();
@@ -253,11 +268,6 @@ export default function LivePage() {
                             {/* Media Stream Player */}
                             <div className="w-full shrink-0">
                                 {isMounted && selectedCall && token && (
-                                    /*<MediaStreamPlayer
-                                        callId={selectedCall.id}
-                                        wsUrl="ws://localhost:3001/ws/manager"
-                                        token={token}
-                                    />*/
                                     <div className="text-center text-gray-500 py-4">Vídeo desativado temporariamente</div>
                                 )}
                             </div>
@@ -275,27 +285,57 @@ export default function LivePage() {
                                     </div>
                                 </CardHeader>
                                 <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
-                                    {transcripts.length === 0 ? (
-                                        <p className="text-center text-sm text-gray-500 py-8">
-                                            Aguardando áudio da chamada...
-                                        </p>
-                                    ) : (
-                                        transcripts.map((msg, idx) => (
-                                            <div key={idx} className={`flex ${msg.role === 'lead' ? 'justify-start' : 'justify-end'}`}>
-                                                <div className={`max-w-[85%] p-3 rounded-xl text-sm ${msg.role === 'lead'
-                                                    ? 'bg-white/10 border border-white/10 rounded-tl-none'
-                                                    : 'bg-neon-pink/10 border border-neon-pink/20 rounded-tr-none'
+                                    {/* MANAGER VIEW: Only Live Summaries */}
+                                    {liveSummary ? (
+                                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">Insights IA</span>
+                                                {lastSummaryUpdate && (
+                                                    <span className="text-[10px] text-green-400 bg-green-900/30 border border-green-500/20 px-2 py-0.5 rounded-full animate-pulse">
+                                                        ✓ Atualizado agora
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex gap-2 mb-2">
+                                                <div className="bg-purple-900/40 border border-purple-500/30 rounded-lg px-3 py-1 text-xs text-purple-200">
+                                                    Status: {liveSummary.status}
+                                                </div>
+                                                <div className="bg-blue-900/40 border border-blue-500/30 rounded-lg px-3 py-1 text-xs text-blue-200">
+                                                    SPIN: {liveSummary.spin_phase || 'Analisando...'}
+                                                </div>
+                                                <div className={`border rounded-lg px-3 py-1 text-xs ${liveSummary.sentiment === 'Positive' ? 'bg-green-900/40 border-green-500/30 text-green-200' :
+                                                    liveSummary.sentiment === 'Negative' ? 'bg-red-900/40 border-red-500/30 text-red-200' :
+                                                        'bg-gray-800 border-gray-600 text-gray-300'
                                                     }`}>
-                                                    <p className="font-bold text-[10px] text-gray-400 mb-1 uppercase">
-                                                        {msg.speaker || (msg.role === 'lead' ? 'Cliente' : 'Você')}
-                                                    </p>
-                                                    <span className="text-white">{msg.text}</span>
+                                                    {liveSummary.sentiment}
                                                 </div>
                                             </div>
-                                        ))
+
+                                            <div className="bg-black/40 rounded-xl p-4 border border-white/5">
+                                                <ul className="space-y-2">
+                                                    {liveSummary.summary_points?.map((point, i) => (
+                                                        <li key={i} className="text-sm text-gray-300 flex gap-2">
+                                                            <span className="text-neon-pink mt-1">•</span>
+                                                            {point}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
+                                            <div className="w-12 h-12 rounded-full bg-neon-pink/10 flex items-center justify-center animate-pulse">
+                                                <Clock className="w-6 h-6 text-neon-pink" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-white font-medium">Aguardando Inteligência</h4>
+                                                <p className="text-xs text-gray-500 mt-1">A IA está analisando a conversa em tempo real...</p>
+                                            </div>
+                                        </div>
                                     )}
                                 </CardContent>
                             </Card>
+
 
                             <Card className="shrink-0 rounded-[24px] border shadow-none" style={CARD_STYLE}>
                                 <CardContent className="p-4 flex flex-col sm:flex-row gap-4">

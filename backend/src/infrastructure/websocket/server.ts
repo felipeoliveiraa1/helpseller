@@ -19,13 +19,8 @@ function debugLog(msg: string) {
 // AI Imports
 import { CoachEngine } from '../ai/coach-engine.js';
 import { OpenAIClient } from '../ai/openai-client.js';
-import { ObjectionMatcher } from '../ai/objection-matcher.js';
-import { TriggerDetector } from '../ai/trigger-detector.js';
-import { PromptBuilder } from '../ai/prompt-builder.js';
-import { ResponseParser } from '../ai/response-parser.js';
 import { PostCallAnalyzer } from '../ai/post-call-analyzer.js';
 import { WhisperClient } from '../ai/whisper-client.js';
-import { ObjectionSuccessTracker } from '../ai/objection-success-tracker.js';
 import { SummaryAgent } from '../ai/summary-agent.js';
 
 // Types
@@ -162,19 +157,7 @@ function shouldDiscard(
 
 // Initialize Services (Singleton pattern to avoid memory leaks)
 const openaiClient = new OpenAIClient();
-const objectionMatcher = new ObjectionMatcher();
-// Initialize successTracker first so it's available for injection
-const successTracker = new ObjectionSuccessTracker(supabaseAdmin);
-
-const coachEngine = new CoachEngine(
-    new TriggerDetector(),
-    objectionMatcher,
-    new PromptBuilder(),
-    openaiClient,
-    new ResponseParser(),
-    successTracker
-);
-
+const coachEngine = new CoachEngine(openaiClient);
 const postCallAnalyzer = new PostCallAnalyzer(openaiClient);
 const whisperClient = new WhisperClient();
 const summaryAgent = new SummaryAgent(openaiClient);
@@ -626,49 +609,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             // 2. Generate Summary
             const summary = await postCallAnalyzer.generate(sessionData, scriptName, ["Intro", "Discovery", "Close"]);
 
-            // 3. NEW: Track conversion feedback if call was successful
-            if (summary && summary.result === 'CONVERTED' && objections && objections.length > 0) {
-                try {
-                    // Extract which objections were faced
-                    const objectionIds = postCallAnalyzer.extractObjectionIds(
-                        summary,
-                        objectionMatcher,
-                        objections
-                    );
-
-                    if (objectionIds.length > 0) {
-                        logger.info(`🎯 Tracking ${objectionIds.length} successful objections for script ${sessionData.scriptId}`);
-                        await successTracker.trackCallResult(
-                            sessionData.scriptId,
-                            objectionIds,
-                            true // wasConverted = true
-                        );
-                    }
-                } catch (trackingError) {
-                    logger.error({ error: trackingError }, 'Failed to track objection success');
-                    // Don't fail the entire call end flow if tracking fails
-                }
-            } else if (summary && summary.result === 'LOST' && objections && objections.length > 0) {
-                // Also track losses to get accurate success rates
-                try {
-                    const objectionIds = postCallAnalyzer.extractObjectionIds(
-                        summary,
-                        objectionMatcher,
-                        objections
-                    );
-
-                    if (objectionIds.length > 0) {
-                        logger.info(`📉 Tracking ${objectionIds.length} unsuccessful objections for script ${sessionData.scriptId}`);
-                        await successTracker.trackCallResult(
-                            sessionData.scriptId,
-                            objectionIds,
-                            false // wasConverted = false
-                        );
-                    }
-                } catch (trackingError) {
-                    logger.error({ error: trackingError }, 'Failed to track objection failure');
-                }
-            }
+            // NOTE: Objection success tracking was removed (migrated to AI-context analysis).
+            // The CoachEngine now detects objections via LLM instead of keyword matching.
 
             // 4. Send Summary to Client
             ws.send(JSON.stringify({
@@ -830,55 +772,81 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         }
 
                         // ============================================
-                        // NEW AI LOGIC (MOVED FROM handleTranscript)
-                        // Triggered by audio segment processing
+                        // AI LOGIC: SPIN Coach (10s) + Live Summary (20s)
+                        // Uses 60s sliding window for context
                         // ============================================
 
-                        // 2. TIMING CONTROLLERS
                         const now = Date.now();
-                        const COACH_INTERVAL = 10000; // 10s
+                        const COACH_INTERVAL = 10000;  // 10s
                         const SUMMARY_INTERVAL = 20000; // 20s
+                        const CONTEXT_WINDOW = 60000;   // 60s sliding window
 
-                        // A. SPIN Coach (Every 10s)
+                        // Build 60s sliding window context
+                        const buildContext60s = (): string => {
+                            const cutoff = now - CONTEXT_WINDOW;
+                            return sessionData!.transcript
+                                .filter(t => t.timestamp > cutoff)
+                                .map(t => `${t.speaker === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
+                                .join('\n');
+                        };
+
+                        // A. SPIN Coach (Every 10s) → coach:tip + objection:detected
                         if (!sessionData.lastCoachingAt || (now - sessionData.lastCoachingAt) >= COACH_INTERVAL) {
-                            // Always update timer FIRST to prevent retry storms on failure
                             sessionData.lastCoachingAt = now;
                             try {
-                                logger.info(`🧠 Triggering SPIN Coach for call ${callId}`);
-                                const events = await coachEngine.processTranscriptChunk(transcriptChunk, sessionData);
+                                const context60s = buildContext60s();
+                                logger.info(`🧠 SPIN Coach analyzing ${context60s.length} chars for call ${callId}`);
+                                const spinResult = await coachEngine.analyzeTranscription(context60s);
 
-                                for (const aiEvent of events) {
-                                    if (ws.readyState === WebSocket.OPEN) {
+                                if (spinResult && ws.readyState === WebSocket.OPEN) {
+                                    // Always send the coaching tip
+                                    ws.send(JSON.stringify({
+                                        type: 'COACHING_MESSAGE',
+                                        payload: {
+                                            type: spinResult.objection ? 'objection' : 'tip',
+                                            content: spinResult.tip,
+                                            urgency: spinResult.objection ? 'high' : 'medium',
+                                            metadata: {
+                                                phase: spinResult.phase,
+                                                objection: spinResult.objection
+                                            }
+                                        }
+                                    }));
+
+                                    // If objection detected, also emit objection:detected
+                                    if (spinResult.objection) {
                                         ws.send(JSON.stringify({
-                                            type: 'COACHING_MESSAGE',
-                                            payload: aiEvent
+                                            type: 'objection:detected',
+                                            payload: {
+                                                objection: spinResult.objection,
+                                                phase: spinResult.phase,
+                                                tip: spinResult.tip
+                                            }
                                         }));
-                                    }
-
-                                    if (aiEvent.type === 'stage_change' && aiEvent.currentStep) {
-                                        sessionData.currentStep = aiEvent.currentStep;
+                                        logger.info(`⚡ Objection detected: ${spinResult.objection}`);
                                     }
                                 }
                             } catch (coachError: any) {
-                                logger.error({ message: coachError?.message, stack: coachError?.stack }, '❌ SPIN Coach failed (non-fatal, socket stays alive)');
-                                // Socket stays alive — coaching will retry on the next interval
+                                logger.error({ message: coachError?.message, stack: coachError?.stack }, '❌ SPIN Coach failed (non-fatal)');
                             }
                         }
 
-                        // B. Live Summary (Every 20s)
+                        // B. Live Summary (Every 20s) → managers via Redis
                         if (!sessionData.lastSummaryAt || (now - sessionData.lastSummaryAt) >= SUMMARY_INTERVAL) {
-                            // Always update timer FIRST to prevent retry storms on failure
                             sessionData.lastSummaryAt = now;
                             try {
+                                const context60s = buildContext60s();
                                 logger.info(`📊 Generating Live Summary for call ${callId}`);
-                                const liveSummary = await summaryAgent.generateLiveSummary(sessionData.transcript);
+                                // Pass sliding window as TranscriptChunk[] for the summary agent
+                                const cutoff = now - CONTEXT_WINDOW;
+                                const recentChunks = sessionData!.transcript.filter(t => t.timestamp > cutoff);
+                                const liveSummary = await summaryAgent.generateLiveSummary(recentChunks);
 
                                 if (liveSummary) {
                                     await redis.publish(`call:${callId}:live_summary`, JSON.stringify(liveSummary));
                                 }
                             } catch (summaryError: any) {
-                                logger.error({ message: summaryError?.message, stack: summaryError?.stack }, '❌ Summary Agent failed (non-fatal, socket stays alive)');
-                                // Socket stays alive — summary will retry on the next interval
+                                logger.error({ message: summaryError?.message, stack: summaryError?.stack }, '❌ Summary Agent failed (non-fatal)');
                             }
                         }
                     }

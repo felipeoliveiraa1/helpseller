@@ -211,23 +211,32 @@ export default function SimpleSidebar() {
                     timestamp: msg.data.timestamp
                 });
             } else if (msg.type === 'COACHING_MESSAGE') {
-                // Handle AI coaching from backend -> Create a Card
-                const { content, isTopRecommendation, type, title } = msg.data;
+                // Handle AI coaching from backend → Create a Card
+                const payload = msg.data;
+                const isObjection = payload.type === 'objection' && payload.metadata?.objection;
+                const phase = payload.metadata?.phase || null;
+
+                const phaseLabels: Record<string, string> = {
+                    S: 'Situação', P: 'Problema', I: 'Implicação', N: 'Necessidade'
+                };
 
                 const newCard: CoachCard = {
                     id: Math.random().toString(36).substring(7),
-                    type: type || (isTopRecommendation ? 'tip' : 'signal'),
-                    title: title || (isTopRecommendation ? 'Sugerido' : 'Dica'),
-                    description: content,
+                    type: isObjection ? 'objection' : 'tip',
+                    title: isObjection
+                        ? '⚡ Objeção Detectada'
+                        : `💡 ${phase ? phaseLabels[phase] || 'SPIN' : 'Dica'} — Próximo Passo`,
+                    description: payload.content,
                     timestamp: Date.now(),
                     isDismissed: false,
-                    metadata: msg.data
+                    metadata: {
+                        ...payload.metadata,
+                        urgency: payload.urgency
+                    }
                 };
 
-                setCards(prev => [newCard, ...prev].slice(0, 10)); // Limit to last 10
-
-                // Update temp based on urgency or type if needed
-                if (msg.data.urgency === 'high') setLeadTemp('hot');
+                setCards(prev => [newCard, ...prev].slice(0, 10));
+                if (isObjection || payload.urgency === 'high') setLeadTemp('hot');
             }
         };
         chrome.runtime.onMessage.addListener(listener);

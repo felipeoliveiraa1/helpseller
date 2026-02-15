@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ShoppingCart, Zap, Lightbulb, AlertTriangle, Sparkles, X, Users } from 'lucide-react';
+import { ShoppingCart, Zap, Lightbulb, AlertTriangle, Sparkles, X, Users, Target } from 'lucide-react';
 import { type CoachCard, useCoachingStore } from '../stores/coaching-store';
 import { cn } from '@/lib/utils'; // Assuming we have utils from previous prompt setup or standard vite init
 
@@ -82,6 +82,15 @@ export function CardItem({ card, onDismiss }: { card: CoachCard; onDismiss?: (id
                             URGENTE
                         </span>
                     )}
+                    {card.metadata?.phase && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${card.metadata.phase === 'S' ? 'text-cyan-300 bg-cyan-900/50' :
+                                card.metadata.phase === 'P' ? 'text-amber-300 bg-amber-900/50' :
+                                    card.metadata.phase === 'I' ? 'text-red-300 bg-red-900/50' :
+                                        'text-green-300 bg-green-900/50'
+                            }`}>
+                            SPIN:{card.metadata.phase}
+                        </span>
+                    )}
                 </div>
                 <div className="flex items-center space-x-2">
                     <span className="text-[10px] opacity-50">Just now</span>
@@ -98,6 +107,12 @@ export function CardItem({ card, onDismiss }: { card: CoachCard; onDismiss?: (id
             <p className="text-xs opacity-90 leading-relaxed">
                 {card.description}
             </p>
+            {card.type === 'objection' && card.metadata?.objection && (
+                <div className="mt-2 flex items-center gap-1.5 text-[11px] text-orange-300 bg-orange-950/40 rounded-md px-2 py-1 border border-orange-500/20">
+                    <Target size={12} className="shrink-0" />
+                    <span className="font-medium">Objeção:</span> {card.metadata.objection}
+                </div>
+            )}
         </div>
     );
 }

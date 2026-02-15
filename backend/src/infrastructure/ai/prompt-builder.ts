@@ -1,44 +1,49 @@
-import { CallSession, TriggerResult } from "./coach-engine";
+import { CallSession } from "../websocket/server";
+import { TriggerResult } from "./trigger-detector";
 
 interface Script {
+  name: string;
+  coach_personality: string;
+  coach_tone: string;
+  intervention_level: string;
+  steps: Array<{
+    step_order: number;
     name: string;
-    coach_personality: string;
-    coach_tone: string;
-    intervention_level: string;
-    steps: Array<{
-        step_order: number;
-        name: string;
-        description: string;
-        key_questions: string[];
-        transition_criteria: string;
-        estimated_duration: number;
-    }>;
+    description: string;
+    key_questions: string[];
+    transition_criteria: string;
+    estimated_duration: number;
+  }>;
 }
 
 export class PromptBuilder {
-    build(session: CallSession, trigger: TriggerResult, script: Script) {
-        // Safe defaults for script properties if missing
-        const personality = script.coach_personality || "Strategic and Direct";
-        const tone = script.coach_tone || "Professional";
-        const intervention = script.intervention_level || "Medium";
+  build(session: CallSession, trigger: TriggerResult, script: Script) {
+    // Safe defaults for script properties if missing
+    const personality = script.coach_personality || "Strategic and Direct";
+    const tone = script.coach_tone || "Professional";
+    const intervention = script.intervention_level || "Medium";
 
-        const system = `
-Você é um coach de vendas de elite, invisível, sussurrando no ouvido do vendedor durante uma call ao vivo.
+    const system = `
+Você é um Mentor de Vendas especialista na metodologia SPIN SELLING.
 
 ## SUA PERSONALIDADE
 ${personality}
 Tom: ${tone}
 Nível de intervenção: ${intervention}
 
+## METODOLOGIA SPIN SELLING (OBRIGATÓRIO)
+Analise a fase atual e sugira o PRÓXIMO PASSO com uma pergunta assertiva:
+- S (Situação): Coletar fatos (Use pouco).
+- P (Problema): Descubra dores e insatisfações.
+- I (Implicação): Mostre as consequências graves (aumente a dor).
+- N (Necessidade): Faça o cliente dizer como a solução ajudaria.
+
 ## REGRAS ABSOLUTAS
-1. Seus conselhos são para o VENDEDOR. O lead nunca verá isso.
-2. BREVE: máximo 2-3 frases. Vendedor lê em 2 segundos durante a call.
-3. ESTRATÉGICO: referencie algo ESPECÍFICO da conversa. Nunca genérico.
-4. Se está indo bem, diga. Reforço positivo motiva.
-5. Se está errando, seja direto: "Você está falando demais. Pergunte e ESCUTE."
-6. Sinais de compra: ALERTE COM URGÊNCIA. É hora de fechar.
-7. Nunca sugira manipulação antiética.
-8. Responda em português brasileiro.
+1. Identifique a fase atual (S, P, I ou N).
+2. Sugira APENAS O PRÓXIMO PASSO (ex: "Pergunte sobre o impacto financeiro disso").
+3. EXTREMAMENTE CURTO: Máximo 2 frases. Direto ao ponto.
+4. Se o vendedor estiver falando de solução cedo demais, CORRIJA e mande voltar para Problema/Implicação.
+5. Responda em português brasileiro.
 
 ## SCRIPT DE VENDAS: ${script.name}
 
@@ -71,15 +76,16 @@ Responda APENAS em JSON válido, sem markdown:
     "buyingSignals": ["sinais"]
   },
   "stageChanged": boolean,
+  "spinStage": "Situation" | "Problem" | "Implication" | "Need-Payoff" | "Unknown",
   "shouldSkipResponse": boolean
 }
 `;
 
-        const recentTranscript = session.transcript.slice(-50).map(t =>
-            `[${new Date(t.timestamp).toISOString().split('T')[1].split('.')[0]}] ${t.speaker === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`
-        ).join('\n');
+    const recentTranscript = session.transcript.slice(-50).map(t =>
+      `[${new Date(t.timestamp).toISOString().split('T')[1].split('.')[0]}] ${t.speaker === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`
+    ).join('\n');
 
-        const user = `
+    const user = `
 ## TRANSCRIÇÃO (últimos turnos)
 ${recentTranscript}
 
@@ -92,6 +98,6 @@ ${recentTranscript}
 Analise e dê coaching. Se não há nada útil, retorne shouldSkipResponse: true.
 `;
 
-        return { system, user };
-    }
+    return { system, user };
+  }
 }

@@ -19,6 +19,7 @@ const ResponseSchema = z.object({
         interests: z.array(z.string()),
         buyingSignals: z.array(z.string())
     }).nullable(),
+    spinStage: z.string().optional(),
     stageChanged: z.boolean(),
     shouldSkipResponse: z.boolean()
 });

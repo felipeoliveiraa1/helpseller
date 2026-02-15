@@ -861,6 +861,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         });
                     }
 
+                    // OPTIMIZATION: Transcript is not sent back to seller to save bandwidth & focus
+                    /*
                     ws.send(JSON.stringify({
                         type: 'transcript:chunk',
                         payload: {
@@ -870,6 +872,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                             role
                         }
                     }));
+                    */
                 } else {
                     debugLog(`[SILENCE] Empty transcription`);
                 }

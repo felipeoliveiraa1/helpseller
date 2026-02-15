@@ -54,17 +54,17 @@ export function Sidebar() {
     router.refresh()
   }
 
-  const displayName =
-    mounted && user?.user_metadata?.full_name
-      ? user.user_metadata.full_name
-      : mounted && user?.email?.split('@')[0]
-        ? user.email.split('@')[0]
-        : 'Usuário'
-  const role = (mounted && user?.user_metadata?.role) ?? 'Membro'
+  // Only resolve user data after mount to prevent server/client divergence
+  const displayName = mounted
+    ? (user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuário')
+    : 'Usuário'
+  const role = mounted
+    ? (user?.user_metadata?.role || 'Membro')
+    : 'Membro'
 
   return (
     <aside
-      suppressHydrationWarning
+      suppressHydrationWarning={true}
       className="w-64 shrink-0 bg-black border-r border-white/5 flex flex-col"
       style={{ borderColor: 'rgba(255,255,255,0.05)' }}
     >
@@ -82,48 +82,79 @@ export function Sidebar() {
           CloseIA
         </span>
       </div>
-      <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto scrollbar-hide">
-        {navSections.map((section) => {
-          const filteredItems = section.items.filter((item) => {
-            if (role === 'SELLER') {
-              if (['Scripts', 'Equipe', 'Ao Vivo'].includes(item.name))
-                return false
-            }
-            return true
-          })
-          if (filteredItems.length === 0) return null
-          return (
-            <div key={section.label}>
-              <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-widest first:pt-0">
-                {section.label}
-              </div>
-              <div className="space-y-1">
-                {filteredItems.map((item) => {
-                  const isActive = isActivePath(pathname, item.href)
-                  return (
-                    <Link
+
+      {/* Navigation: render skeleton or real content based on mounted state */}
+      <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto scrollbar-hide" suppressHydrationWarning={true}>
+        {!mounted ? (
+          /* SKELETON STATE — identical on server & client initial render */
+          <div className="space-y-6 pt-2">
+            {navSections.map((section) => (
+              <div key={section.label}>
+                <div className="pb-2 px-4 text-[10px] font-bold text-gray-700 uppercase tracking-widest">
+                  {section.label}
+                </div>
+                <div className="space-y-1">
+                  {section.items.map((item) => (
+                    <div
                       key={item.name}
-                      href={item.href}
-                      className={cn(
-                        'flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors',
-                        isActive
-                          ? 'bg-neon-pink/10 text-neon-pink'
-                          : 'text-gray-400 hover:text-white'
-                      )}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl"
                     >
-                      <span className="material-icons-outlined text-[20px]">
-                        {item.icon}
-                      </span>
-                      {item.name}
-                    </Link>
-                  )
-                })}
+                      <div className="w-5 h-5 rounded bg-white/5 animate-pulse" />
+                      <div className="h-4 w-20 rounded bg-white/5 animate-pulse" />
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )
-        })}
+            ))}
+          </div>
+        ) : (
+          /* REAL CONTENT — only rendered after useEffect sets mounted=true */
+          navSections.map((section) => {
+            const filteredItems = section.items.filter((item) => {
+              if (role === 'SELLER') {
+                if (['Scripts', 'Equipe', 'Ao Vivo'].includes(item.name))
+                  return false
+              }
+              return true
+            })
+
+            if (filteredItems.length === 0) return null
+
+            return (
+              <div key={section.label}>
+                <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-widest first:pt-0">
+                  {section.label}
+                </div>
+                <div className="space-y-1">
+                  {filteredItems.map((item) => {
+                    const isActive = isActivePath(pathname, item.href)
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className={cn(
+                          'flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors',
+                          isActive
+                            ? 'bg-neon-pink/10 text-neon-pink'
+                            : 'text-gray-400 hover:text-white'
+                        )}
+                      >
+                        <span className="material-icons-outlined text-[20px]">
+                          {item.icon}
+                        </span>
+                        {item.name}
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })
+        )}
       </nav>
-      <div className="p-4 border-t border-white/5">
+
+      {/* User footer */}
+      <div className="p-4 border-t border-white/5" suppressHydrationWarning={true}>
         <div className="flex items-center gap-3 mb-3">
           <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
             <span

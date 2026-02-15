@@ -187,9 +187,9 @@ export default function LivePage() {
         );
     }
 
-    if (role === 'SELLER') {
+    if (isMounted && role === 'SELLER') {
         return (
-            <div className="space-y-6">
+            <div className="space-y-6" suppressHydrationWarning={true}>
                 <DashboardHeader title="Ao Vivo" />
                 <div className="rounded-[24px] border flex flex-col items-center justify-center p-12 text-center" style={CARD_STYLE}>
                     <AlertTriangle className="w-12 h-12 text-amber-500 mb-4" />
@@ -213,11 +213,11 @@ export default function LivePage() {
                     <div className="p-4 border-b border-white/10">
                         <h2 className="text-lg font-bold text-white">Chamadas ativas</h2>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide" suppressHydrationWarning={true}>
                         {activeCalls.length === 0 ? (
                             <div className="p-6 text-center text-gray-500 text-sm rounded-xl border border-white/10 bg-black/20">
                                 <Phone className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                <p>Nenhuma chamada ativa no momento.</p>
+                                <p>{isMounted ? 'Nenhuma chamada ativa no momento.' : ''}</p>
                             </div>
                         ) : (
                             activeCalls.map(call => (
@@ -338,7 +338,7 @@ export default function LivePage() {
 
 
                             <Card className="shrink-0 rounded-[24px] border shadow-none" style={CARD_STYLE}>
-                                <CardContent className="p-4 flex flex-col sm:flex-row gap-4">
+                                <CardContent className="">
                                     <Textarea
                                         placeholder="Digite uma dica secreta para o vendedor (Whisper)..."
                                         className="resize-none flex-1 rounded-xl border-white/10 bg-black/30 text-white placeholder:text-gray-600 focus-visible:ring-neon-pink min-h-[80px]"

@@ -32,6 +32,7 @@ interface Call {
 }
 
 export default function CallsPage() {
+    const [mounted, setMounted] = useState(false);
     const [calls, setCalls] = useState<Call[]>([]);
     const [selectedCall, setSelectedCall] = useState<Call | null>(null);
     const [whisperMessage, setWhisperMessage] = useState('');
@@ -42,6 +43,7 @@ export default function CallsPage() {
 
     // Fetch active calls and user role
     useEffect(() => {
+        setMounted(true);
         const getUserRole = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
@@ -180,7 +182,9 @@ export default function CallsPage() {
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide">
                         {calls.length === 0 ? (
-                            <div className="text-center text-gray-500 py-8 text-sm">Nenhuma chamada encontrada</div>
+                            <div className="text-center text-gray-500 py-8 text-sm" suppressHydrationWarning={true}>
+                                {mounted ? 'Nenhuma chamada encontrada' : ''}
+                            </div>
                         ) : (
                             calls.map((call) => (
                                 <div
@@ -288,41 +292,6 @@ export default function CallsPage() {
                                     </CardContent>
                                 </Card>
 
-                                {(userRole === 'MANAGER' || userRole === 'ADMIN') && (
-                                    <Card className="flex flex-col rounded-2xl border shadow-none" style={CARD_STYLE}>
-                                        <CardHeader className="pb-2">
-                                            <CardTitle className="text-base font-bold text-white">Enviar Whisper</CardTitle>
-                                            <CardDescription className="text-gray-500 text-sm">
-                                                Oriente o vendedor em tempo real
-                                            </CardDescription>
-                                        </CardHeader>
-                                        <CardContent className="flex-1 flex flex-col min-h-[120px]">
-                                            <Textarea
-                                                placeholder="Digite uma dica de coaching..."
-                                                value={whisperMessage}
-                                                onChange={(e) => setWhisperMessage(e.target.value)}
-                                                className="flex-1 min-h-[80px] mb-4 rounded-xl border-white/10 bg-black/30 text-white placeholder:text-gray-600 focus-visible:ring-neon-pink"
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' && e.ctrlKey) {
-                                                        sendWhisper();
-                                                    }
-                                                }}
-                                            />
-                                            <Button
-                                                onClick={sendWhisper}
-                                                disabled={!whisperMessage.trim()}
-                                                className="w-full rounded-xl font-semibold"
-                                                style={{
-                                                    backgroundColor: NEON_PINK,
-                                                    boxShadow: '0 0 16px rgba(255,0,122,0.3)',
-                                                }}
-                                            >
-                                                <MessageSquare className="w-4 h-4 mr-2" />
-                                                Enviar Whisper (Ctrl+Enter)
-                                            </Button>
-                                        </CardContent>
-                                    </Card>
-                                )}
                             </div>
                         </div>
                     )}

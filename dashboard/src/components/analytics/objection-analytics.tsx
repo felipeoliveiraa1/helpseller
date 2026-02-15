@@ -69,6 +69,7 @@ export function ObjectionAnalytics() {
         <Card
             className="col-span-1 md:col-span-2 lg:col-span-3 rounded-[24px] border shadow-none"
             style={{ backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' }}
+            suppressHydrationWarning={true}
         >
             <CardHeader className="pb-4">
                 <CardTitle className="text-lg font-bold text-white">

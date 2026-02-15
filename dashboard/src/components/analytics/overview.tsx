@@ -1,45 +1,56 @@
 'use client'
 
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts'
 
-const DATA = [
-  { name: 'Jan', total: 2500 },
-  { name: 'Fev', total: 3200 },
-  { name: 'Mar', total: 1800 },
-  { name: 'Abr', total: 4100 },
-  { name: 'Mai', total: 5600 },
-  { name: 'Jun', total: 3800 },
-]
-
-const PRIMARY_COLOR = '#5e5ce6'
+const NEON_PINK = '#ff007a'
 
 interface OverviewProps {
+  monthlyData: { name: string; total: number }[]
   height?: number
 }
 
-export function Overview({ height = 256 }: OverviewProps) {
+export function Overview({ monthlyData, height = 256 }: OverviewProps) {
+  if (monthlyData.length === 0) {
+    return (
+      <div className="flex items-center justify-center text-gray-500 text-sm" style={{ height }}>
+        Sem dados para exibir
+      </div>
+    )
+  }
+
   return (
-    <div className="animate-chart-in opacity-0" style={{ animationDelay: '200ms' }}>
+    <div className="animate-chart-in opacity-0" style={{ animationDelay: '200ms' }} suppressHydrationWarning={true}>
       <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={DATA}>
+        <BarChart data={monthlyData}>
           <XAxis
             dataKey="name"
-            stroke="#888888"
+            stroke="#555"
             fontSize={12}
             tickLine={false}
             axisLine={false}
           />
           <YAxis
-            stroke="#888888"
+            stroke="#555"
             fontSize={12}
             tickLine={false}
             axisLine={false}
             tickFormatter={(value) => `${value}`}
           />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: '#1e1e1e',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px',
+              color: '#fff',
+              fontSize: '12px',
+            }}
+            labelStyle={{ color: '#999' }}
+            formatter={(value: number | undefined) => [value ?? 0, 'Chamadas']}
+          />
           <Bar
             dataKey="total"
-            fill={PRIMARY_COLOR}
-            radius={[4, 4, 0, 0]}
+            fill={NEON_PINK}
+            radius={[6, 6, 0, 0]}
             isAnimationActive
             animationBegin={400}
             animationDuration={600}

@@ -52,7 +52,7 @@ export default function CallsPage() {
                     .select('role')
                     .eq('id', user.id)
                     .single();
-                if (profile) setUserRole(profile.role);
+                if (profile) setUserRole((profile as any).role);
             }
         };
         getUserRole();

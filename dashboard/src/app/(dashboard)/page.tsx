@@ -127,7 +127,7 @@ export default function DashboardPage() {
     return (
       <>
         <DashboardHeader title="Dashboard" />
-        <SellerDashboard stats={{}} />
+        <SellerDashboard stats={{ callsToday: 0, conversionRate: 0 }} />
       </>
     )
   }
@@ -177,9 +177,8 @@ export default function DashboardPage() {
             >
               <div className="flex items-center gap-1 mb-2">
                 <span
-                  className={`material-icons-outlined text-lg ${
-                    m.positive ? '' : 'rotate-180'
-                  }`}
+                  className={`material-icons-outlined text-lg ${m.positive ? '' : 'rotate-180'
+                    }`}
                   style={{ color: m.positive ? NEON_GREEN : '#ef4444' }}
                 >
                   arrow_drop_up

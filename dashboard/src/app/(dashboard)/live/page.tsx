@@ -109,8 +109,8 @@ export default function LivePage() {
                 .eq('id', selectedCall.id)
                 .single();
 
-            if (callData?.transcript) {
-                setTranscripts(callData.transcript as any[]);
+            if ((callData as any)?.transcript) {
+                setTranscripts((callData as any).transcript as any[]);
             }
 
             const { data: { session } } = await supabase.auth.getSession();

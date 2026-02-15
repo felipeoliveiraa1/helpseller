@@ -26,7 +26,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
             try {
                 const chunk = queue.shift();
                 if (chunk) {
-                    sourceBuffer.appendBuffer(chunk);
+                    sourceBuffer.appendBuffer(chunk as unknown as ArrayBuffer);
                 }
             } catch (err) {
                 console.error('Error appending buffer:', err);

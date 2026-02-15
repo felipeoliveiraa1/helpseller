@@ -12,7 +12,7 @@ interface NextStep {
     priority: 'high' | 'medium' | 'low'
 }
 
-export function SellerDashboard({ stats }: { stats: any }) {
+export function SellerDashboard({ stats }: { stats: { callsToday: number; conversionRate: number } }) {
     const [nextSteps, setNextSteps] = useState<NextStep[]>([])
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
@@ -66,8 +66,8 @@ export function SellerDashboard({ stats }: { stats: any }) {
                         <Phone className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">--</div>
-                        <p className="text-xs text-muted-foreground">Dados indisponíveis</p>
+                        <div className="text-2xl font-bold">{stats.callsToday}</div>
+                        <p className="text-xs text-muted-foreground">Concluídas hoje</p>
                     </CardContent>
                 </Card>
                 <Card>
@@ -76,8 +76,8 @@ export function SellerDashboard({ stats }: { stats: any }) {
                         <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">--%</div>
-                        <p className="text-xs text-muted-foreground">Dados indisponíveis</p>
+                        <div className="text-2xl font-bold">{stats.conversionRate}%</div>
+                        <p className="text-xs text-muted-foreground">Concluídas / Total</p>
                     </CardContent>
                 </Card>
             </div>

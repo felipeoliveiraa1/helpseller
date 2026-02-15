@@ -165,7 +165,7 @@ const PLANS = [
     ctaText: 'Falar com vendas',
     ctaLink: '/register?plan=enterprise',
   },
-] as const
+] as { id: string; name: string; price: string; period?: string; description: string; popular?: boolean; features: string[]; ctaText: string; ctaLink: string }[]
 
 const FAQ_ITEMS = [
   {
@@ -267,9 +267,8 @@ export default function LandingPage() {
     <main className="min-h-screen bg-[#0B0C10] text-white selection:bg-neon-pink/30">
       {/* Navbar — estilo NovaFlow */}
       <header
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          scrolled || mobileMenuOpen ? 'bg-[#0B0C10]/90 backdrop-blur-md border-b border-[#2A2A2A]' : 'bg-transparent'
-        }`}
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled || mobileMenuOpen ? 'bg-[#0B0C10]/90 backdrop-blur-md border-b border-[#2A2A2A]' : 'bg-transparent'
+          }`}
       >
         <Container className="flex items-center justify-between h-[72px]">
           <Link href="/" className="group flex items-center gap-3 font-medium text-lg z-50">
@@ -596,11 +595,10 @@ export default function LandingPage() {
             {PLANS.map((plan) => (
               <div
                 key={plan.id}
-                className={`relative flex flex-col rounded-2xl border p-8 transition-all duration-300 ${
-                  plan.popular
+                className={`relative flex flex-col rounded-2xl border p-8 transition-all duration-300 ${plan.popular
                     ? 'border-neon-pink bg-[#14151A]/80 ring-1 ring-neon-pink/30 shadow-[0_0_40px_-10px_rgba(255,0,122,0.2)]'
                     : 'border-[#2A2A2A] bg-[#14151A]/60 hover:border-white/10'
-                }`}
+                  }`}
               >
                 {plan.popular && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-semibold bg-neon-pink text-white">
@@ -623,11 +621,10 @@ export default function LandingPage() {
                 </ul>
                 <Link
                   href={plan.ctaLink}
-                  className={`mt-8 w-full inline-flex items-center justify-center rounded-xl py-3 text-sm font-semibold transition-all ${
-                    plan.popular
+                  className={`mt-8 w-full inline-flex items-center justify-center rounded-xl py-3 text-sm font-semibold transition-all ${plan.popular
                       ? 'bg-neon-pink text-white hover:opacity-90 shadow-[0_0_20px_-5px_rgba(255,0,122,0.4)]'
                       : 'border border-[#2A2A2A] bg-white/5 text-white hover:bg-white/10'
-                  }`}
+                    }`}
                 >
                   {plan.ctaText}
                 </Link>
@@ -681,27 +678,27 @@ export default function LandingPage() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full pointer-events-none opacity-[0.18] blur-[140px]" style={{ backgroundColor: NEON_PINK }} />
         <Container>
           <div className="relative rounded-3xl border p-12 text-center md:p-16 overflow-hidden ring-1 ring-white/5 shadow-2xl bg-[#0B0C10] border-[#2A2A2A]">
-          <div className="landing-grid-bg absolute inset-0 opacity-20" aria-hidden />
-          <div className="relative z-10">
-            <h2 className="text-3xl font-bold text-white sm:text-4xl">
-              Pronto para <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">vender mais</span>?
-            </h2>
-            <p className="mt-4 text-gray-500 max-w-xl mx-auto leading-relaxed">
-              Crie sua conta em minutos. Sem cartão de crédito.
-              Configure seus primeiros scripts e comece a treinar seu time com IA.
-            </p>
-            <Link
-              href="/register"
-              className="mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 text-base font-semibold text-white transition-opacity hover:opacity-90"
-              style={{
-                backgroundColor: NEON_PINK,
-                boxShadow: '0 0 28px rgba(255,0,122,0.35)',
-              }}
-            >
-              Começar agora
-              <ArrowRight className="h-5 w-5" />
-            </Link>
-          </div>
+            <div className="landing-grid-bg absolute inset-0 opacity-20" aria-hidden />
+            <div className="relative z-10">
+              <h2 className="text-3xl font-bold text-white sm:text-4xl">
+                Pronto para <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">vender mais</span>?
+              </h2>
+              <p className="mt-4 text-gray-500 max-w-xl mx-auto leading-relaxed">
+                Crie sua conta em minutos. Sem cartão de crédito.
+                Configure seus primeiros scripts e comece a treinar seu time com IA.
+              </p>
+              <Link
+                href="/register"
+                className="mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 text-base font-semibold text-white transition-opacity hover:opacity-90"
+                style={{
+                  backgroundColor: NEON_PINK,
+                  boxShadow: '0 0 28px rgba(255,0,122,0.35)',
+                }}
+              >
+                Começar agora
+                <ArrowRight className="h-5 w-5" />
+              </Link>
+            </div>
           </div>
         </Container>
       </section>

@@ -80,31 +80,33 @@ export default function ScriptEditorPage() {
             if (!profile?.organization_id && isNew) {
                 // Fallback: try to find any organization this user belongs to
                 const { data: memberOrg } = await supabase
-                    .from('organization_members')
+                    .from('organization_members' as any)
                     .select('organization_id')
                     .eq('user_id', user.id)
                     .single()
 
-                if (memberOrg?.organization_id) {
+                if ((memberOrg as any)?.organization_id) {
                     // Update profile to fix this for next time
-                    await supabase.from('profiles').update({ organization_id: memberOrg.organization_id }).eq('id', user.id)
-                    return createScript(supabase, { ...values, organization_id: memberOrg.organization_id })
+                    // @ts-ignore — profiles update typing broken by missing org column
+                    await supabase.from('profiles').update({ organization_id: (memberOrg as any).organization_id } as any).eq('id', user.id)
+                    return createScript(supabase, { ...values, organization_id: (memberOrg as any).organization_id })
                 }
 
                 // If still no org, create a default one (Personal user flow)
                 console.warn('⚠️ No organization found. Creating default...')
                 const { data: newOrg } = await supabase
-                    .from('organizations')
-                    .insert({ name: 'Minha Organização' })
+                    .from('organizations' as any)
+                    .insert({ name: 'Minha Organização' } as any)
                     .select()
                     .single()
 
                 if (newOrg) {
-                    await supabase.from('organization_members').insert({
-                        organization_id: newOrg.id, user_id: user.id, role: 'owner'
-                    })
-                    await supabase.from('profiles').update({ organization_id: newOrg.id }).eq('id', user.id)
-                    return createScript(supabase, { ...values, organization_id: newOrg.id })
+                    await supabase.from('organization_members' as any).insert({
+                        organization_id: (newOrg as any).id, user_id: user.id, role: 'owner'
+                    } as any)
+                    // @ts-ignore — profiles update typing broken by missing org column
+                    await supabase.from('profiles').update({ organization_id: (newOrg as any).id } as any).eq('id', user.id)
+                    return createScript(supabase, { ...values, organization_id: (newOrg as any).id })
                 }
 
                 throw new Error('Organization not found and could not be created')

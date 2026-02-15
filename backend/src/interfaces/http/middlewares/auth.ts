@@ -52,7 +52,7 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
         if (error instanceof UnauthorizedError) {
             return reply.status(401).send({ error: error.message });
         }
-        logger.error('Auth middleware error:', error);
+        logger.error({ err: error }, 'Auth middleware error');
         return reply.status(500).send({ error: 'Internal Server Error' });
     }
 }

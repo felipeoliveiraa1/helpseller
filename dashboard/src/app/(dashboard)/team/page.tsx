@@ -133,7 +133,8 @@ export default function TeamPage() {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ role: newRole } as any)
+        // @ts-expect-error - Supabase inferred Update type for 'profiles' can be never in some versions
+        .update({ role: newRole })
         .eq('id', memberId)
 
       if (error) throw error
@@ -162,7 +163,8 @@ export default function TeamPage() {
       // Set organization_id to null (soft remove — keeps auth account but disconnects from org)
       const { error } = await supabase
         .from('profiles')
-        .update({ organization_id: null, role: 'SELLER' } as any)
+        // @ts-expect-error - Supabase inferred Update type for 'profiles' can be never in some versions
+        .update({ organization_id: null, role: 'SELLER' })
         .eq('id', memberId)
 
       if (error) throw error

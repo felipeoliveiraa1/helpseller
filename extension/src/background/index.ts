@@ -269,12 +269,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
         } else if (message.type === 'MEDIA_STREAM_CHUNK') {
-            // NEW: Relay video + audio chunks to backend for manager streaming
-            console.log(`📹 Sending media chunk: ${message.size} bytes`);
             send('media:stream', {
                 chunk: message.data,
                 size: message.size,
-                timestamp: message.timestamp
+                timestamp: message.timestamp,
+                isHeader: !!message.isHeader
             });
         } else if (message.type === 'PARTICIPANT_INFO') {
             currentLeadName = message.leadName || '';
@@ -306,18 +305,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             });
         } else if (message.type === 'QUERY_ACTIVE_SPEAKER') {
-            // Relay request to Content Script
-            const state = await getState();
-            if (state.currentTabId) {
-                try {
+            let responded = false;
+            const safeSend = (r: { speakerName: string | null }) => {
+                if (responded) return;
+                responded = true;
+                try { sendResponse(r); } catch (_) { /* channel may be closed */ }
+            };
+            const timeout = setTimeout(() => safeSend({ speakerName: null }), 2000);
+            try {
+                const state = await getState();
+                if (state.currentTabId) {
                     const response = await chrome.tabs.sendMessage(state.currentTabId, { type: 'GET_ACTIVE_SPEAKER' });
-                    sendResponse({ speakerName: response?.activeSpeaker });
-                } catch (err) {
-                    console.warn('Failed to query active speaker from content script:', err);
-                    sendResponse({ speakerName: null });
+                    clearTimeout(timeout);
+                    safeSend({ speakerName: response?.activeSpeaker ?? null });
+                } else {
+                    clearTimeout(timeout);
+                    safeSend({ speakerName: null });
                 }
-            } else {
-                sendResponse({ speakerName: null });
+            } catch (err) {
+                clearTimeout(timeout);
+                console.warn('Failed to query active speaker from content script:', err);
+                safeSend({ speakerName: null });
             }
         }
     };

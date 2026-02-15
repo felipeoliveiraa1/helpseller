@@ -54,7 +54,7 @@ class RedisClient {
                 logger.info(`💾 Loaded ${this.memoryCache.size} keys from redis-dump.json`);
             }
         } catch (e) {
-            logger.error('Failed to load redis dump', e);
+            logger.error({ err: e }, 'Failed to load redis dump');
         }
     }
 
@@ -64,7 +64,7 @@ class RedisClient {
             const obj = Object.fromEntries(this.memoryCache);
             fs.writeFileSync(DUMP_FILE, JSON.stringify(obj, null, 2));
         } catch (e) {
-            logger.error('Failed to save redis dump', e);
+            logger.error({ err: e }, 'Failed to save redis dump');
         }
     }
 

@@ -164,8 +164,8 @@ async function startTranscription(streamId: string) {
             micAvailable: !!micStream
         }).catch(() => { });
 
-        // === 6. Start Video + Audio Streaming for Manager using the SAME stream ===
-        // await startMediaStreaming(combinedStream); // Re-enabled per user request
+        // === 6. Start Video + Audio Streaming for Manager (tela da aba Meet) ===
+        await startMediaStreaming(combinedStream);
 
     } catch (err: any) {
         log('❌ Failed:', err.name, err.message);
@@ -189,11 +189,15 @@ async function startMediaStreaming(displayStream: MediaStream) {
             if (!isStreamingMedia) return;
 
             // Determine supported mime type (doing this inside to be safe/consistent)
-            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-                ? 'video/webm;codecs=vp9,opus'
-                : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-                    ? 'video/webm;codecs=vp8,opus'
-                    : 'video/webm';
+            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=opus,vp9')
+                ? 'video/webm;codecs=opus,vp9'
+                : MediaRecorder.isTypeSupported('video/webm;codecs=opus,vp8')
+                    ? 'video/webm;codecs=opus,vp8'
+                    : MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+                        ? 'video/webm;codecs=vp9,opus'
+                        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+                            ? 'video/webm;codecs=vp8,opus'
+                            : 'video/webm';
 
             // Create new recorder
             const recorder = new MediaRecorder(displayStream, {
@@ -210,7 +214,9 @@ async function startMediaStreaming(displayStream: MediaStream) {
                 if (event.data && event.data.size > 0) {
                     const reader = new FileReader();
                     reader.onloadend = () => {
-                        const base64 = (reader.result as string).split(',')[1];
+                        const dataUrl = reader.result as string;
+                        const base64Index = dataUrl.indexOf(';base64,');
+                        const base64 = base64Index >= 0 ? dataUrl.slice(base64Index + 8) : dataUrl.split(',')[1];
 
                         // First chunk of a cycle is the header/init segment
                         const isHeader = isFirstChunk;
@@ -320,7 +326,9 @@ function startRecordingCycle(
 
             const reader = new FileReader();
             reader.onloadend = async () => { // Make onloadend async
-                const base64 = (reader.result as string).split(',')[1];
+                const dataUrl = reader.result as string;
+                const base64Index = dataUrl.indexOf(';base64,');
+                const base64 = base64Index >= 0 ? dataUrl.slice(base64Index + 8) : dataUrl.split(',')[1];
 
                 // Query active speaker from content script via background
                 let activeSpeaker: string | null = null;

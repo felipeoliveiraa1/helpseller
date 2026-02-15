@@ -46,6 +46,7 @@ export default function LivePage() {
     const [ws, setWs] = useState<WebSocket | null>(null);
     const [role, setRole] = useState<string | null>(null);
     const [token, setToken] = useState<string | null>(null);
+    const WS_URL = 'ws://localhost:3001/ws/manager';
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
 
@@ -54,14 +55,29 @@ export default function LivePage() {
             .from('calls')
             .select(`
                 *,
-                user:profiles!user_id(full_name, email),
+                user:profiles!user_id(full_name),
                 script:scripts!calls_script_relationship(name)
             `)
             .eq('status', 'ACTIVE')
             .order('started_at', { ascending: false });
 
         if (error) {
-            console.error('❌ Error fetching active calls:', error);
+            const fallback = await supabase
+                .from('calls')
+                .select('*, user:profiles!user_id(full_name)')
+                .eq('status', 'ACTIVE')
+                .order('started_at', { ascending: false });
+            if (!fallback.error && fallback.data) {
+                setActiveCalls(fallback.data as any);
+                return;
+            }
+            const minimal = await supabase
+                .from('calls')
+                .select('*')
+                .eq('status', 'ACTIVE')
+                .order('started_at', { ascending: false });
+            if (!minimal.error && minimal.data) setActiveCalls(minimal.data as any);
+            return;
         }
 
         if (data) setActiveCalls(data as any);
@@ -97,16 +113,20 @@ export default function LivePage() {
         return () => clearInterval(interval);
     }, [isMounted]);
 
-    // WebSocket Connection
+    // WebSocket: transcript + live summary (vídeo usa MediaStreamPlayer com sua própria conexão)
     useEffect(() => {
         if (!isMounted || !selectedCall) return;
 
+        setTranscripts([]);
+        setLiveSummary(null);
+
+        let socket: WebSocket | null = null;
+
         const connectWS = async () => {
-            // Fetch initial transcripts
             const { data: callData } = await supabase
                 .from('calls')
                 .select('transcript')
-                .eq('id', selectedCall.id)
+                .eq('id', selectedCall!.id)
                 .single();
 
             if ((callData as any)?.transcript) {
@@ -117,23 +137,20 @@ export default function LivePage() {
             if (!session) return;
             setToken(session.access_token);
 
-            // Close existing
-            if (ws) ws.close();
-
-            const socket = new WebSocket(
-                `ws://localhost:3001/ws/manager?token=${session.access_token}`
-            );
+            socket = new WebSocket(`${WS_URL}?token=${session.access_token}`);
 
             socket.onopen = () => {
-                console.log('Monitor connected');
-                socket.send(JSON.stringify({
+                socket!.send(JSON.stringify({
                     type: 'manager:join',
-                    payload: { callId: selectedCall.id }
+                    payload: { callId: selectedCall!.id }
                 }));
             };
 
             socket.onmessage = (event) => {
-                const msg = JSON.parse(event.data);
+                if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
+                    return;
+                }
+                const msg = JSON.parse(event.data as string);
                 if (msg.type === 'transcript:stream') {
                     setTranscripts(prev => [...prev, msg.payload]);
                 }
@@ -147,12 +164,10 @@ export default function LivePage() {
         };
 
         connectWS();
-        connectWS();
-        setTranscripts([]); // Reset transcripts on change
-        setLiveSummary(null); // Reset summary
 
         return () => {
-            if (ws) ws.close();
+            if (socket) socket.close();
+            setWs(null);
         };
     }, [selectedCall, isMounted]);
 
@@ -231,7 +246,7 @@ export default function LivePage() {
                                 >
                                     <div className="flex justify-between items-start gap-2 mb-2">
                                         <div className="min-w-0">
-                                            <p className="font-semibold text-white truncate">{call.user?.full_name || 'Vendedor'}</p>
+                                            <p className="font-semibold text-white truncate">{call.user?.full_name ?? 'Vendedor'}</p>
                                             <p className="text-xs text-gray-500 truncate">{call.script?.name || 'Script Geral'}</p>
                                         </div>
                                         <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-neon-pink/20 text-neon-pink animate-pulse flex items-center gap-1">
@@ -265,10 +280,18 @@ export default function LivePage() {
                         </div>
                     ) : (
                         <>
-                            {/* Media Stream Player */}
-                            <div className="w-full shrink-0">
-                                {isMounted && selectedCall && token && (
-                                    <div className="text-center text-gray-500 py-4">Vídeo desativado temporariamente</div>
+                            {/* Tela compartilhada do vendedor (vídeo ao vivo) */}
+                            <div className="w-full shrink-0 rounded-[24px] border overflow-hidden" style={CARD_STYLE}>
+                                {token ? (
+                                    <MediaStreamPlayer
+                                        callId={selectedCall.id}
+                                        wsUrl={WS_URL}
+                                        token={token}
+                                    />
+                                ) : (
+                                    <div className="aspect-video flex items-center justify-center bg-black/40 text-gray-500 text-sm">
+                                        Conectando...
+                                    </div>
                                 )}
                             </div>
 

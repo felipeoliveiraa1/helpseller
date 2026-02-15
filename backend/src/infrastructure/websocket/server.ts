@@ -6,6 +6,31 @@ import { WebSocket } from 'ws';
 import fs from 'fs';
 import path from 'path';
 
+const WEBM_EBML = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+const MIN_INIT_SEGMENT_BYTES = 100;
+
+function isValidWebMInit(chunkBuf: Buffer): boolean {
+    return chunkBuf.length >= MIN_INIT_SEGMENT_BYTES
+        && chunkBuf[0] === WEBM_EBML[0]
+        && chunkBuf[1] === WEBM_EBML[1]
+        && chunkBuf[2] === WEBM_EBML[2]
+        && chunkBuf[3] === WEBM_EBML[3];
+}
+
+/** Encode media payload to binary frame: 1 byte (0x01=header, 0x00=data) + chunk bytes. Returns null if base64 decode fails. */
+function encodeMediaChunkToBinary(payload: { chunk: string; isHeader?: boolean }): Buffer | null {
+    try {
+        const chunkBuf = Buffer.from(payload.chunk, 'base64');
+        const flag = payload.isHeader ? 0x01 : 0x00;
+        return Buffer.concat([Buffer.from([flag]), chunkBuf]);
+    } catch {
+        return null;
+    }
+}
+
+/** Gestores inscritos por callId (broadcast direto quando Redis está em memory mode). */
+const managerSocketsByCallId = new Map<string, Set<WebSocket>>();
+
 // DEBUG LOGGING
 const LOG_FILE = path.join(process.cwd(), 'backend-websocket-debug-v2.log');
 function debugLog(msg: string) {
@@ -30,6 +55,9 @@ export interface CallSession {
     scriptId: string;
     transcript: TranscriptChunk[];
     currentStep: number;
+    /** Timestamp (ms) when call started; used for duration_seconds */
+    startedAt?: number;
+    platform?: string;
     // AI State
     chunksSinceLastCoach: number;
     lastCoachingAt?: number;
@@ -252,29 +280,60 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     case 'call:end':
                         await handleCallEnd(callId, socket);
                         break;
-                    case 'media:stream':
-                        // NEW: Relay video + audio chunks to managers via Redis pub/sub
+                    case 'media:stream': {
+                        // [LIVE_DEBUG] Log every N chunks to avoid spam; always log header
+                        const hasChunk = !!event.payload?.chunk;
+                        const isHeader = !!event.payload?.isHeader;
+                        if (!callId) {
+                            logger.warn('[LIVE_DEBUG] media:stream received but callId is null (call:start not sent yet?)');
+                        } else if (!hasChunk) {
+                            logger.warn('[LIVE_DEBUG] media:stream received but payload.chunk is missing');
+                        } else if (isHeader) {
+                            const managerCount = managerSocketsByCallId.get(callId)?.size ?? 0;
+                            logger.info(`[LIVE_DEBUG] media:stream HEADER callId=${callId} managerSockets=${managerCount}`);
+                        }
+
+                        // Relay video + audio chunks to managers via Redis pub/sub + direct broadcast
                         if (callId && event.payload?.chunk) {
                             const payload = {
                                 chunk: event.payload.chunk,
                                 size: event.payload.size,
                                 timestamp: event.payload.timestamp,
-                                isHeader: !!event.payload.isHeader // Ensure boolean
+                                isHeader: !!event.payload.isHeader
                             };
 
-                            // Cache header if present
                             if (event.payload.isHeader) {
                                 await redis.set(
                                     `call:${callId}:media_header`,
                                     payload,
-                                    14400 // 4 hours
+                                    14400
                                 );
                                 logger.info(`📼 Video Header cached for call ${callId}`);
                             }
 
                             await redis.publish(`call:${callId}:media_raw`, payload);
+
+                            const managerSockets = managerSocketsByCallId.get(callId);
+                            if (managerSockets) {
+                                const binaryMsg = encodeMediaChunkToBinary(payload);
+                                if (binaryMsg) {
+                                    let sent = 0;
+                                    managerSockets.forEach((s) => {
+                                        if (s.readyState === WebSocket.OPEN) {
+                                            s.send(binaryMsg);
+                                            sent++;
+                                        }
+                                    });
+                                    if (isHeader) {
+                                        logger.info(`[LIVE_DEBUG] media:stream broadcast to ${sent} manager(s) for callId=${callId}`);
+                                    }
+                                }
+                            } else if (isHeader) {
+                                logger.warn(`[LIVE_DEBUG] media:stream no manager sockets for callId=${callId} (gestor ainda não fez manager:join?)`);
+                            }
                         }
                         break;
+                    }
                 }
             } catch (err: any) {
                 logger.error({
@@ -421,11 +480,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                             const dbTranscript = existingExternalCall.transcript || [];
 
                             sessionData = {
-                                callId: callId,
-                                userId: userId,
-                                scriptId: existingExternalCall.script_id || scriptId || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                                callId: callId ?? '',
+                                userId: userId ?? '',
+                                scriptId: (existingExternalCall.script_id ?? scriptId ?? 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') as string,
                                 transcript: Array.isArray(dbTranscript) ? dbTranscript : [],
                                 currentStep: 0,
+                                chunksSinceLastCoach: 0,
                                 startupTime: Date.now(),
                                 leadName: leadName || 'Cliente'
                             };
@@ -435,7 +495,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         }
 
                         // Subscribe to commands
-                        await setupCommandSubscription(callId, ws);
+                        if (callId) await setupCommandSubscription(callId, ws);
 
                         // Confirm
                         if (ws.readyState === WebSocket.OPEN) {
@@ -468,6 +528,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         logger.info(`✅ Resumed session for call ${existingCall.id}`);
                         callId = existingCall.id;
                         sessionData = existingSession;
+                        logger.info(`[LIVE_DEBUG] call:start (resume) done callId=${callId}`);
 
                         // Check if we have a lead name to apply (Payload > Buffered > Redis)
                         const resumeLeadName = leadName || bufferedLeadName;
@@ -486,7 +547,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         }
 
                         // Re-subscribe to commands
-                        await setupCommandSubscription(callId, ws);
+                        if (callId) await setupCommandSubscription(callId, ws);
 
                         // Confirm to client
                         if (ws.readyState === WebSocket.OPEN) {
@@ -546,15 +607,16 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     return;
                 }
 
-                callId = call.id;
+                callId = call.id ?? '';
                 logger.info(`✅ Call created in DB. ID: ${callId}`);
+                logger.info(`[LIVE_DEBUG] call:start done callId=${callId} (seller can now send media:stream)`);
 
                 // 4. Initialize Session
                 sessionData = {
-                    callId: callId,
-                    userId: userId,
-                    scriptId: finalScriptId,
-                    platform: platform,
+                    callId: call.id ?? '',
+                    userId: userId ?? '',
+                    scriptId: finalScriptId ?? '',
+                    platform: platform ?? undefined,
                     startedAt: new Date().getTime(),
                     transcript: [],
                     currentStep: 1,
@@ -938,30 +1000,35 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             return;
         }
 
-        const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-        if (error || !user) {
-            socket.close(1008, 'Invalid token');
-            return;
-        }
-
-        // TODO: Verify user is actually a manager/has manager permissions
-        // For now, all authenticated users can access
-
-        logger.info(`✅ Manager authenticated: ${user.id}`);
-
         let subscribedCallId: string | null = null;
         let streamHandler: ((message: any) => void) | null = null;
-        let mediaHandler: ((message: any) => void) | null = null; // NEW: For video streaming
-        let liveSummaryHandler: ((message: any) => void) | null = null; // NEW: For live summaries
+        let mediaHandler: ((message: any) => void) | null = null;
+        let liveSummaryHandler: ((message: any) => void) | null = null;
 
-        socket.on('message', async (message: string) => {
+        let authUser: { id: string } | null = null;
+        const authPromise = (async () => {
+            const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+            if (error || !user) {
+                try { socket.close(1008, 'Invalid token'); } catch { /* already closed */ }
+                return;
+            }
+            authUser = user;
+            logger.info(`✅ Manager authenticated: ${user.id}`);
+        })();
+
+        socket.on('message', async (message: string | Buffer) => {
+            await authPromise;
+            if (!authUser) return;
             try {
                 const event = JSON.parse(message.toString());
+                logger.info(`[LIVE_DEBUG] manager WS message type=${event?.type ?? 'unknown'}`);
 
                 switch (event.type) {
-                    case 'manager:join':
+                    case 'manager:join': {
                         // Manager wants to join/monitor a specific call
                         const { callId } = event.payload || {};
+                        logger.info(`[LIVE_DEBUG] manager:join received callId=${callId ?? 'undefined'}`);
+
                         if (!callId) {
                             socket.send(JSON.stringify({
                                 type: 'error',
@@ -980,9 +1047,24 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         if (subscribedCallId && liveSummaryHandler) {
                             await redis.unsubscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
                         }
+                        if (subscribedCallId) {
+                            const prevSet = managerSocketsByCallId.get(subscribedCallId);
+                            if (prevSet) {
+                                prevSet.delete(socket);
+                                if (prevSet.size === 0) managerSocketsByCallId.delete(subscribedCallId);
+                            }
+                        }
 
                         // Subscribe to new call's transcript stream
                         subscribedCallId = callId;
+                        let set = managerSocketsByCallId.get(callId);
+                        if (!set) {
+                            set = new Set();
+                            managerSocketsByCallId.set(callId, set);
+                        }
+                        set.add(socket);
+                        logger.info(`[LIVE_DEBUG] manager subscribed to callId=${callId} totalManagersForCall=${set.size}`);
+
                         streamHandler = (transcriptData: any) => {
                             // Forward transcript to manager
                             socket.send(JSON.stringify({
@@ -993,13 +1075,10 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                         await redis.subscribe(`call:${subscribedCallId}:stream`, streamHandler);
 
-                        // NEW: Subscribe to media stream (video + audio)
+                        // NEW: Subscribe to media stream (video + audio) — send binary to avoid base64 encoding issues
                         mediaHandler = (mediaData: any) => {
-                            // Forward media chunk to manager
-                            socket.send(JSON.stringify({
-                                type: 'media:chunk',
-                                payload: mediaData
-                            }));
+                            const binaryMsg = encodeMediaChunkToBinary(mediaData);
+                            if (binaryMsg) socket.send(binaryMsg);
                         };
 
                         await redis.subscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
@@ -1017,25 +1096,27 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         };
                         await redis.subscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
 
-                        // Check for cached media header and send immediately
-                        const cachedHeader = await redis.get(`call:${callId}:media_header`);
-                        if (cachedHeader) {
-                            logger.info(`📼 Sending cached media header to manager for call ${callId}`);
-                            socket.send(JSON.stringify({
-                                type: 'media:chunk', // Critical for MediaStreamPlayer
-                                payload: JSON.parse(cachedHeader)
-                            }));
-                        } else {
-                            logger.warn(`⚠️ No media header cached for call ${callId}`);
+                        // Send cached header so manager gets first frame immediately (validated WebM only).
+                        const cachedHeader = await redis.get<{ chunk: string; isHeader?: boolean }>(`call:${callId}:media_header`);
+                        if (cachedHeader?.chunk) {
+                            try {
+                                const decoded = Buffer.from(cachedHeader.chunk, 'base64');
+                                if (cachedHeader.isHeader && isValidWebMInit(decoded)) {
+                                    const binaryMsg = encodeMediaChunkToBinary(cachedHeader);
+                                    if (binaryMsg) socket.send(binaryMsg);
+                                }
+                            } catch {
+                                // Skip invalid cache
+                            }
                         }
-
-                        logger.info(`👔 Manager ${user.id} joined call ${callId} (transcript + media)`);
+                        logger.info(`👔 Manager ${authUser.id} joined call ${callId} (transcript + media)`);
 
                         socket.send(JSON.stringify({
                             type: 'manager:joined',
                             payload: { callId }
                         }));
                         break;
+                    }
 
                     case 'manager:whisper':
                         // Manager sends a coaching tip/whisper to the seller
@@ -1061,11 +1142,11 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                             type: 'whisper',
                             content,
                             urgency,
-                            managerId: user.id,
+                            managerId: authUser.id,
                             timestamp: Date.now()
                         });
 
-                        logger.info(`💬 Manager ${user.id} sent whisper to call ${subscribedCallId}`);
+                        logger.info(`💬 Manager ${authUser.id} sent whisper to call ${subscribedCallId}`);
 
                         socket.send(JSON.stringify({
                             type: 'whisper:sent',
@@ -1083,6 +1164,14 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
         socket.on('close', async (code, reason) => {
             logger.info({ code, reason: reason?.toString() }, '👔 Manager WS Disconnected');
+
+            if (subscribedCallId) {
+                const set = managerSocketsByCallId.get(subscribedCallId);
+                if (set) {
+                    set.delete(socket);
+                    if (set.size === 0) managerSocketsByCallId.delete(subscribedCallId);
+                }
+            }
 
             // Cleanup subscriptions
             if (subscribedCallId && streamHandler) {

@@ -115,7 +115,7 @@ export default function CallDetailsPage() {
                     .from('calls')
                     .select(`
                         *,
-                        user:profiles!user_id(full_name, email),
+                        user:profiles!user_id(full_name),
                         script:scripts!calls_script_relationship(name),
                         summary:call_summaries(*)
                     `)
@@ -277,7 +277,7 @@ export default function CallDetailsPage() {
                     <h1 className="text-2xl font-bold tracking-tight text-white">Raio-X da Venda</h1>
                     <div className="flex items-center gap-4 text-sm text-gray-500 mt-1" suppressHydrationWarning={true}>
                         <span className="flex items-center gap-1">
-                            <User className="w-4 h-4" /> {call.user?.full_name || call.lead_profile?.name || 'Lead'}
+                            <User className="w-4 h-4" /> {call.user?.full_name ?? call.lead_profile?.name ?? 'Lead'}
                         </span>
                         <span className="flex items-center gap-1">
                             <Clock className="w-4 h-4" /> {formatDuration(call.duration_seconds)}

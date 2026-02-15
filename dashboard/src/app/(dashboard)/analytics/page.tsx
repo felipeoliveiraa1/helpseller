@@ -52,14 +52,21 @@ export default function AnalyticsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setLoading(false); return }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, organization_id')
-        .eq('id', user.id)
-        .single()
-
-      const userRole = (profile as any)?.role || 'SELLER'
-      const orgId = (profile as any)?.organization_id || null
+      let userRole = 'SELLER'
+      let orgId: string | null = null
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role, organization_id')
+          .eq('id', user.id)
+          .single()
+        if (!profileError && profile) {
+          userRole = (profile as any)?.role || 'SELLER'
+          orgId = (profile as any)?.organization_id || null
+        }
+      } catch {
+        // use defaults
+      }
       setRole(userRole)
 
       const isSeller = userRole === 'SELLER'
@@ -170,7 +177,7 @@ export default function AnalyticsPage() {
         const end = c.ended_at ? new Date(c.ended_at).getTime() : start
         return {
           id: c.id,
-          full_name: c.user?.full_name || 'Vendedor',
+          full_name: (c.user as any)?.full_name ?? 'Vendedor',
           ended_at: c.ended_at || c.started_at,
           duration_min: Math.round((end - start) / 60000 * 10) / 10,
         }
@@ -199,7 +206,7 @@ export default function AnalyticsPage() {
             const uid = call.user_id
             if (!byUser[uid]) {
               byUser[uid] = {
-                fullName: call.user?.full_name || 'Vendedor',
+                fullName: (call.user as any)?.full_name ?? 'Vendedor',
                 calls: [],
               }
             }

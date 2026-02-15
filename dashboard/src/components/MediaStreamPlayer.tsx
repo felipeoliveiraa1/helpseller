@@ -8,28 +8,116 @@ interface MediaStreamPlayerProps {
     token: string;
 }
 
+const WAITING_HINT_AFTER_MS = 12000;
+
+const WEBM_EBML = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);
+
+function isWebMInit(bytes: Uint8Array): boolean {
+    if (bytes.length < 4) return false;
+    return bytes[0] === WEBM_EBML[0] && bytes[1] === WEBM_EBML[1] && bytes[2] === WEBM_EBML[2] && bytes[3] === WEBM_EBML[3];
+}
+
+/** Binary frame from backend: 1 byte flag (0x01=header, 0x00=data) + chunk bytes. */
+function parseBinaryMediaChunk(data: ArrayBuffer): { bytes: Uint8Array; isHeader: boolean } | null {
+    if (data.byteLength < 2) return null;
+    const view = new Uint8Array(data);
+    const isHeader = view[0] === 0x01;
+    const chunkLen = view.length - 1;
+    const chunk = new Uint8Array(chunkLen);
+    for (let i = 0; i < chunkLen; i++) chunk[i] = view[i + 1];
+    return { bytes: chunk, isHeader };
+}
+
 export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const mediaSourceRef = useRef<MediaSource | null>(null);
     const sourceBufferRef = useRef<SourceBuffer | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
-    const queueRef = useRef<Uint8Array[]>([]);
+    const queueRef = useRef<{ bytes: Uint8Array; isHeader: boolean }[]>([]);
+    const hasReceivedChunkRef = useRef(false);
+    const hasAppendedInitRef = useRef(false);
+    const sourceBufferDeadRef = useRef(false);
+    const deferHeaderProcessRef = useRef(false);
+    const timestampOffsetRetryCountRef = useRef(0);
+    const waitingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showWaitingHint, setShowWaitingHint] = useState(false);
 
     // Process the queue when SourceBuffer is ready
     const processQueue = () => {
+        if (sourceBufferDeadRef.current) return;
         const sourceBuffer = sourceBufferRef.current;
+        const mediaSource = mediaSourceRef.current;
+        const video = videoRef.current;
         const queue = queueRef.current;
 
-        if (sourceBuffer && !sourceBuffer.updating && queue.length > 0) {
-            try {
-                const chunk = queue.shift();
-                if (chunk) {
-                    sourceBuffer.appendBuffer(chunk as unknown as ArrayBuffer);
+        if (!sourceBuffer || !mediaSource || sourceBuffer.updating || queue.length === 0) return;
+        if (video?.error) {
+            sourceBufferDeadRef.current = true;
+            setError('Playback error');
+            return;
+        }
+
+        const item = queue.shift();
+        if (!item) return;
+        const { bytes, isHeader } = item;
+        if (bytes.length === 0) return;
+
+        const DEFER_HEADER_MS = 150;
+        const RETRY_PARSING_MS = 200;
+
+        if (isHeader && hasAppendedInitRef.current) {
+            if (!deferHeaderProcessRef.current) {
+                queue.unshift(item);
+                deferHeaderProcessRef.current = true;
+                setTimeout(() => {
+                    deferHeaderProcessRef.current = true;
+                    processQueue();
+                }, DEFER_HEADER_MS);
+                return;
+            }
+            deferHeaderProcessRef.current = false;
+        }
+
+        try {
+            if (isHeader && hasAppendedInitRef.current) {
+                const duration = mediaSource.duration;
+                const offset = Number.isFinite(duration) && duration >= 0 ? duration : 0;
+                try {
+                    sourceBuffer.timestampOffset = offset;
+                    timestampOffsetRetryCountRef.current = 0;
+                } catch (offsetErr: unknown) {
+                    const offsetMsg = offsetErr instanceof Error ? offsetErr.message : String(offsetErr);
+                    if (offsetMsg.includes('PARSING_MEDIA_SEGMENT') && timestampOffsetRetryCountRef.current < 15) {
+                        timestampOffsetRetryCountRef.current += 1;
+                        queue.unshift(item);
+                        setTimeout(processQueue, RETRY_PARSING_MS);
+                        return;
+                    }
+                    timestampOffsetRetryCountRef.current = 0;
+                    throw offsetErr;
                 }
-            } catch (err) {
-                console.error('Error appending buffer:', err);
+            }
+            if (isHeader) hasAppendedInitRef.current = true;
+            const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            sourceBuffer.appendBuffer(buffer);
+            if (video?.paused && video.readyState >= 2 && !video.error) {
+                video.play().catch(() => {});
+            }
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('removed from the parent media source') || msg.includes('error attribute is not null')) {
+                sourceBufferDeadRef.current = true;
+                sourceBufferRef.current = null;
+                setError('Playback error');
+            } else if (msg.includes('PARSING_MEDIA_SEGMENT') && timestampOffsetRetryCountRef.current < 15) {
+                timestampOffsetRetryCountRef.current += 1;
+                queue.unshift(item);
+                setTimeout(processQueue, RETRY_PARSING_MS);
+            } else {
+                console.warn('[LIVE_DEBUG] appendBuffer failed:', err);
+                setError('Buffer error');
             }
         }
     };
@@ -37,10 +125,22 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
     useEffect(() => {
         if (!videoRef.current) return;
 
-        // Reset state
+        console.log('[LIVE_DEBUG] MediaStreamPlayer mount callId=', callId, 'wsUrl=', wsUrl);
+
         queueRef.current = [];
+        hasReceivedChunkRef.current = false;
+        hasAppendedInitRef.current = false;
+        sourceBufferDeadRef.current = false;
+        deferHeaderProcessRef.current = false;
+        timestampOffsetRetryCountRef.current = 0;
         setError(null);
         setIsPlaying(false);
+        setShowWaitingHint(false);
+
+        waitingTimeoutRef.current = setTimeout(() => {
+            setShowWaitingHint(true);
+            console.log('[LIVE_DEBUG] MediaStreamPlayer 12s timeout: no media:chunk received yet for callId=', callId);
+        }, WAITING_HINT_AFTER_MS);
 
         // Create MediaSource
         const mediaSource = new MediaSource();
@@ -48,95 +148,112 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         videoRef.current.src = URL.createObjectURL(mediaSource);
 
         const handleSourceOpen = () => {
-            console.log('📹 MediaSource opened');
             URL.revokeObjectURL(videoRef.current!.src); // Cleanup URL
 
-            try {
-                // Try VP9 first, fallback to VP8
-                const mimeType = MediaSource.isTypeSupported('video/webm; codecs="vp9,opus"')
-                    ? 'video/webm; codecs="vp9,opus"'
-                    : 'video/webm; codecs="vp8,opus"';
+            const videoEl = videoRef.current;
+            if (videoEl) {
+                videoEl.addEventListener('playing', () => setIsPlaying(true), { once: true });
+            }
 
-                console.log(`📋 Using mimeType for playback: ${mimeType}`);
+            try {
+                const webmTypes = [
+                    'video/webm;codecs=opus,vp9',
+                    'video/webm;codecs=opus,vp8',
+                    'video/webm;codecs=vp9,opus',
+                    'video/webm;codecs=vp8,opus',
+                    'video/webm;codecs=vp8,vorbis',
+                    'video/webm;codecs=vp9',
+                    'video/webm;codecs=vp8'
+                ];
+                const mimeType = webmTypes.find((t) => MediaSource.isTypeSupported(t)) ?? webmTypes[0];
+                console.log('[LIVE_DEBUG] MediaStreamPlayer addSourceBuffer mimeType=', mimeType);
 
                 const sourceBuffer = mediaSource.addSourceBuffer(mimeType);
                 sourceBufferRef.current = sourceBuffer;
-                sourceBuffer.mode = 'sequence'; // Ensure segments are played in order
+                sourceBuffer.mode = 'segments';
 
-                // Event listener to process queue when update finishes
                 sourceBuffer.addEventListener('updateend', () => {
                     processQueue();
                 });
 
-                sourceBuffer.addEventListener('error', (e) => {
-                    console.error('SourceBuffer error:', e);
+                sourceBuffer.addEventListener('error', () => {
+                    sourceBufferDeadRef.current = true;
+                    sourceBufferRef.current = null;
+                    try {
+                        if (mediaSource.readyState === 'open') mediaSource.endOfStream();
+                    } catch (_) { /* allow playback of already buffered range */ }
+                    console.warn('[LIVE_DEBUG] SourceBuffer error — buffer removed');
+                    setError('Playback error');
                 });
 
-                console.log('✅ SourceBuffer created');
-
-                // Connect to WebSocket
                 const ws = new WebSocket(`${wsUrl}?token=${token}`);
+                ws.binaryType = 'arraybuffer';
                 wsRef.current = ws;
 
                 ws.onopen = () => {
-                    console.log('📡 WebSocket connected, joining call...');
+                    console.log('[LIVE_DEBUG] MediaStreamPlayer WS open, sending manager:join callId=', callId);
                     ws.send(JSON.stringify({
                         type: 'manager:join',
                         payload: { callId }
                     }));
                 };
 
-                ws.onmessage = async (event) => {
-                    try {
-                        const message = JSON.parse(event.data);
+                ws.onmessage = (event: MessageEvent<string | ArrayBuffer>) => {
+                    const data = event.data;
 
-                        if (message.type === 'media:chunk') {
-                            const chunkBase64 = message.payload.chunk;
-                            // Convert Base64 to Uint8Array
-                            const binaryString = atob(chunkBase64);
-                            const len = binaryString.length;
-                            const bytes = new Uint8Array(len);
-                            for (let i = 0; i < len; i++) {
-                                bytes[i] = binaryString.charCodeAt(i);
-                            }
-
-                            // Add to queue
-                            queueRef.current.push(bytes);
-
-                            // Try to process immediately
-                            processQueue();
-
-                            // Auto-play logic
-                            if (videoRef.current && videoRef.current.paused && queueRef.current.length > 2) {
-                                videoRef.current.play().catch(() => { });
-                                setIsPlaying(true);
-                            }
+                    if (data instanceof ArrayBuffer) {
+                        const parsed = parseBinaryMediaChunk(data);
+                        if (!parsed) return;
+                        const { bytes, isHeader } = parsed;
+                        if (!hasReceivedChunkRef.current) {
+                            hasReceivedChunkRef.current = true;
+                            console.log('[LIVE_DEBUG] MediaStreamPlayer first media chunk (binary) received');
                         }
-                    } catch (err) {
-                        console.error('Error processing message:', err);
+                        if (!hasAppendedInitRef.current) {
+                            if (!isHeader) return;
+                        }
+                        if (waitingTimeoutRef.current) {
+                            clearTimeout(waitingTimeoutRef.current);
+                            waitingTimeoutRef.current = null;
+                        }
+                        queueRef.current.push({ bytes, isHeader });
+                        processQueue();
+                        setShowWaitingHint(false);
+                        if (queueRef.current.length >= 1 && !sourceBufferDeadRef.current && videoRef.current?.paused) {
+                            videoRef.current.play().catch(() => {});
+                        }
+                        return;
+                    }
+
+                    try {
+                        const message = JSON.parse(data as string);
+                        if (message.type === 'manager:joined') {
+                            console.log('[LIVE_DEBUG] MediaStreamPlayer manager:joined callId=', message.payload?.callId);
+                            return;
+                        }
+                    } catch {
+                        if (!hasReceivedChunkRef.current) setError('Invalid stream data');
                     }
                 };
 
-                ws.onerror = (err) => {
-                    console.error('WebSocket error:', err);
+                ws.onerror = () => {
                     setError('Connection error');
                 };
 
                 ws.onclose = () => {
-                    console.log('📡 WebSocket disconnected');
                     setIsPlaying(false);
                 };
 
-            } catch (err: any) {
-                console.error('Failed to create SourceBuffer:', err);
-                setError(`Playback error: ${err.message}`);
+            } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : 'Playback error';
+                setError(message);
             }
         };
 
         mediaSource.addEventListener('sourceopen', handleSourceOpen);
 
         return () => {
-            // Cleanup
+            if (waitingTimeoutRef.current) clearTimeout(waitingTimeoutRef.current);
             if (wsRef.current) {
                 wsRef.current.close();
             }
@@ -164,9 +281,13 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
 
             {!isPlaying && !error && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-10 backdrop-blur-sm">
-                    <div className="text-white text-center">
-                        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-emerald-500 mx-auto mb-3"></div>
-                        <p className="text-gray-300 text-sm font-medium animate-pulse">Connecting to live feed...</p>
+                    <div className="text-white text-center px-4">
+                        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-emerald-500 mx-auto mb-3" />
+                        <p className="text-gray-300 text-sm font-medium animate-pulse">
+                            {showWaitingHint
+                                ? 'Aguardando transmissão. Peça ao vendedor para clicar em Iniciar na extensão (aba do Meet).'
+                                : 'Conectando ao feed ao vivo...'}
+                        </p>
                     </div>
                 </div>
             )}

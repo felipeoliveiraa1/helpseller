@@ -80,9 +80,14 @@ export async function adminRoutes(fastify: FastifyInstance) {
             if (authError) {
                 console.error('Admin Debug: Final Auth Error', authError);
                 throw authError; // This will start the catch block below
-            };
+            }
 
-            console.log('Admin Debug: User created, ID:', authData.user.id);
+            const user = authData.user;
+            if (!user) {
+                return reply.code(500).send({ error: 'User not created' });
+            }
+
+            console.log('Admin Debug: User created, ID:', user.id);
 
             // 2. Create Profile in public.profiles (if not handled by trigger)
             // Ideally, a Supabase trigger handles this, but we can double check or enforce additional data here if needed.
@@ -93,7 +98,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
             const { error: profileError } = await supabaseAdmin
                 .from('profiles')
                 .insert({
-                    id: authData.user.id,
+                    id: user.id,
                     email: email,
                     full_name: name,
                     role: 'SELLER',
@@ -114,7 +119,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 console.log('Admin Debug: Profile created successfully');
             }
 
-            return { success: true, user: { id: authData.user.id, email: authData.user.email } };
+            return { success: true, user: { id: user.id, email: user.email } };
 
         } catch (error: any) {
             console.error('Admin Debug: Catch Block Error', error);

@@ -42,7 +42,7 @@ export class ObjectionSuccessTracker {
             try {
                 await this.updateMetric(scriptId, objectionId, wasConverted);
             } catch (error) {
-                logger.error(`Failed to update metric for objection ${objectionId}:`, error);
+                logger.error({ err: error }, `Failed to update metric for objection ${objectionId}`);
                 // Continue with other objections even if one fails
             }
         }
@@ -65,7 +65,7 @@ export class ObjectionSuccessTracker {
             .maybeSingle();
 
         if (fetchError) {
-            logger.error('Error fetching existing metric:', fetchError);
+            logger.error({ err: fetchError }, 'Error fetching existing metric');
             throw fetchError;
         }
 
@@ -86,7 +86,7 @@ export class ObjectionSuccessTracker {
             });
 
         if (upsertError) {
-            logger.error('Error upserting metric:', upsertError);
+            logger.error({ err: upsertError }, 'Error upserting metric');
             throw upsertError;
         }
 
@@ -127,7 +127,7 @@ export class ObjectionSuccessTracker {
         const ratesMap = new Map<string, number>();
 
         if (error || !data) {
-            logger.error('Error fetching success rates:', error);
+            logger.error({ err: error }, 'Error fetching success rates');
             return ratesMap;
         }
 
@@ -153,7 +153,7 @@ export class ObjectionSuccessTracker {
             .order('success_count', { ascending: false });
 
         if (error || !data) {
-            logger.error('Error fetching script metrics:', error);
+            logger.error({ err: error }, 'Error fetching script metrics');
             return [];
         }
 

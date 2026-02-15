@@ -3,6 +3,12 @@ import { authService } from '../services/auth';
 
 import { Loader2, Mic, MicOff, LogOut } from 'lucide-react';
 
+interface TabOption {
+    id: number;
+    title: string;
+    url: string;
+}
+
 export default function Popup() {
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -10,10 +16,32 @@ export default function Popup() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [status, setStatus] = useState<'PROGRAMMED' | 'RECORDING' | 'PAUSED'>('PROGRAMMED');
+    const [tabs, setTabs] = useState<TabOption[]>([]);
+    const [selectedTabId, setSelectedTabId] = useState<number | null>(null);
 
     useEffect(() => {
         checkSession();
     }, []);
+
+    useEffect(() => {
+        if (!session || status === 'RECORDING') return;
+        chrome.tabs.query({ currentWindow: true }, (list) => {
+            const options: TabOption[] = list
+                .filter((t) => t.id != null && t.url && (t.url.startsWith('http://') || t.url.startsWith('https://')))
+                .map((t) => ({
+                    id: t.id!,
+                    title: t.title || t.url || 'Aba',
+                    url: t.url || ''
+                }));
+            setTabs(options);
+            if (options.length > 0 && selectedTabId === null) {
+                chrome.tabs.query({ active: true, currentWindow: true }, ([active]) => {
+                    const activeInList = options.find((o) => o.id === active?.id);
+                    setSelectedTabId(activeInList ? activeInList.id : options[0].id);
+                });
+            }
+        });
+    }, [session, status]);
 
     const checkSession = async () => {
         const sess = await authService.getSession();
@@ -41,13 +69,12 @@ export default function Popup() {
     };
 
     const toggleCapture = async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabId = status === 'RECORDING' ? undefined : (selectedTabId ?? tabs[0]?.id ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id);
 
         chrome.runtime.sendMessage({
             type: status === 'RECORDING' ? 'STOP_CAPTURE' : 'START_CAPTURE',
-            tabId: tab?.id
+            tabId: tabId ?? undefined
         });
-        // Listen for response or status update via message
     };
 
     // Listen for status updates from background
@@ -124,6 +151,23 @@ export default function Popup() {
                         </span>
                     </div>
                 </div>
+
+                {status !== 'RECORDING' && tabs.length > 0 && (
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Gravar esta aba</label>
+                        <select
+                            value={selectedTabId ?? tabs[0]?.id ?? ''}
+                            onChange={(e) => setSelectedTabId(Number(e.target.value) || null)}
+                            className="w-full py-2 px-3 rounded-md border border-slate-300 text-sm bg-white"
+                        >
+                            {tabs.map((tab) => (
+                                <option key={tab.id} value={tab.id}>
+                                    {tab.title.length > 45 ? tab.title.slice(0, 45) + '…' : tab.title}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
 
                 <button
                     onClick={toggleCapture}

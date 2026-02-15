@@ -47,40 +47,47 @@ export function RightSidebar() {
   }, [])
 
   const fetchData = async () => {
-    // 1. Total completed calls this month
-    const now = new Date()
-    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-    const { count: monthCount } = await supabase
-      .from('calls')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'COMPLETED')
-      .gte('started_at', firstOfMonth)
-    setTotalCalls(monthCount ?? 0)
+    try {
+      const now = new Date()
+      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+      const { count: monthCount } = await supabase
+        .from('calls')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'COMPLETED')
+        .gte('started_at', firstOfMonth)
+      setTotalCalls(monthCount ?? 0)
 
-    // 2. Today's completed calls count
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
-    const { count: todayCount } = await supabase
-      .from('calls')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'COMPLETED')
-      .gte('started_at', startOfDay)
-    setTodayCompleted(todayCount ?? 0)
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+      const { count: todayCount } = await supabase
+        .from('calls')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'COMPLETED')
+        .gte('started_at', startOfDay)
+      setTodayCompleted(todayCount ?? 0)
 
-    // 3. Recent 5 completed calls with user name
-    const { data: recent } = await supabase
-      .from('calls')
-      .select(`
-        id,
-        started_at,
-        ended_at,
-        user:profiles!user_id(full_name)
-      `)
-      .eq('status', 'COMPLETED')
-      .order('ended_at', { ascending: false })
-      .limit(5)
+      const { data: recent } = await supabase
+        .from('calls')
+        .select(`
+          id,
+          started_at,
+          ended_at,
+          user:profiles!user_id(full_name)
+        `)
+        .eq('status', 'COMPLETED')
+        .order('ended_at', { ascending: false })
+        .limit(5)
 
-    if (recent) {
-      setRecentCalls(recent as unknown as RecentCall[])
+      if (recent) {
+        const mapped: RecentCall[] = (recent as any[]).map((r) => ({
+          ...r,
+          user: r.user ? { full_name: (r.user as any).full_name } : undefined
+        }))
+        setRecentCalls(mapped)
+      }
+    } catch {
+      setTotalCalls(0)
+      setTodayCompleted(0)
+      setRecentCalls([])
     }
   }
 

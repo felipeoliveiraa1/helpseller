@@ -1,5 +1,5 @@
 import { authService } from '../services/auth';
-import { connect, send, onWsConnect, onWsMessage } from '../services/websocket';
+import { connect, send, onWsConnect, onWsMessage, onWsClose } from '../services/websocket';
 import { edgeCoach } from '../services/edge-coach';
 import type { CachedObjection } from '../stores/coaching-store';
 
@@ -21,23 +21,32 @@ let cachedObjections: CachedObjection[] = [];
 let isCallConfirmed = false;
 let lastLiveKitCallId: string | null = null;
 let audioSegmentBuffer: any[] = [];
+let callStartRetryIntervalId: ReturnType<typeof setInterval> | null = null;
 
-// Re-enviar dados iniciais quando o WebSocket reconectar
+// Re-enviar dados iniciais quando o WebSocket reconectar (delay para backend estar pronto)
 onWsConnect(() => {
-    // 1. Re-send call:start if we were recording
-    if (lastCallStartParams) {
-        console.log('🔄 Re-sending call:start on reconnect:', lastCallStartParams);
-        send('call:start', lastCallStartParams);
+    if (callStartRetryIntervalId) {
+        clearInterval(callStartRetryIntervalId);
+        callStartRetryIntervalId = null;
     }
+    const delayMs = 1500;
+    setTimeout(() => {
+        if (lastCallStartParams) {
+            console.log('🔄 Re-sending call:start on reconnect (after', delayMs, 'ms):', lastCallStartParams);
+            send('call:start', lastCallStartParams);
+        }
+        if (currentLeadName) {
+            console.log('👤 Re-sending lead name on reconnect:', currentLeadName);
+            send('call:participants', {
+                leadName: currentLeadName,
+                allParticipants: []
+            });
+        }
+    }, delayMs);
+});
 
-    // 2. Re-send participants
-    if (currentLeadName) {
-        console.log('👤 Re-sending lead name on reconnect:', currentLeadName);
-        send('call:participants', {
-            leadName: currentLeadName,
-            allParticipants: []
-        });
-    }
+onWsClose(() => {
+    isCallConfirmed = false;
 });
 
 // Listen for messages from WebSocket
@@ -46,6 +55,10 @@ onWsMessage(async (data: any) => {
         const callId = data.payload?.callId as string | undefined;
         console.log('✅ Call started confirmed by backend. CallId:', callId);
         isCallConfirmed = true;
+        if (callStartRetryIntervalId) {
+            clearInterval(callStartRetryIntervalId);
+            callStartRetryIntervalId = null;
+        }
 
         // Flush buffered audio segments
         if (audioSegmentBuffer.length > 0) {
@@ -230,15 +243,16 @@ onWsMessage(async (data: any) => {
 
 // State Management Helpers
 async function getState() {
-    const data = await chrome.storage.session.get(['streamId', 'currentTabId', 'isRecording']);
+    const data = await chrome.storage.session.get(['streamId', 'currentTabId', 'isRecording', 'recordingStartedAt']);
     return {
         streamId: data.streamId as string | null,
         currentTabId: data.currentTabId as number | null,
-        isRecording: !!data.isRecording
+        isRecording: !!data.isRecording,
+        recordingStartedAt: (data.recordingStartedAt as number) || null
     };
 }
 
-async function setState(updates: { streamId?: string | null, currentTabId?: number | null, isRecording?: boolean }) {
+async function setState(updates: { streamId?: string | null, currentTabId?: number | null, isRecording?: boolean; recordingStartedAt?: number | null }) {
     await chrome.storage.session.set(updates);
 }
 
@@ -376,6 +390,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message.type === 'GET_STATUS') {
+        getState().then(state => {
+            const status = state.isRecording ? 'RECORDING' : 'PROGRAMMED';
+            try { sendResponse({ status, recordingStartedAt: state.recordingStartedAt ?? null }); } catch (_) { /* channel may be closed */ }
+        }).catch(() => {
+            try { sendResponse({ status: 'PROGRAMMED', recordingStartedAt: null }); } catch (_) { }
+        });
+        return true;
+    }
+
     // For all other messages, we just process them without keeping the channel open
     handleAsync();
     return false;
@@ -417,8 +441,8 @@ async function startCapture(explicitTabId?: number) {
         const tab = await chrome.tabs.get(state.currentTabId);
         console.log('🚀 Initiating capture flow for:', tab.url);
 
-        // 1. Update Status
-        await setState({ isRecording: true });
+        // 1. Update Status and recording start time for popup timer
+        await setState({ isRecording: true, recordingStartedAt: Date.now() });
         broadcastStatus('RECORDING');
 
         // RESET STATE
@@ -539,26 +563,40 @@ async function startCapture(explicitTabId?: number) {
             console.log('📤 Sending call:start:', lastCallStartParams);
             send('call:start', lastCallStartParams);
 
-            // Retry mechanisms for call:start
+            const maxAttempts = 10;
+            const retryIntervalMs = 5000;
             let attempts = 0;
-            const retryInterval = setInterval(() => {
-                // Fix: Check isRecording from state, not isProcessing (which is false after setup)
+            if (callStartRetryIntervalId) clearInterval(callStartRetryIntervalId);
+            callStartRetryIntervalId = setInterval(() => {
+                if (isCallConfirmed) {
+                    if (callStartRetryIntervalId) {
+                        clearInterval(callStartRetryIntervalId);
+                        callStartRetryIntervalId = null;
+                    }
+                    return;
+                }
                 getState().then(currentState => {
-                    if (isCallConfirmed || !currentState.isRecording) {
-                        clearInterval(retryInterval);
+                    if (!currentState.isRecording) {
+                        if (callStartRetryIntervalId) {
+                            clearInterval(callStartRetryIntervalId);
+                            callStartRetryIntervalId = null;
+                        }
                         return;
                     }
                 });
                 attempts++;
-                if (attempts > 5) {
-                    console.error('❌ Call start failed after 5 attempts (backend timeout)');
-                    clearInterval(retryInterval);
+                if (attempts >= maxAttempts) {
+                    console.error('❌ Call start failed after', maxAttempts, 'attempts (backend timeout)');
+                    if (callStartRetryIntervalId) {
+                        clearInterval(callStartRetryIntervalId);
+                        callStartRetryIntervalId = null;
+                    }
                     broadcastStatus('ERROR');
-                    return; // Don't stop capture, just notify error
+                    return;
                 }
-                console.log(`🔄 Retrying call:start (attempt ${attempts})...`);
+                console.log(`🔄 Retrying call:start (attempt ${attempts}/${maxAttempts})...`);
                 if (lastCallStartParams) send('call:start', lastCallStartParams);
-            }, 3000); // Retry every 3s
+            }, retryIntervalMs);
         }
 
     } catch (err: any) {
@@ -605,7 +643,7 @@ async function stopCapture() {
             offscreenDocument = null;
         }
 
-        await setState({ isRecording: false });
+        await setState({ isRecording: false, recordingStartedAt: null });
         lastLiveKitCallId = null;
         broadcastStatus('PROGRAMMED');
         send('call:end', {});

@@ -11,6 +11,7 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 // Callbacks that background can register
 let onMessageCallback: ((data: any) => void) | null = null;
 let onConnectCallback: (() => void) | null = null;
+let onCloseCallback: (() => void) | null = null;
 
 export function onWsMessage(cb: (data: any) => void) {
     onMessageCallback = cb;
@@ -18,6 +19,10 @@ export function onWsMessage(cb: (data: any) => void) {
 
 export function onWsConnect(cb: () => void) {
     onConnectCallback = cb;
+}
+
+export function onWsClose(cb: () => void) {
+    onCloseCallback = cb;
 }
 
 export async function connect() {
@@ -69,6 +74,7 @@ export async function connect() {
         ws.onclose = (event) => {
             console.error('❌ WS Closed', { code: event.code, reason: event.reason });
             ws = null;
+            if (onCloseCallback) onCloseCallback();
 
             if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
                 console.error('❌ Max reconnect attempts reached, stopping.');
@@ -94,10 +100,16 @@ export async function connect() {
     } catch (err: any) {
         console.error('❌ Failed to get token or connect:', err.message);
 
+        const isNoSession = err?.message?.includes('No session found') || err?.message?.includes('Auth session');
+        if (isNoSession && reconnectAttempts >= 2) {
+            console.error('Stopping WS reconnect: faça login no popup da extensão.');
+            return;
+        }
+
         reconnectAttempts++;
         const delay = 5000;
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            console.log(`Retrying in ${delay}ms...`);
+            console.log(`Retrying in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
             if (reconnectTimer) clearTimeout(reconnectTimer);
             reconnectTimer = setTimeout(() => connect(), delay);
         }

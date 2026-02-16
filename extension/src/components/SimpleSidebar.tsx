@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { authService } from '../services/auth';
 import { CardItem } from './CardItem';
 import { type CoachCard } from '../stores/coaching-store';
+import { GripVertical, Mic, Minus, LogOut, AlertCircle, X, Cpu } from 'lucide-react';
+import { BG, BG_ELEVATED, BORDER, BORDER_SUBTLE, TEXT, TEXT_SECONDARY, TEXT_MUTED, INPUT_BG, INPUT_BORDER, ACCENT_ACTIVE, ACCENT_DANGER, RADIUS } from '../lib/theme';
 
 const SIDEBAR_W = 360;
 const SIDEBAR_H = '80vh';
@@ -139,17 +141,11 @@ export default function SimpleSidebar() {
         setIsRecording(false);
     };
 
-    const toggleRecording = () => {
-        chrome.runtime.sendMessage({
-            type: isRecording ? 'STOP_CAPTURE' : 'START_CAPTURE'
-        });
-    };
-
     // Listen for messages
     useEffect(() => {
         const listener = (msg: any) => {
             if (msg.type === 'TRANSCRIPT_RESULT') {
-                console.log('📝 Sidebar received transcript:', msg.data);
+                console.log('Sidebar received transcript:', msg.data);
                 const newTranscript = {
                     text: msg.data.text,
                     isFinal: msg.data.isFinal,
@@ -201,7 +197,7 @@ export default function SimpleSidebar() {
                 if (msg.status !== 'RECORDING') setMicAvailable(null);
 
                 if (msg.status === 'PERMISSION_REQUIRED') {
-                    alert('⚠️ Permissão necessária!\n\nPor favor, clique no ícone da extensão "Sales Copilot" na barra do navegador para autorizar a captura da aba.');
+                    alert('Permissão necessária. Clique no ícone da extensão na barra do navegador para autorizar a captura da aba.');
                 }
             } else if (msg.type === 'MANAGER_WHISPER') {
                 // Handle new whisper
@@ -224,8 +220,8 @@ export default function SimpleSidebar() {
                     id: Math.random().toString(36).substring(7),
                     type: isObjection ? 'objection' : 'tip',
                     title: isObjection
-                        ? '⚡ Objeção Detectada'
-                        : `💡 ${phase ? phaseLabels[phase] || 'SPIN' : 'Dica'} — Próximo Passo`,
+                        ? 'Objeção Detectada'
+                        : `${phase ? phaseLabels[phase] || 'SPIN' : 'Dica'} — Próximo Passo`,
                     description: payload.content,
                     timestamp: Date.now(),
                     isDismissed: false,
@@ -243,100 +239,40 @@ export default function SimpleSidebar() {
         return () => chrome.runtime.onMessage.removeListener(listener);
     }, []);
 
-    const getTempIcon = (temp: 'hot' | 'warm' | 'cold') => {
-        if (temp === 'hot') return '🔥';
-        if (temp === 'warm') return '🌡️';
-        return '❄️';
+    const baseContainer = {
+        width: '100%',
+        minHeight: 0,
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        backgroundColor: BG,
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        color: TEXT,
     };
 
-    // Loading state
     if (loading) {
         return (
-            <div style={{
-                width: '100%',
-                height: '100vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#1e293b',
-                color: '#e2e8f0'
-            }}>
-                <div>Carregando...</div>
+            <div style={{ ...baseContainer, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: TEXT_SECONDARY, fontSize: 13 }}>Carregando...</span>
             </div>
         );
     }
 
-    // Login screen
     if (!session) {
         return (
-            <div style={{
-                width: '100%',
-                height: '100vh',
-                backgroundColor: '#1e293b',
-                padding: '24px',
-                color: '#e2e8f0',
-                fontFamily: 'system-ui, -apple-system, sans-serif'
-            }}>
-                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '24px', color: '#f1f5f9' }}>
-                    Sales Copilot AI
-                </h2>
-                <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ ...baseContainer, height: '100%', padding: 24 }}>
+                <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 20, color: TEXT }}>Entrar</h2>
+                <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}>
-                            Email
-                        </label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: '6px',
-                                border: '1px solid #475569',
-                                backgroundColor: '#334155',
-                                color: '#e2e8f0',
-                                fontSize: '14px'
-                            }}
-                            required
-                        />
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 500, marginBottom: 6, color: TEXT_SECONDARY }}>Email</label>
+                        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: RADIUS, border: `1px solid ${INPUT_BORDER}`, background: INPUT_BG, color: TEXT, fontSize: 13 }} required />
                     </div>
                     <div>
-                        <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}>
-                            Senha
-                        </label>
-                        <input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: '6px',
-                                border: '1px solid #475569',
-                                backgroundColor: '#334155',
-                                color: '#e2e8f0',
-                                fontSize: '14px'
-                            }}
-                            required
-                        />
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 500, marginBottom: 6, color: TEXT_SECONDARY }}>Senha</label>
+                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: RADIUS, border: `1px solid ${INPUT_BORDER}`, background: INPUT_BG, color: TEXT, fontSize: 13 }} required />
                     </div>
-                    {error && <p style={{ color: '#ef4444', fontSize: '14px' }}>{error}</p>}
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        style={{
-                            width: '100%',
-                            padding: '10px',
-                            borderRadius: '6px',
-                            border: 'none',
-                            backgroundColor: '#3b82f6',
-                            color: 'white',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            cursor: 'pointer'
-                        }}
-                    >
+                    {error && <p style={{ color: ACCENT_DANGER, fontSize: 12 }}>{error}</p>}
+                    <button type="submit" disabled={loading} style={{ width: '100%', padding: 10, borderRadius: RADIUS, border: 'none', background: ACCENT_ACTIVE, color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
                         {loading ? 'Entrando...' : 'Entrar'}
                     </button>
                 </form>
@@ -351,222 +287,74 @@ export default function SimpleSidebar() {
                 style={{
                     width: '100%',
                     height: '100%',
-                    backgroundColor: '#1e293b',
+                    backgroundColor: BG,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontFamily: 'system-ui, -apple-system, sans-serif',
-                    borderRight: '1px solid #334155',
+                    borderRight: `1px solid ${BORDER}`,
                     cursor: 'move',
-                    userSelect: 'none'
+                    userSelect: 'none',
                 }}
             >
-                <button
-                    onClick={toggleMinimize}
-                    title="Expandir"
-                    style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: '#334155',
-                        color: '#e2e8f0',
-                        fontSize: '18px',
-                        cursor: 'pointer'
-                    }}
-                >
-                    ◀
+                <button onClick={toggleMinimize} title="Expandir" style={{ width: 32, height: 32, borderRadius: RADIUS, border: `1px solid ${BORDER}`, background: BG_ELEVATED, color: TEXT_SECONDARY, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <GripVertical size={16} style={{ transform: 'rotate(-90deg)' }} />
                 </button>
             </div>
         );
     }
 
-    // Main sidebar (logged in)
     return (
-        <div style={{
-            width: '100%',
-            height: '100%',
-            minHeight: 0,
-            backgroundColor: '#1e293b',
-            display: 'flex',
-            flexDirection: 'column',
-            fontFamily: 'system-ui, -apple-system, sans-serif',
-            color: '#e2e8f0'
-        }}>
-            {/* Header = arrastar por aqui + minimizar / sair */}
+        <div style={{ ...baseContainer, height: '100%' }}>
             <div
                 onMouseDown={handleDragStart}
-                style={{
-                    padding: '16px',
-                    borderBottom: '1px solid #334155',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    cursor: 'move',
-                    userSelect: 'none'
-                }}
+                style={{ padding: 12, borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'move', userSelect: 'none', flexShrink: 0 }}
             >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ opacity: 0.7, marginRight: '4px' }} title="Arraste aqui para mover">⋮⋮</span>
-                    <span style={{ fontSize: '24px' }}>{isRecording ? '🎙️' : '⏸️'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <GripVertical size={14} style={{ color: TEXT_MUTED }} />
+                    <Mic size={16} style={{ color: isRecording ? ACCENT_DANGER : TEXT_MUTED }} />
                     <div>
-                        <div style={{ fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            {isRecording ? 'GRAVANDO' : 'PAUSADO'}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                            {session.user.email}
-                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY }}>{isRecording ? 'Gravando' : 'Parado'}</div>
+                        <div style={{ fontSize: 10, color: TEXT_MUTED }}>{session.user?.email}</div>
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                    <button
-                        onClick={toggleMinimize}
-                        title="Minimizar"
-                        style={{
-                            padding: '4px 8px',
-                            fontSize: '14px',
-                            backgroundColor: 'transparent',
-                            border: '1px solid #475569',
-                            borderRadius: '4px',
-                            color: '#94a3b8',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        −
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <button onClick={toggleMinimize} title="Minimizar" style={{ padding: 6, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: RADIUS, color: TEXT_SECONDARY, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Minus size={14} />
                     </button>
-                    <span style={{ fontSize: '18px' }}>{getTempIcon(leadTemp)}</span>
-                    <button
-                        onClick={handleLogout}
-                        style={{
-                            padding: '4px 8px',
-                            fontSize: '12px',
-                            backgroundColor: 'transparent',
-                            border: '1px solid #475569',
-                            borderRadius: '4px',
-                            color: '#94a3b8',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        Sair
-                    </button>
+                    <button onClick={handleLogout} style={{ padding: 6, fontSize: 11, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: RADIUS, color: TEXT_SECONDARY, cursor: 'pointer' }}>Sair</button>
                 </div>
             </div>
 
-            {/* Recording Control */}
-            <div style={{ padding: '16px', borderBottom: '1px solid #334155' }}>
-                <button
-                    onClick={toggleRecording}
-                    style={{
-                        width: '100%',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        backgroundColor: isRecording ? '#dc2626' : '#10b981',
-                        color: 'white',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px'
-                    }}
-                >
-                    {isRecording ? '⏹️ Parar Gravação' : '▶️ Iniciar Gravação'}
-                </button>
-                {isRecording && micAvailable !== null && (
-                    <div style={{ fontSize: '11px', color: micAvailable ? '#22c55e' : '#f59e0b', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        {micAvailable ? '🎙️ Microfone permitido (sua voz = Você)' : '⚠️ Microfone não permitido – sua voz pode aparecer como Cliente'}
-                    </div>
-                )}
-            </div>
-
-            {/* MANAGER WHISPER AREA */}
             {managerWhisper && (
-                <div style={{
-                    padding: '16px',
-                    backgroundColor: 'rgba(234, 179, 8, 0.1)', // Yellow tint
-                    borderBottom: '1px solid #eab308',
-                    borderTop: '1px solid #eab308'
-                }}>
-                    <div style={{
-                        fontSize: '12px',
-                        fontWeight: '700',
-                        marginBottom: '8px',
-                        color: '#eab308', // Gold
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                    }}>
-                        <span>👑 Dica do Gestor</span>
-                        <button
-                            onClick={() => setManagerWhisper(null)}
-                            style={{ background: 'none', border: 'none', color: '#eab308', cursor: 'pointer', fontSize: '14px' }}
-                        >
-                            ✕
+                <div style={{ padding: 12, background: BG_ELEVATED, borderBottom: `1px solid ${BORDER}`, flexShrink: 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 6, color: TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span>Gestor</span>
+                        <button onClick={() => setManagerWhisper(null)} style={{ background: 'none', border: 'none', color: TEXT_MUTED, cursor: 'pointer', padding: 0, display: 'flex' }}>
+                            <X size={14} />
                         </button>
                     </div>
-                    <div style={{ fontSize: '15px', fontWeight: '500', lineHeight: '1.5', color: '#fef08a' }}>
-                        {managerWhisper.content}
-                    </div>
+                    <div style={{ fontSize: 13, lineHeight: 1.5, color: TEXT }}>{managerWhisper.content}</div>
                 </div>
             )}
 
-            {/* Cards Area (fixed height or flexible) */}
-            <div style={{
-                maxHeight: '40%', // Take up to 40% of height for cards
-                overflowY: 'auto',
-                padding: '16px 16px 0 16px',
-                borderBottom: '1px solid #334155',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px'
-            }}>
-                <div style={{
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    marginBottom: '4px',
-                    color: '#94a3b8',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                }}>
-                    💡 Insights
-                </div>
-
+            <div style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '12px 12px 0', borderBottom: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', gap: 8, backgroundColor: BG }}>
+                <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4, color: TEXT_MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>Insights</div>
                 {cards.length === 0 ? (
-                    <div style={{ fontSize: '14px', color: '#64748b', fontStyle: 'italic', paddingBottom: '16px' }}>
-                        Aguardando análise...
-                    </div>
+                    <div style={{ fontSize: 12, color: TEXT_MUTED, paddingBottom: 12 }}>Aguardando análise...</div>
                 ) : (
-                    cards.map(card => (
-                        <div key={card.id}>
-                            {/* We wrap CardItem because it expects Tailwind classes which might not leak fully into ShadowDOM heavily unless injected style block covers it. 
-                                CardItem uses utility classes 'bg-emerald-900/40' etc. Ensure style tag in content script covers this. 
-                                For now, assuming utility classes work because we injected them in content/index.tsx 
-                            */}
-                            <CardItem
-                                card={card}
-                                onDismiss={(id) => setCards(prev => prev.filter(c => c.id !== id))}
-                            />
+                    cards.map((card) => (
+                        <div key={card.id} style={{ flexShrink: 0 }}>
+                            <CardItem card={card} onDismiss={(id) => setCards((prev) => prev.filter((c) => c.id !== id))} />
                         </div>
                     ))
                 )}
             </div>
 
-            {/* IA Status Indicator (transcript hidden — saved to DB only) */}
-            <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                <div style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '10px 14px',
-                    backgroundColor: 'rgba(59,130,246,0.1)',
-                    border: '1px solid rgba(59,130,246,0.2)',
-                    borderRadius: '12px',
-                    fontSize: '12px', color: '#93c5fd'
-                }}>
-                    <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#3b82f6', animation: 'pulse 2s infinite' }} />
-                    🧠 IA analisando conversa em tempo real...
+            <div style={{ padding: '10px 12px', borderTop: `1px solid ${BORDER}`, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', backgroundColor: BG_ELEVATED, border: `1px solid ${BORDER}`, borderRadius: RADIUS, fontSize: 11, color: TEXT_SECONDARY }}>
+                    <Cpu size={12} />
+                    Analisando em tempo real
                 </div>
             </div>
         </div>

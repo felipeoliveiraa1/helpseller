@@ -1,12 +1,13 @@
-import { useRef, useEffect, useMemo } from 'react';
+import { useRef, useMemo } from 'react';
 import { useCoachingStore } from '../stores/coaching-store';
 import { CardItem } from './CardItem';
+import { BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED } from '../lib/theme';
 
-const SPIN_PHASES: Record<string, { label: string; color: string; bg: string; border: string; description: string }> = {
-    S: { label: 'Situação', color: 'text-cyan-300', bg: 'bg-cyan-900/30', border: 'border-cyan-500/40', description: 'Coletando fatos sobre o contexto' },
-    P: { label: 'Problema', color: 'text-amber-300', bg: 'bg-amber-900/30', border: 'border-amber-500/40', description: 'Descobrindo dores e insatisfações' },
-    I: { label: 'Implicação', color: 'text-red-300', bg: 'bg-red-900/30', border: 'border-red-500/40', description: 'Amplificando as consequências' },
-    N: { label: 'Necessidade', color: 'text-green-300', bg: 'bg-green-900/30', border: 'border-green-500/40', description: 'Fazendo o cliente verbalizar a solução' },
+const SPIN_PHASES: Record<string, { label: string; description: string; dot: string }> = {
+    S: { label: 'Situação', description: 'Coletando fatos sobre o contexto', dot: '#737373' },
+    P: { label: 'Problema', description: 'Descobrindo dores e insatisfações', dot: '#737373' },
+    I: { label: 'Implicação', description: 'Amplificando as consequências', dot: '#737373' },
+    N: { label: 'Necessidade', description: 'Fazendo o cliente verbalizar a solução', dot: '#737373' },
 };
 
 export function CoachPanel() {
@@ -14,7 +15,6 @@ export function CoachPanel() {
     const currentSpinPhase = useCoachingStore(state => state.currentSpinPhase);
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // Derive the latest SPIN phase from the most recent card with a phase
     const latestPhase = useMemo(() => {
         if (currentSpinPhase) return currentSpinPhase;
         const cardWithPhase = cards.find(c => !c.isDismissed && c.metadata?.phase);
@@ -26,45 +26,36 @@ export function CoachPanel() {
 
     return (
         <div className="flex-1 overflow-y-auto custom-scrollbar" ref={scrollRef}>
-            {/* SPIN Phase Banner */}
             {phaseInfo && (
-                <div className={`mx-4 mt-3 mb-1 px-3 py-2.5 rounded-lg border ${phaseInfo.bg} ${phaseInfo.border} transition-all duration-500`}>
+                <div
+                    className="mx-3 mt-2 mb-1 px-2.5 py-2 rounded-lg border"
+                    style={{ background: BG_ELEVATED, borderColor: BORDER }}
+                >
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <span className={`text-xs font-black tracking-widest ${phaseInfo.color}`}>
-                                SPIN:{latestPhase}
-                            </span>
-                            <span className={`text-sm font-semibold ${phaseInfo.color}`}>
-                                {phaseInfo.label}
-                            </span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: TEXT_MUTED }}>SPIN:{latestPhase}</span>
+                            <span className="text-[13px] font-medium" style={{ color: TEXT_SECONDARY }}>{phaseInfo.label}</span>
                         </div>
                         <div className="flex gap-1">
                             {['S', 'P', 'I', 'N'].map(p => (
                                 <div
                                     key={p}
-                                    className={`w-2 h-2 rounded-full transition-all duration-300 ${p === latestPhase
-                                            ? `${SPIN_PHASES[p].color.replace('text-', 'bg-')} scale-125 ring-1 ring-white/30`
-                                            : 'bg-slate-600/50'
-                                        }`}
+                                    className="w-1.5 h-1.5 rounded-full transition-all"
+                                    style={{ background: p === latestPhase ? phaseInfo.dot : '#262626' }}
                                 />
                             ))}
                         </div>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-1">{phaseInfo.description}</p>
+                    <p className="text-[11px] mt-1" style={{ color: TEXT_MUTED }}>{phaseInfo.description}</p>
                 </div>
             )}
-
-            {/* Cards */}
-            <div className="p-4 space-y-1">
+            <div className="p-3 space-y-1">
                 {activeCards.map(card => (
                     <CardItem key={card.id} card={card} />
                 ))}
-
                 {activeCards.length === 0 && (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-50 pt-12">
-                        <p className="text-sm">
-                            {phaseInfo ? 'Analisando conversa...' : 'Aguardando conversa...'}
-                        </p>
+                    <div className="py-8 flex flex-col items-center justify-center" style={{ color: TEXT_MUTED }}>
+                        <p className="text-[13px]">{phaseInfo ? 'Analisando conversa...' : 'Aguardando conversa...'}</p>
                     </div>
                 )}
             </div>

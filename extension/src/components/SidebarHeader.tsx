@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useCoachingStore } from '../stores/coaching-store';
-import { Minimize2, Maximize2, Activity } from 'lucide-react';
+import { Minimize2, Radio } from 'lucide-react';
+import { BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, ACCENT_ACTIVE, ACCENT_DANGER } from '../lib/theme';
 
 export function SidebarHeader() {
     const { isMinimized, toggleMinimize, connectionStatus, startTime } = useCoachingStore();
@@ -19,23 +20,22 @@ export function SidebarHeader() {
 
     if (isMinimized) return null;
 
-    return (
-        <div className="h-14 flex items-center justify-between px-4 border-b border-white/10 bg-[#1A1B2E] text-white shrink-0">
-            <div className="flex items-center space-x-3">
-                <Activity size={18} className="text-blue-400" />
-                <span className="font-bold tracking-tight">SALES COPILOT</span>
-                <div className={`w-2 h-2 rounded-full ${connectionStatus === 'recording' ? 'bg-green-500 animate-pulse' :
-                        connectionStatus === 'connected' ? 'bg-yellow-500' : 'bg-red-500'
-                    }`} />
-            </div>
+    const dotColor = connectionStatus === 'recording' ? ACCENT_DANGER : connectionStatus === 'connected' ? ACCENT_ACTIVE : '#525252';
 
-            <div className="flex items-center space-x-3">
-                <span className="font-mono text-sm opacity-80">{elapsed}</span>
-                <button
-                    onClick={toggleMinimize}
-                    className="hover:bg-white/10 rounded p-1 transition-colors"
-                >
-                    <Minimize2 size={16} />
+    return (
+        <div
+            className="h-12 flex items-center justify-between px-3 border-b shrink-0"
+            style={{ background: BG_ELEVATED, borderColor: BORDER }}
+        >
+            <div className="flex items-center gap-2">
+                <Radio size={14} style={{ color: TEXT_SECONDARY }} />
+                <span className="font-semibold text-[13px] tracking-tight" style={{ color: TEXT }}>Call Coach</span>
+                <div className="w-1.5 h-1.5 rounded-full" style={{ background: dotColor }} />
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px]" style={{ color: TEXT_SECONDARY }}>{elapsed}</span>
+                <button onClick={toggleMinimize} className="p-1 rounded hover:bg-white/5 transition-colors" style={{ color: TEXT_SECONDARY }} aria-label="Minimizar">
+                    <Minimize2 size={14} />
                 </button>
             </div>
         </div>

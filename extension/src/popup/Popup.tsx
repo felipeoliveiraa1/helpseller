@@ -1,12 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { authService } from '../services/auth';
+import { Loader2, Mic, Square, LogOut, Monitor } from 'lucide-react';
+import { TEXT, TEXT_SECONDARY, TEXT_MUTED, INPUT_BG, INPUT_BORDER, ACCENT_ACTIVE, ACCENT_DANGER, RADIUS } from '../lib/theme';
 
-import { Loader2, Mic, MicOff, LogOut } from 'lucide-react';
+const NEON_PURPLE = '#9d00ff';
+const NEON_BLUE = '#00d1ff';
+const NEON_GREEN = '#00ff94';
+const BG_CARD = 'rgba(255,255,255,0.04)';
+const BORDER_NEON = 'rgba(157, 0, 255, 0.25)';
 
 interface TabOption {
     id: number;
     title: string;
     url: string;
+}
+
+function formatDuration(seconds: number): string {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) {
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 export default function Popup() {
@@ -16,12 +32,48 @@ export default function Popup() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [status, setStatus] = useState<'PROGRAMMED' | 'RECORDING' | 'PAUSED'>('PROGRAMMED');
+    const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [tabs, setTabs] = useState<TabOption[]>([]);
     const [selectedTabId, setSelectedTabId] = useState<number | null>(null);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         checkSession();
     }, []);
+
+    useEffect(() => {
+        chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response: { status?: string; recordingStartedAt?: number | null } | undefined) => {
+            if (response?.status === 'RECORDING' || response?.status === 'PROGRAMMED' || response?.status === 'PAUSED') {
+                setStatus(response.status);
+            }
+            if (response?.recordingStartedAt != null) {
+                setRecordingStartedAt(response.recordingStartedAt);
+            } else {
+                setRecordingStartedAt(null);
+            }
+        });
+    }, []);
+
+    useEffect(() => {
+        if (status === 'RECORDING' && recordingStartedAt != null) {
+            const tick = () => {
+                setElapsedSeconds(Math.floor((Date.now() - recordingStartedAt) / 1000));
+            };
+            tick();
+            timerRef.current = setInterval(tick, 1000);
+            return () => {
+                if (timerRef.current) clearInterval(timerRef.current);
+                timerRef.current = null;
+            };
+        } else {
+            setElapsedSeconds(0);
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        }
+    }, [status, recordingStartedAt]);
 
     useEffect(() => {
         if (!session || status === 'RECORDING') return;
@@ -70,115 +122,206 @@ export default function Popup() {
 
     const toggleCapture = async () => {
         const tabId = status === 'RECORDING' ? undefined : (selectedTabId ?? tabs[0]?.id ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id);
-
+        if (status === 'RECORDING') {
+            setStatus('PROGRAMMED');
+            setRecordingStartedAt(null);
+        } else {
+            setStatus('RECORDING');
+            setRecordingStartedAt(Date.now());
+        }
         chrome.runtime.sendMessage({
             type: status === 'RECORDING' ? 'STOP_CAPTURE' : 'START_CAPTURE',
             tabId: tabId ?? undefined
         });
     };
 
-    // Listen for status updates from background
     useEffect(() => {
         const listener = (msg: any) => {
             if (msg.type === 'STATUS_UPDATE') {
                 setStatus(msg.status);
+                if (msg.status !== 'RECORDING') {
+                    setRecordingStartedAt(null);
+                } else {
+                    chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (r: { recordingStartedAt?: number | null } | undefined) => {
+                        if (r?.recordingStartedAt != null) setRecordingStartedAt(r.recordingStartedAt);
+                    });
+                }
             }
-        }
+        };
         chrome.runtime.onMessage.addListener(listener);
         return () => chrome.runtime.onMessage.removeListener(listener);
-    }, [])
+    }, []);
+
+    const base: React.CSSProperties = {
+        width: '100%',
+        minHeight: '380px',
+        color: TEXT,
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        position: 'relative',
+        zIndex: 1,
+        padding: '20px 16px',
+        boxSizing: 'border-box',
+    };
 
     if (loading) {
-        return <div className="flex items-center justify-center w-64 h-64"><Loader2 className="animate-spin" /></div>;
+        return (
+            <div style={{ ...base, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                <Loader2 size={28} style={{ color: NEON_BLUE }} className="animate-spin" />
+            </div>
+        );
     }
 
     if (!session) {
         return (
-            <div className="w-80 p-6 bg-slate-50">
-                <h2 className="text-xl font-bold mb-4 text-slate-900">Sales Copilot Login</h2>
-                <form onSubmit={handleLogin} className="space-y-4">
+            <div style={{ ...base, padding: 24 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20, color: TEXT, letterSpacing: '-0.02em' }}>Entrar</h2>
+                <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700">Email</label>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 500, marginBottom: 4, color: TEXT_SECONDARY }}>Email</label>
                         <input
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: RADIUS, border: `1px solid ${INPUT_BORDER}`, background: INPUT_BG, color: TEXT, fontSize: 13, boxSizing: 'border-box' }}
                             required
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700">Password</label>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 500, marginBottom: 4, color: TEXT_SECONDARY }}>Senha</label>
                         <input
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: RADIUS, border: `1px solid ${INPUT_BORDER}`, background: INPUT_BG, color: TEXT, fontSize: 13, boxSizing: 'border-box' }}
                             required
                         />
                     </div>
-                    {error && <p className="text-red-500 text-sm">{error}</p>}
+                    {error && <p style={{ color: ACCENT_DANGER, fontSize: 12 }}>{error}</p>}
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                        style={{ width: '100%', padding: 12, borderRadius: RADIUS, border: 'none', background: `linear-gradient(135deg, ${NEON_PURPLE}, ${NEON_BLUE})`, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
                     >
-                        {loading ? 'Logging in...' : 'Login'}
+                        {loading ? 'Entrando...' : 'Entrar'}
                     </button>
                 </form>
             </div>
         );
     }
 
+    const isRecording = status === 'RECORDING';
+
     return (
-        <div className="w-80 p-4 bg-white">
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h2 className="font-semibold text-slate-900">Sales Copilot</h2>
-                    <p className="text-xs text-slate-500">{session.user.email}</p>
-                </div>
-                <button onClick={handleLogout} className="text-slate-400 hover:text-slate-600">
+        <div style={base}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: TEXT, letterSpacing: '-0.03em' }}>Call Coach</span>
+                <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: TEXT_MUTED, cursor: 'pointer', padding: 4 }} aria-label="Sair">
                     <LogOut size={16} />
                 </button>
             </div>
+            <p style={{ fontSize: 10, color: TEXT_SECONDARY, marginBottom: 16 }}>{session.user?.email}</p>
 
-            <div className="space-y-4">
-                <div className={`p-4 rounded-lg flex items-center justify-between ${status === 'RECORDING' ? 'bg-red-50 border-red-200' : 'bg-slate-50'}`}>
-                    <div className="flex items-center space-x-3">
-                        <div className={`w-3 h-3 rounded-full ${status === 'RECORDING' ? 'bg-red-500 animate-pulse' : 'bg-slate-400'}`} />
-                        <span className="font-medium text-sm">
-                            {status === 'RECORDING' ? 'Call in Progress' : 'Ready to Coach'}
-                        </span>
-                    </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '8px 12px', borderRadius: 20, background: BG_CARD, border: `1px solid ${BORDER_NEON}`, width: 'fit-content' }}>
+                <div
+                    style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: isRecording ? NEON_GREEN : TEXT_MUTED,
+                        animation: isRecording ? 'record-dot 1.2s ease-in-out infinite' : undefined,
+                    }}
+                />
+                <span style={{ fontSize: 11, fontWeight: 600, color: isRecording ? NEON_GREEN : TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    {isRecording ? 'Gravando' : 'Parado'}
+                </span>
+            </div>
+
+            <div
+                style={{
+                    textAlign: 'center',
+                    marginBottom: 24,
+                    padding: '20px 16px',
+                    borderRadius: 16,
+                    background: BG_CARD,
+                    border: `1px solid ${BORDER_NEON}`,
+                }}
+            >
+                <div style={{ fontSize: 11, color: TEXT_MUTED, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Tempo de gravação</div>
+                <div
+                    style={{
+                        fontSize: 42,
+                        fontWeight: 700,
+                        fontVariantNumeric: 'tabular-nums',
+                        color: isRecording ? '#fff' : TEXT_MUTED,
+                        textShadow: isRecording ? `0 0 20px ${NEON_BLUE}40` : undefined,
+                        letterSpacing: '0.02em',
+                    }}
+                >
+                    {isRecording ? formatDuration(elapsedSeconds) : '00:00'}
                 </div>
+            </div>
 
-                {status !== 'RECORDING' && tabs.length > 0 && (
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Gravar esta aba</label>
-                        <select
-                            value={selectedTabId ?? tabs[0]?.id ?? ''}
-                            onChange={(e) => setSelectedTabId(Number(e.target.value) || null)}
-                            className="w-full py-2 px-3 rounded-md border border-slate-300 text-sm bg-white"
-                        >
-                            {tabs.map((tab) => (
-                                <option key={tab.id} value={tab.id}>
-                                    {tab.title.length > 45 ? tab.title.slice(0, 45) + '…' : tab.title}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                )}
+            {!isRecording && tabs.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 500, marginBottom: 8, color: TEXT_SECONDARY }}>
+                        <Monitor size={12} />
+                        Aba
+                    </label>
+                    <select
+                        value={selectedTabId ?? tabs[0]?.id ?? ''}
+                        onChange={(e) => setSelectedTabId(Number(e.target.value) || null)}
+                        style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: RADIUS,
+                            border: `1px solid ${BORDER_NEON}`,
+                            background: BG_CARD,
+                            color: TEXT,
+                            fontSize: 12,
+                            boxSizing: 'border-box',
+                        }}
+                    >
+                        {tabs.map((tab) => (
+                            <option key={tab.id} value={tab.id}>
+                                {tab.title.length > 32 ? tab.title.slice(0, 32) + '…' : tab.title}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
 
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <button
                     onClick={toggleCapture}
-                    className={`w-full py-3 px-4 rounded-md flex items-center justify-center space-x-2 font-medium transition-colors ${status === 'RECORDING'
-                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
+                    style={{
+                        width: 80,
+                        height: 80,
+                        borderRadius: '50%',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        background: isRecording
+                            ? `linear-gradient(135deg, ${ACCENT_DANGER}, #b91c1c)`
+                            : `linear-gradient(135deg, ${NEON_PURPLE}, ${NEON_BLUE})`,
+                        color: 'white',
+                        boxShadow: isRecording
+                            ? '0 0 20px rgba(220, 38, 62, 0.5), 0 0 40px rgba(220, 38, 62, 0.2)'
+                            : `0 0 24px ${NEON_PURPLE}50, 0 0 48px ${NEON_BLUE}30`,
+                        animation: isRecording ? 'neon-pulse-stop 2s ease-in-out infinite' : 'neon-pulse 2s ease-in-out infinite',
+                        transition: 'transform 0.15s ease',
+                    }}
+                    onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.95)')}
+                    onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                 >
-                    {status === 'RECORDING' ? <><MicOff size={18} /> <span>End Call</span></> : <><Mic size={18} /> <span>Start Call</span></>}
+                    {isRecording ? <Square size={28} fill="currentColor" /> : <Mic size={28} />}
                 </button>
             </div>
+            <p style={{ textAlign: 'center', fontSize: 11, color: TEXT_MUTED, marginTop: 12 }}>
+                {isRecording ? 'Clique para parar' : 'Clique para iniciar'}
+            </p>
         </div>
     );
 }

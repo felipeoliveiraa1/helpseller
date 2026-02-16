@@ -58,8 +58,9 @@ class EdgeCoach {
             isPowerful: this.hardwareProfile.isPowerful
         });
 
-        // 2. If powerful, initialize worker
-        if (this.hardwareProfile.isPowerful) {
+        // 2. If powerful and Worker API is available, initialize worker
+        // (Worker is undefined in Chrome extension service worker context)
+        if (this.hardwareProfile.isPowerful && typeof Worker !== 'undefined') {
             try {
                 this.worker = new Worker(
                     new URL('../workers/objection-matcher.worker.ts', import.meta.url),
@@ -71,16 +72,20 @@ class EdgeCoach {
                 };
 
                 this.worker.onerror = (error) => {
-                    console.error('❌ Worker error:', error);
+                    console.error('Worker error:', error);
                 };
 
-                console.log('✅ Local matcher worker initialized');
+                console.log('Local matcher worker initialized');
             } catch (error) {
-                console.error('❌ Failed to initialize worker:', error);
-                this.hardwareProfile.isPowerful = false; // Fallback to backend
+                console.error('Failed to initialize worker:', error);
+                this.hardwareProfile.isPowerful = false;
             }
         } else {
-            console.log('⚠️ Weak hardware detected, using backend only');
+            if (!this.hardwareProfile.isPowerful) {
+                console.log('Weak hardware detected, using backend only');
+            } else {
+                console.log('Worker API not available (service worker context), using backend only');
+            }
         }
 
         this.initialized = true;

@@ -33,8 +33,8 @@ export default function Sidebar() {
                 addCard({
                     type: isObjection ? 'objection' : 'tip',
                     title: isObjection
-                        ? '⚡ Objeção Detectada'
-                        : `💡 ${phase ? phaseLabels[phase] || 'SPIN' : 'Dica'} — Próximo Passo`,
+                        ? 'Objeção Detectada'
+                        : `${phase ? phaseLabels[phase] || 'SPIN' : 'Dica'} — Próximo Passo`,
                     description: payload.content,
                     metadata: { ...payload.metadata, urgency: payload.urgency }
                 });
@@ -43,7 +43,7 @@ export default function Sidebar() {
             } else if (msg.type === 'OBJECTION_DETECTED') {
                 addCard({
                     type: 'objection',
-                    title: '⚡ Objeção Detectada',
+                    title: 'Objeção Detectada',
                     description: msg.data.tip,
                     metadata: {
                         phase: msg.data.phase,
@@ -54,7 +54,7 @@ export default function Sidebar() {
             } else if (msg.type === 'MANAGER_WHISPER') {
                 addCard({
                     type: 'manager-whisper',
-                    title: '🎯 Mensagem do Gerente',
+                    title: 'Mensagem do Gestor',
                     description: msg.data.content,
                     metadata: { source: 'manager', urgency: msg.data.urgency }
                 });
@@ -78,8 +78,7 @@ export default function Sidebar() {
     }
 
     return (
-        <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${isDark ? 'bg-[#1A1B2E] text-white' : 'bg-white text-slate-900 border-l border-slate-200'
-            }`}>
+        <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${isDark ? 'bg-[#0a0a0a] text-[#fafafa] border-l border-[#262626]' : 'bg-white text-slate-900 border-l border-slate-200'}`}>
             <SidebarHeader />
             <StageIndicator />
             <CoachPanel />

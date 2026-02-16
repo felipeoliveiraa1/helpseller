@@ -1,63 +1,45 @@
 import { useCoachingStore } from '../stores/coaching-store';
 import { User, Mic, ShoppingCart } from 'lucide-react';
+import { BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY } from '../lib/theme';
 
 export function NextStepFooter() {
-    const {
-        nextStep,
-        nextStepQuestion,
-        leadProfile,
-        buyingSignalsCount,
-        activeSpeaker,
-        setSpeaker
-    } = useCoachingStore();
+    const { nextStep, nextStepQuestion, leadProfile, buyingSignalsCount, activeSpeaker, setSpeaker } = useCoachingStore();
 
     return (
-        <div className="shrink-0 border-t border-white/10 bg-[#252640] text-white">
-            {/* Lead Profile Bar */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-black/20">
-                <div className="flex items-center space-x-3">
-                    <div className="flex items-center space-x-1.5">
-                        <User size={14} className="text-slate-400" />
-                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-                            {leadProfile}
-                        </span>
-                    </div>
-                    <div className="w-px h-3 bg-white/20" />
-                    <div className="flex items-center space-x-1.5 text-emerald-400">
-                        <ShoppingCart size={14} />
-                        <span className="text-xs font-bold">{buyingSignalsCount} sinais</span>
+        <div className="shrink-0 border-t text-[13px]" style={{ background: BG_ELEVATED, borderColor: BORDER, color: TEXT }}>
+            <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: BORDER }}>
+                <div className="flex items-center gap-2">
+                    <User size={12} style={{ color: TEXT_SECONDARY }} />
+                    <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: TEXT_SECONDARY }}>{leadProfile}</span>
+                    <span className="w-px h-2.5" style={{ background: BORDER }} />
+                    <div className="flex items-center gap-1" style={{ color: TEXT_SECONDARY }}>
+                        <ShoppingCart size={12} />
+                        <span className="text-[11px] font-medium">{buyingSignalsCount} sinais</span>
                     </div>
                 </div>
-
-                <div className="flex bg-black/30 rounded-full p-0.5">
+                <div className="flex rounded-md p-0.5 gap-0" style={{ background: '#171717', border: `1px solid ${BORDER}` }}>
                     <button
                         onClick={() => setSpeaker('user')}
-                        className={`flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] transition-colors ${activeSpeaker === 'user' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                            }`}
+                        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-colors ${activeSpeaker === 'user' ? 'bg-[#262626]' : ''}`}
+                        style={{ color: activeSpeaker === 'user' ? TEXT : TEXT_SECONDARY }}
                     >
                         <Mic size={10} />
-                        <span>Eu</span>
+                        Eu
                     </button>
                     <button
                         onClick={() => setSpeaker('lead')}
-                        className={`flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] transition-colors ${activeSpeaker === 'lead' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
-                            }`}
+                        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-colors ${activeSpeaker === 'lead' ? 'bg-[#262626]' : ''}`}
+                        style={{ color: activeSpeaker === 'lead' ? TEXT : TEXT_SECONDARY }}
                     >
                         <User size={10} />
-                        <span>Lead</span>
+                        Lead
                     </button>
                 </div>
             </div>
-
-            {/* Recommended Action */}
-            <div className="p-4">
-                <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                    PRÓXIMO PASSO
-                </div>
-                <div className="font-medium text-sm mb-1">{nextStep}</div>
-                <div className="text-indigo-300 text-xs italic">
-                    "{nextStepQuestion}"
-                </div>
+            <div className="p-3">
+                <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: TEXT_SECONDARY }}>Próximo passo</div>
+                <div className="font-medium text-[13px] mb-0.5" style={{ color: TEXT }}>{nextStep}</div>
+                <div className="text-[12px] italic" style={{ color: TEXT_SECONDARY }}>&quot;{nextStepQuestion}&quot;</div>
             </div>
         </div>
     );

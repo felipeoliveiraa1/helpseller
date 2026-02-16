@@ -65,22 +65,35 @@ export const authService = {
         // 1. Tentar pegar sessão do Supabase (memória)
         let { data: { session }, error } = await supabase.auth.getSession();
 
-        // 2. Se não tiver em memória, tentar recuperar do storage (background reiniciou)
+        // 2. Se não tiver em memória, tentar recuperar do storage (background reiniciou / extensão recarregada)
         if (!session) {
             console.warn('⚠️ No session in memory, trying to recover from storage...');
             const storedSession = await this.getSession();
             if (storedSession && storedSession.refresh_token) {
-                // Recuperar usando setSession
-                const { data, error: setErr } = await supabase.auth.setSession({
+                const { data: setData, error: setErr } = await supabase.auth.setSession({
                     access_token: storedSession.access_token,
                     refresh_token: storedSession.refresh_token
                 });
 
-                if (!setErr && data.session) {
+                if (!setErr && setData.session) {
                     console.log('✅ Session recovered from storage');
-                    session = data.session;
+                    session = setData.session;
+                    await this.saveSession(setData.session);
+                } else if (storedSession.refresh_token) {
+                    // access_token pode estar expirado; tentar só refresh
+                    console.warn('⚠️ setSession failed, trying refreshSession...');
+                    const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession({
+                        refresh_token: storedSession.refresh_token
+                    });
+                    if (!refreshErr && refreshData.session) {
+                        console.log('✅ Session recovered via refresh');
+                        session = refreshData.session;
+                        await this.saveSession(refreshData.session);
+                    } else {
+                        console.error('❌ Failed to restore session:', setErr?.message || refreshErr?.message);
+                    }
                 } else {
-                    console.error('❌ Failed to restore session:', setErr?.message);
+                    console.error('❌ Failed to restore session: Auth session missing!');
                 }
             }
         }

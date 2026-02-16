@@ -4,7 +4,7 @@ import SimpleSidebar from '@/components/SimpleSidebar';
 import { startParticipantMonitoring, sendParticipantInfoNow, startMicStateMonitoring } from './meet-participants';
 // import '@/index.css';
 
-console.log('Sales Copilot Content Script Loaded');
+console.log('Call Coach Content Script Loaded');
 
 if (window.location.hostname === 'meet.google.com') {
     startParticipantMonitoring();
@@ -39,12 +39,17 @@ style.textContent = `
     }
     
     :host {
-        all: initial;
         display: block;
         width: 100%;
         height: 100%;
+        min-height: 0;
     }
-    
+
+    :host > div {
+        min-height: 0;
+        height: 100%;
+    }
+
     body, div, span, button, input, p, h1, h2, h3, h4 {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         line-height: 1.5;

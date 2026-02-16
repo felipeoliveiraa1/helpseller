@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Phone, MessageSquare, Clock, AlertTriangle } from 'lucide-react';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { MediaStreamPlayer } from '@/components/MediaStreamPlayer';
+import { LiveKitViewer } from '@/components/LiveKitViewer';
 
 const NEON_PINK = '#ff007a';
 const CARD_STYLE = { backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' };
@@ -46,7 +47,9 @@ export default function LivePage() {
     const [ws, setWs] = useState<WebSocket | null>(null);
     const [role, setRole] = useState<string | null>(null);
     const [token, setToken] = useState<string | null>(null);
+    const [managerUserId, setManagerUserId] = useState<string | null>(null);
     const WS_URL = 'ws://localhost:3001/ws/manager';
+    const useLiveKit = typeof window !== 'undefined' && !!process.env.NEXT_PUBLIC_LIVEKIT_URL;
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
 
@@ -136,6 +139,7 @@ export default function LivePage() {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) return;
             setToken(session.access_token);
+            if (session.user?.id) setManagerUserId(session.user.id);
 
             socket = new WebSocket(`${WS_URL}?token=${session.access_token}`);
 
@@ -280,9 +284,14 @@ export default function LivePage() {
                         </div>
                     ) : (
                         <>
-                            {/* Tela compartilhada do vendedor (vídeo ao vivo) */}
+                            {/* Tela compartilhada do vendedor (vídeo ao vivo): LiveKit WebRTC ou fallback WebM/WS */}
                             <div className="w-full shrink-0 rounded-[24px] border overflow-hidden" style={CARD_STYLE}>
-                                {token ? (
+                                {useLiveKit ? (
+                                    <LiveKitViewer
+                                        roomName={selectedCall.id}
+                                        identity={managerUserId ? `manager_${managerUserId}` : 'manager'}
+                                    />
+                                ) : token ? (
                                     <MediaStreamPlayer
                                         callId={selectedCall.id}
                                         wsUrl={WS_URL}

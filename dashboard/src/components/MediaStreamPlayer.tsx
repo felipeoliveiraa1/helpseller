@@ -9,11 +9,21 @@ interface MediaStreamPlayerProps {
 }
 
 const WAITING_HINT_AFTER_MS = 12000;
+/** Keep this many seconds of buffer; remove older data to avoid QuotaExceededError. */
+const BUFFER_KEEP_SECONDS = 8;
+/** Interval (ms) for proactive buffer trim. */
+const BUFFER_TRIM_INTERVAL_MS = 4000;
+/** If playback is more than this many seconds behind buffer end, seek to live edge to prevent stall. */
+const LIVE_EDGE_SEEK_THRESHOLD_SEC = 4;
+const LIVE_EDGE_SEEK_INTERVAL_MS = 2000;
+/** Only remove old buffer when we have at least this many seconds ahead (avoids DEMUXER_UNDERFLOW). */
+const MIN_BUFFER_AHEAD_BEFORE_TRIM_SEC = 10;
 
 const WEBM_EBML = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);
+const MIN_INIT_SEGMENT_BYTES = 100;
 
 function isWebMInit(bytes: Uint8Array): boolean {
-    if (bytes.length < 4) return false;
+    if (bytes.length < MIN_INIT_SEGMENT_BYTES) return false;
     return bytes[0] === WEBM_EBML[0] && bytes[1] === WEBM_EBML[1] && bytes[2] === WEBM_EBML[2] && bytes[3] === WEBM_EBML[3];
 }
 
@@ -40,6 +50,9 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
     const deferHeaderProcessRef = useRef(false);
     const timestampOffsetRetryCountRef = useRef(0);
     const waitingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const trimIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const liveEdgeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const playbackFallbackScheduledRef = useRef(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showWaitingHint, setShowWaitingHint] = useState(false);
@@ -66,6 +79,17 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
 
         const DEFER_HEADER_MS = 150;
         const RETRY_PARSING_MS = 200;
+
+        if (isHeader && !isWebMInit(bytes)) {
+            console.warn('[LIVE_DEBUG] Skipping invalid header chunk (not WebM EBML or too short)');
+            processQueue();
+            return;
+        }
+        if (!isHeader && !hasAppendedInitRef.current) {
+            queue.push(item);
+            processQueue();
+            return;
+        }
 
         if (isHeader && hasAppendedInitRef.current) {
             if (!deferHeaderProcessRef.current) {
@@ -105,20 +129,50 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
             if (video?.paused && video.readyState >= 2 && !video.error) {
                 video.play().catch(() => {});
             }
+            if (video && !playbackFallbackScheduledRef.current && hasAppendedInitRef.current) {
+                playbackFallbackScheduledRef.current = true;
+                const fallbackMs = 1200;
+                setTimeout(() => {
+                    const v = videoRef.current;
+                    if (v && !v.paused && (v.readyState >= 2 || v.currentTime > 0)) {
+                        setIsPlaying(true);
+                    }
+                }, fallbackMs);
+            }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             if (msg.includes('removed from the parent media source') || msg.includes('error attribute is not null')) {
                 sourceBufferDeadRef.current = true;
                 sourceBufferRef.current = null;
                 setError('Playback error');
-            } else if (msg.includes('PARSING_MEDIA_SEGMENT') && timestampOffsetRetryCountRef.current < 15) {
+                return;
+            }
+            if (msg.includes('PARSING_MEDIA_SEGMENT') && timestampOffsetRetryCountRef.current < 15) {
                 timestampOffsetRetryCountRef.current += 1;
                 queue.unshift(item);
                 setTimeout(processQueue, RETRY_PARSING_MS);
-            } else {
-                console.warn('[LIVE_DEBUG] appendBuffer failed:', err);
-                setError('Buffer error');
+                return;
             }
+            if (msg.includes('QuotaExceeded') || msg.includes('QUOTA_EXCEEDED')) {
+                queue.unshift(item);
+                try {
+                    const buffered = sourceBuffer.buffered;
+                    const currentTime = video?.currentTime ?? 0;
+                    const end = Math.max(0, currentTime - BUFFER_KEEP_SECONDS);
+                    if (buffered.length > 0 && end > 0) {
+                        sourceBuffer.remove(0, end);
+                        console.log('[LIVE_DEBUG] QuotaExceeded: removing buffer [0,', end, '], will retry on updateend');
+                    } else {
+                        setTimeout(processQueue, 300);
+                    }
+                } catch (removeErr) {
+                    console.warn('[LIVE_DEBUG] remove() failed after QuotaExceeded:', removeErr);
+                    setTimeout(processQueue, 500);
+                }
+                return;
+            }
+            console.warn('[LIVE_DEBUG] appendBuffer failed:', err);
+            setError('Buffer error');
         }
     };
 
@@ -133,6 +187,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         sourceBufferDeadRef.current = false;
         deferHeaderProcessRef.current = false;
         timestampOffsetRetryCountRef.current = 0;
+        playbackFallbackScheduledRef.current = false;
         setError(null);
         setIsPlaying(false);
         setShowWaitingHint(false);
@@ -153,13 +208,14 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
             const videoEl = videoRef.current;
             if (videoEl) {
                 videoEl.addEventListener('playing', () => setIsPlaying(true), { once: true });
+                videoEl.addEventListener('canplay', () => setIsPlaying(true), { once: true });
             }
 
             try {
                 const webmTypes = [
                     'video/webm;codecs=opus,vp9',
-                    'video/webm;codecs=opus,vp8',
                     'video/webm;codecs=vp9,opus',
+                    'video/webm;codecs=opus,vp8',
                     'video/webm;codecs=vp8,opus',
                     'video/webm;codecs=vp8,vorbis',
                     'video/webm;codecs=vp9',
@@ -185,6 +241,42 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                     console.warn('[LIVE_DEBUG] SourceBuffer error — buffer removed');
                     setError('Playback error');
                 });
+
+                trimIntervalRef.current = setInterval(() => {
+                    if (sourceBufferDeadRef.current) return;
+                    const sb = sourceBufferRef.current;
+                    const v = videoRef.current;
+                    if (!sb || !v || sb.updating) return;
+                    const buffered = sb.buffered;
+                    if (buffered.length === 0) return;
+                    const ct = v.currentTime;
+                    const bufferEnd = buffered.end(buffered.length - 1);
+                    if (ct <= BUFFER_KEEP_SECONDS) return;
+                    if (bufferEnd - ct < MIN_BUFFER_AHEAD_BEFORE_TRIM_SEC) return;
+                    const end = Math.max(0, ct - BUFFER_KEEP_SECONDS);
+                    try {
+                        sb.remove(0, end);
+                    } catch {
+                        // ignore
+                    }
+                }, BUFFER_TRIM_INTERVAL_MS);
+
+                liveEdgeIntervalRef.current = setInterval(() => {
+                    if (sourceBufferDeadRef.current) return;
+                    const sb = sourceBufferRef.current;
+                    const v = videoRef.current;
+                    if (!sb || !v || v.paused) return;
+                    const buffered = sb.buffered;
+                    if (buffered.length === 0) return;
+                    const bufferEnd = buffered.end(buffered.length - 1);
+                    const ct = v.currentTime;
+                    if (bufferEnd - ct > LIVE_EDGE_SEEK_THRESHOLD_SEC) {
+                        const target = Math.max(ct, bufferEnd - 2);
+                        if (target > ct + 0.5) {
+                            v.currentTime = target;
+                        }
+                    }
+                }, LIVE_EDGE_SEEK_INTERVAL_MS);
 
                 const ws = new WebSocket(`${wsUrl}?token=${token}`);
                 ws.binaryType = 'arraybuffer';
@@ -254,6 +346,14 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
 
         return () => {
             if (waitingTimeoutRef.current) clearTimeout(waitingTimeoutRef.current);
+            if (trimIntervalRef.current) {
+                clearInterval(trimIntervalRef.current);
+                trimIntervalRef.current = null;
+            }
+            if (liveEdgeIntervalRef.current) {
+                clearInterval(liveEdgeIntervalRef.current);
+                liveEdgeIntervalRef.current = null;
+            }
             if (wsRef.current) {
                 wsRef.current.close();
             }

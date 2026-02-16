@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 
+import { Room, LocalVideoTrack, LocalAudioTrack, Track } from 'livekit-client';
+
 let tabRecorder: MediaRecorder | null = null;
 let micRecorder: MediaRecorder | null = null;
 let mediaStreamRecorder: MediaRecorder | null = null; // NEW: For video + audio streaming
@@ -11,6 +13,9 @@ let micAnalyser: AnalyserNode | null = null;
 let isRecording = false;
 let sellerPaused = false; // Mic mutado no Meet → não enviar segmentos do seller
 let isStreamingMedia = false; // NEW: Track if video streaming is active
+/** Stream used for LiveKit publish (same as displayStream in startMediaStreaming). Never pass this in sendMessage. */
+let currentDisplayStreamForLiveKit: MediaStream | null = null;
+let liveKitRoom: Room | null = null;
 
 const RECORDING_INTERVAL_MS = 3000;
 const SILENCE_THRESHOLD_LEAD = 5;
@@ -45,6 +50,11 @@ chrome.runtime.onMessage.addListener((message) => {
     } else if (message.type === 'MIC_MUTE_STATE') {
         sellerPaused = !!message.muted;
         log(`🎤 Seller recording ${sellerPaused ? 'PAUSED (mic muted)' : 'RESUMED'}`);
+    } else if (message.type === 'START_LIVEKIT_PUBLISH') {
+        const { token, serverUrl } = message as { token: string; serverUrl: string };
+        if (token && serverUrl) {
+            tryStartLiveKitPublishWithRetry(token, serverUrl);
+        }
     }
 });
 
@@ -177,11 +187,14 @@ async function startTranscription(streamId: string) {
 }
 
 // NEW: Capture and stream video + audio for manager supervision
+// IMPORTANT: Never pass displayStream (or any MediaStream/MediaStreamTrack) in sendMessage/postMessage —
+// Chrome uses structuredClone for messages and BrowserCaptureMediaStreamTrack cannot be cloned.
 async function startMediaStreaming(displayStream: MediaStream) {
     try {
         log('📹 Starting video + audio streaming for manager...');
+        currentDisplayStreamForLiveKit = displayStream;
 
-        // We now receive the stream directly, no need to call getUserMedia again!
+        // Stream is only used here (same context); we send only base64 chunks via sendMessage.
         log('✅ Display media received for streaming');
 
         // Helper to start a recording cycle
@@ -276,7 +289,87 @@ function stopMediaStreaming() {
         mediaStreamRecorder = null;
     }
     isStreamingMedia = false;
+    stopLiveKitPublish();
+    currentDisplayStreamForLiveKit = null;
     log('🛑 Media streaming stopped');
+}
+
+const LIVEKIT_PUBLISH_RETRY_MS = 1000;
+const LIVEKIT_PUBLISH_RETRY_MAX = 8;
+
+function tryStartLiveKitPublishWithRetry(token: string, serverUrl: string, attempt = 0): void {
+    if (currentDisplayStreamForLiveKit) {
+        startLiveKitPublish(token, serverUrl).catch((err) =>
+            log('❌ LiveKit publish error:', (err as Error).message)
+        );
+        return;
+    }
+    if (attempt >= LIVEKIT_PUBLISH_RETRY_MAX) {
+        log('⚠️ LiveKit: gave up publishing (stream never ready)');
+        return;
+    }
+    log(`⚠️ LiveKit: stream not ready yet, retry in ${LIVEKIT_PUBLISH_RETRY_MS}ms (${attempt + 1}/${LIVEKIT_PUBLISH_RETRY_MAX})`);
+    setTimeout(() => tryStartLiveKitPublishWithRetry(token, serverUrl, attempt + 1), LIVEKIT_PUBLISH_RETRY_MS);
+}
+
+async function startLiveKitPublish(token: string, serverUrl: string): Promise<void> {
+    const stream = currentDisplayStreamForLiveKit;
+    if (!stream) {
+        log('⚠️ LiveKit: no display stream available');
+        return;
+    }
+    if (liveKitRoom) {
+        await liveKitRoom.disconnect();
+        liveKitRoom = null;
+    }
+    const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        stopLocalTrackOnUnpublish: false, // stream is shared with MediaRecorder; do not stop tracks on disconnect
+    });
+    liveKitRoom = room;
+    room.on('disconnected', () => log('🔌 LiveKit disconnected'));
+    room.on('reconnecting', () => log('🔄 LiveKit reconnecting...'));
+    room.on('reconnected', () => log('✅ LiveKit reconnected'));
+    await room.connect(serverUrl, token);
+    log('✅ LiveKit connected to room');
+    const videoTracks = stream.getVideoTracks();
+    const audioTracks = stream.getAudioTracks();
+    log(`📹 Stream: ${videoTracks.length} video, ${audioTracks.length} audio track(s)`);
+    if (videoTracks.length > 0) {
+        try {
+            const lv = new LocalVideoTrack(videoTracks[0], undefined, true);
+            lv.source = Track.Source.ScreenShare;
+            await room.localParticipant.publishTrack(lv, {
+                name: 'screen',
+                source: Track.Source.ScreenShare,
+            });
+            log('✅ LiveKit video (screen) published');
+        } catch (err) {
+            log('❌ LiveKit publish video failed:', (err as Error).message);
+        }
+    }
+    if (audioTracks.length > 0) {
+        try {
+            const la = new LocalAudioTrack(audioTracks[0], undefined, true);
+            await room.localParticipant.publishTrack(la, {
+                name: 'microphone',
+                source: Track.Source.Microphone,
+            });
+            log('✅ LiveKit audio published');
+        } catch (err) {
+            log('❌ LiveKit publish audio failed:', (err as Error).message);
+        }
+    }
+    log('✅ LiveKit publishing done');
+}
+
+function stopLiveKitPublish(): void {
+    if (liveKitRoom) {
+        liveKitRoom.disconnect();
+        liveKitRoom = null;
+        log('🛑 LiveKit publish stopped');
+    }
 }
 
 function startRecordingCycle(

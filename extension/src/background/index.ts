@@ -19,6 +19,7 @@ let lastCallStartParams: { platform: string, scriptId: string } | null = null;
 let cachedObjections: CachedObjection[] = [];
 
 let isCallConfirmed = false;
+let lastLiveKitCallId: string | null = null;
 let audioSegmentBuffer: any[] = [];
 
 // Re-enviar dados iniciais quando o WebSocket reconectar
@@ -42,7 +43,8 @@ onWsConnect(() => {
 // Listen for messages from WebSocket
 onWsMessage(async (data: any) => {
     if (data.type === 'call:started') {
-        console.log('✅ Call started confirmed by backend. CallId:', data.payload?.callId);
+        const callId = data.payload?.callId as string | undefined;
+        console.log('✅ Call started confirmed by backend. CallId:', callId);
         isCallConfirmed = true;
 
         // Flush buffered audio segments
@@ -52,6 +54,44 @@ onWsMessage(async (data: any) => {
                 send('audio:segment', segment);
             }
             audioSegmentBuffer = [];
+        }
+
+        // Start LiveKit publish in offscreen (roomName = callId) so manager can watch via dashboard (only once per callId to avoid disconnect/reconnect)
+        if (callId && callId !== lastLiveKitCallId) {
+            lastLiveKitCallId = callId;
+            try {
+                const accessToken = await authService.getFreshToken();
+                const session = await authService.getSession();
+                const userId = session?.user?.id ?? 'unknown';
+                const dashboardOrigin = (import.meta as any).env?.VITE_DASHBOARD_URL ?? 'http://localhost:3000';
+                const res = await fetch(`${dashboardOrigin}/api/livekit/token`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`,
+                    },
+                    body: JSON.stringify({
+                        roomName: callId,
+                        identity: `seller_${userId}`,
+                        role: 'publisher',
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    console.warn('⚠️ LiveKit token failed:', (err as { error?: string }).error ?? res.statusText);
+                } else {
+                    const { token, serverUrl } = await res.json();
+                    if (token && serverUrl) {
+                        chrome.runtime.sendMessage({
+                            type: 'START_LIVEKIT_PUBLISH',
+                            token,
+                            serverUrl,
+                        }).catch((e) => console.warn('⚠️ Send START_LIVEKIT_PUBLISH failed:', e));
+                    }
+                }
+            } catch (error) {
+                console.error('❌ LiveKit token/publish setup:', error);
+            }
         }
 
         // When call starts, fetch and cache objections for edge processing
@@ -566,6 +606,7 @@ async function stopCapture() {
         }
 
         await setState({ isRecording: false });
+        lastLiveKitCallId = null;
         broadcastStatus('PROGRAMMED');
         send('call:end', {});
     } catch (err) {

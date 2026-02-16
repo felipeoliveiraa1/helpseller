@@ -1096,19 +1096,9 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         };
                         await redis.subscribe(`call:${subscribedCallId}:live_summary`, liveSummaryHandler);
 
-                        // Send cached header so manager gets first frame immediately (validated WebM only).
-                        const cachedHeader = await redis.get<{ chunk: string; isHeader?: boolean }>(`call:${callId}:media_header`);
-                        if (cachedHeader?.chunk) {
-                            try {
-                                const decoded = Buffer.from(cachedHeader.chunk, 'base64');
-                                if (cachedHeader.isHeader && isValidWebMInit(decoded)) {
-                                    const binaryMsg = encodeMediaChunkToBinary(cachedHeader);
-                                    if (binaryMsg) socket.send(binaryMsg);
-                                }
-                            } catch {
-                                // Skip invalid cache
-                            }
-                        }
+                        // Do NOT send cached media header on manager:join — it can be stale or from a different
+                        // codec (vp8 vs vp9), causing intermittent SourceBuffer/Playback errors when mixed with
+                        // live chunks. Client waits for the next init segment from the live stream (within ~5s).
                         logger.info(`👔 Manager ${authUser.id} joined call ${callId} (transcript + media)`);
 
                         socket.send(JSON.stringify({

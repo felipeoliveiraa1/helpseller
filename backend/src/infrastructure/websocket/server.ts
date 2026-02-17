@@ -1038,7 +1038,6 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         if (!sessionData.lastSummaryAt || (now - sessionData.lastSummaryAt) >= SUMMARY_INTERVAL) {
                             sessionData.lastSummaryAt = now;
                             try {
-                                const context60s = buildContext60s();
                                 logger.info(`📊 Generating Live Summary for call ${callId}`);
                                 // Pass sliding window as TranscriptChunk[] for the summary agent
                                 const cutoff = now - CONTEXT_WINDOW;

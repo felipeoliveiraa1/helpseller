@@ -12,7 +12,7 @@ class RedisClient {
     private useMemory = false;
 
     constructor() {
-        if (!env.REDIS_URL || env.REDIS_URL.includes('undefined') || env.REDIS_URL.startsWith('memory:')) {
+        if (!env.REDIS_URL || env.REDIS_URL === 'memory' || env.REDIS_URL.includes('undefined') || env.REDIS_URL.startsWith('memory:')) {
             logger.warn('⚠️ REDIS_URL set to memory mode. Using in-memory cache (No Pub/Sub).');
             this.useMemory = true;
             this.loadDump();

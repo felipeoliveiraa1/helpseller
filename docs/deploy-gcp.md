@@ -130,27 +130,42 @@ O backend valida estas variáveis ao iniciar (`backend/src/shared/config/env.ts`
 |----------|----------------------|
 | `NODE_ENV` | `production` |
 | `PORT` | `8080` (Cloud Run define automaticamente) |
-| `CORS_ORIGIN` | URL do dashboard + `chrome-extension://` (ex.: `https://seu-app.vercel.app,chrome-extension://`) |
+| `CORS_ORIGIN` | URL do dashboard + `chrome-extension://`. Sem Vercel ainda: use `*` ou `http://localhost:3000`. |
 | `SUPABASE_URL` | URL do projeto Supabase |
 | `SUPABASE_ANON_KEY` | Chave anon do Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | Chave service_role do Supabase |
-| `REDIS_URL` | Ex.: `redis://10.x.x.x:6379` (Memorystore) ou `rediss://...` (Upstash) |
+| `REDIS_URL` | `memory` = sem Redis (cache em memória; sem Pub/Sub). Ou `redis://...` (Memorystore/Upstash). |
 | `OPENAI_API_KEY` | Chave da OpenAI |
 | `STRIPE_SECRET_KEY` | Chave secreta Stripe |
 | `STRIPE_WEBHOOK_SECRET` | Secret do webhook Stripe |
 
 Se alguma faltar, o processo sobe mas o backend encerra com erro ao iniciar.
 
+### Deploy via Cloud Build (helpseller)
+
+Se o deploy for feito pelo **Cloud Build** (gatilho no repositório helpseller), o `cloudbuild.yaml` **não** envia variáveis de ambiente para o Cloud Run. O backend foi ajustado para **subir mesmo sem env** (escuta na porta e responde), para o deploy não falhar na etapa "Deploy".
+
+Depois do primeiro deploy bem-sucedido:
+
+1. Abra o [Console do Cloud Run](https://console.cloud.google.com/run).
+2. Selecione o serviço **helpseller-backend** e a região (ex.: europe-west1).
+3. Clique em **Editar e implantar nova revisão**.
+4. Aba **Variáveis e segredos** → **Variáveis** → adicione todas as variáveis da tabela acima (ou use **Secret Manager** para as sensíveis).
+5. Implante a nova revisão.
+
+Assim o container continua o mesmo; só a configuração (env) da revisão muda. Os logs da primeira revisão podem mostrar: `⚠️ Cloud Run: set these env vars in the service for full functionality`.
+
 ---
 
 ## Redis no GCP
 
-O backend usa Redis. Opções:
+O backend usa Redis para cache e Pub/Sub (ex.: live para gestores). Opções:
 
-1. **Memorystore for Redis** (GCP): criar instância na VPC e usar o IP interno em `REDIS_URL` (ex.: `redis://10.x.x.x:6379`). O Cloud Run precisa estar na mesma VPC (VPC connector) para acessar.
-2. **Upstash** (Redis em nuvem): criar instância e usar a URL HTTPS/Redis que eles fornecem em `REDIS_URL`. Não exige VPC.
+1. **Sem Redis (para subir e testar):** defina `REDIS_URL=memory`. O backend usa cache em memória e **não** faz Pub/Sub (ex.: painel em tempo real pode não atualizar entre abas). Use para validar o deploy antes de configurar Redis.
+2. **Memorystore for Redis** (GCP): criar instância na VPC e usar o IP interno em `REDIS_URL` (ex.: `redis://10.x.x.x:6379`). O Cloud Run precisa estar na mesma VPC (VPC connector) para acessar.
+3. **Upstash** (Redis em nuvem): criar instância e usar a URL que eles fornecem em `REDIS_URL`. Não exige VPC.
 
-Para testes rápidos, Upstash costuma ser mais simples (sem VPC).
+Para testes rápidos sem Redis, use `REDIS_URL=memory`; depois troque por Upstash ou Memorystore.
 
 ---
 

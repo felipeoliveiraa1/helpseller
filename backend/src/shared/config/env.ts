@@ -4,25 +4,27 @@ import path from 'path';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
+const urlOrEmpty = z.union([z.string().url(), z.literal('')]);
+
 const envSchema = z.object({
     PORT: z.coerce.number().default(3001),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     CORS_ORIGIN: z.string().default('*'),
 
-    // Supabase
-    SUPABASE_URL: z.string().url(),
-    SUPABASE_ANON_KEY: z.string(),
-    SUPABASE_SERVICE_ROLE_KEY: z.string(),
+    // Supabase (optional at boot so Cloud Run can start; set in service env for full behavior)
+    SUPABASE_URL: urlOrEmpty.default(''),
+    SUPABASE_ANON_KEY: z.string().default(''),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().default(''),
 
-    // Redis
-    REDIS_URL: z.string().url().default('redis://localhost:6379'),
+    // Redis (use "memory" for no Redis / in-memory only, e.g. Cloud Run without Memorystore)
+    REDIS_URL: z.union([z.string().url(), z.literal('memory')]).default('redis://localhost:6379'),
 
     // OpenAI
-    OPENAI_API_KEY: z.string(),
+    OPENAI_API_KEY: z.string().default(''),
 
     // Stripe
-    STRIPE_SECRET_KEY: z.string(),
-    STRIPE_WEBHOOK_SECRET: z.string(),
+    STRIPE_SECRET_KEY: z.string().default(''),
+    STRIPE_WEBHOOK_SECRET: z.string().default(''),
 
     // WebSocket
     WS_HEARTBEAT_INTERVAL: z.coerce.number().default(30000),

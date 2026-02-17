@@ -549,20 +549,24 @@ async function startCapture(explicitTabId?: number) {
             muted: micIsMuted
         });
 
-        // 6. Send Call Start Metadata
+        // 6. Send Call Start Metadata (re-fetch tab so URL is current for external_id / re-record)
         if (session?.access_token) {
-            // Extract External ID (Google Meet)
-            const meetIdMatch = tab.url?.match(/meet\.google\.com\/([a-z0-9-]+)/);
-            const externalId = meetIdMatch ? meetIdMatch[1] : null; // e.g. "ssy-uryv-rab"
+            const freshTab = await chrome.tabs.get(state.currentTabId!).catch(() => tab);
+            const url = freshTab?.url ?? tab?.url ?? '';
+            const meetIdMatch = url.match(/meet\.google\.com\/([a-z0-9-]+)/);
+            const externalId = meetIdMatch ? meetIdMatch[1] : null;
+            if (!externalId && (url?.includes('meet.google.com') || tab?.url?.includes('meet.google.com'))) {
+                console.warn('⚠️ externalId is null but tab has Meet URL — re-record may create new call. url=', url?.slice(0, 80));
+            }
 
             lastCallStartParams = {
-                platform: urlToPlatform(tab.url),
-                scriptId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', // Script Padrão criado no banco
+                platform: urlToPlatform(url),
+                scriptId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
                 leadName: currentLeadName,
                 externalId: externalId
             } as any;
 
-            console.log('📤 Sending call:start:', lastCallStartParams);
+            console.log('📤 Sending call:start (externalId for re-record):', lastCallStartParams);
             send('call:start', lastCallStartParams);
 
             const maxAttempts = 10;

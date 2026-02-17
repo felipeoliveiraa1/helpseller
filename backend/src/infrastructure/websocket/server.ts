@@ -433,18 +433,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             logger.info({ payload: event.payload }, '📞 handleCallStart initiated');
 
             try {
-                const { scriptId, platform, leadName, externalId } = event.payload;
+                const { scriptId, platform, leadName } = event.payload;
+                const externalIdRaw = event.payload?.externalId ?? event.payload?.external_id;
+                const externalId = typeof externalIdRaw === 'string' ? externalIdRaw.trim() || null : null;
+                logger.info({ externalIdReceived: externalId, payloadKeys: Object.keys(event.payload || {}) }, '📞 call:start payload (externalId for re-record)');
 
-                // 0. Check if call already exists for this connection (Idempotency)
-                if (callId) {
-                    logger.warn(`⚠️ Call already initialized for this connection. ID: ${callId}. Ignoring duplicate call:start.`);
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'call:started', payload: { callId: callId } }));
-                    }
-                    return;
-                }
-
-                // 1. Get User Profile & Org
+                // Get current user org first (needed for reactivation so call stays in correct org)
                 const { data: profile, error: profileError } = await supabaseAdmin
                     .from('profiles')
                     .select('organization_id')
@@ -458,11 +452,72 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     return;
                 }
 
-                const orgId = profile.organization_id;
+                const NULL_ORG_UUID = '00000000-0000-0000-0000-000000000000';
+                const rawOrgId = profile.organization_id;
+                const orgId = rawOrgId && rawOrgId !== NULL_ORG_UUID ? rawOrgId : null;
+                const safeOrgId = orgId === NULL_ORG_UUID ? null : (orgId ?? null);
 
-                // 1.1. Check for external_id match (Meet ID Reuse)
+                // 0. Check if call already exists for this connection (Idempotency / Re-record same call)
+                if (callId) {
+                    const { data: existingCallById, error: fetchErr } = await supabaseAdmin
+                        .from('calls')
+                        .select('id, status, script_id, transcript')
+                        .eq('id', callId)
+                        .maybeSingle();
+
+                    if (fetchErr) {
+                        logger.warn({ err: fetchErr, callId }, '⚠️ Failed to fetch call by id (re-record path)');
+                    }
+                    const isCompleted = existingCallById?.status === 'COMPLETED';
+                    logger.info({ callId, status: existingCallById?.status, isCompleted }, '📞 call:start same-connection check');
+
+                    if (isCompleted) {
+                        logger.info(`🔄 Re-activating COMPLETED call ${callId} for same connection (re-record).`);
+                        const updatePayload: { status: string; ended_at: null; organization_id: string | null } = { status: 'ACTIVE', ended_at: null, organization_id: safeOrgId };
+                        const { error: updateErr } = await supabaseAdmin.from('calls')
+                            .update(updatePayload)
+                            .eq('id', callId);
+                        if (updateErr) {
+                            logger.error({ err: updateErr, callId }, '❌ Failed to reactivate call (same-connection)');
+                        } else {
+                            logger.info(`✅ Call ${callId} reactivated to ACTIVE`);
+                        }
+                        const dbTranscript = Array.isArray(existingCallById?.transcript) ? existingCallById.transcript : [];
+                        if (sessionData) {
+                            sessionData.startedAt = Date.now();
+                        } else {
+                            sessionData = {
+                                callId: callId ?? '',
+                                userId: userId ?? '',
+                                scriptId: (existingCallById?.script_id ?? scriptId ?? 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') as string,
+                                transcript: dbTranscript,
+                                currentStep: 0,
+                                chunksSinceLastCoach: 0,
+                                startedAt: Date.now(),
+                                startupTime: Date.now(),
+                                leadName: leadName || 'Cliente'
+                            };
+                        }
+                        await redis.set(`call:${callId}:session`, sessionData, 3600);
+                        await redis.set(`user:${userId}:current_call`, callId, 14400);
+                        if (callId) await setupCommandSubscription(callId, ws);
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'call:started', payload: { callId: callId } }));
+                        }
+                        return;
+                    }
+
+                    logger.warn(`⚠️ Call already initialized for this connection. ID: ${callId}. Ignoring duplicate call:start.`);
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'call:started', payload: { callId: callId } }));
+                    }
+                    return;
+                }
+
+                // 1.1. Check for external_id match (Meet ID Reuse) — main path when extension reconnects each time
+                logger.info({ externalId, userId }, '📞 call:start external_id check');
                 if (externalId) {
-                    const { data: existingExternalCall } = await supabaseAdmin
+                    const { data: existingExternalCall, error: extFetchErr } = await supabaseAdmin
                         .from('calls')
                         .select('id, script_id, platform, transcript, started_at, status')
                         .eq('user_id', userId)
@@ -471,14 +526,24 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         .limit(1)
                         .maybeSingle();
 
+                    if (extFetchErr) {
+                        logger.warn({ err: extFetchErr, externalId, userId }, '⚠️ Failed to fetch call by external_id');
+                    }
+                    if (!existingExternalCall && externalId) {
+                        logger.warn({ userId, externalId }, '📞 No existing call for user+external_id — will create new call');
+                    }
                     if (existingExternalCall) {
-                        logger.info(`🔗 Found existing call by External ID (${externalId}): ${existingExternalCall.id}`);
+                        logger.info(`🔗 Found existing call by External ID (${externalId}): ${existingExternalCall.id} status=${existingExternalCall.status}`);
 
-                        // Reactivate if needed
-                        if (existingExternalCall.status !== 'ACTIVE') {
-                            await supabaseAdmin.from('calls')
-                                .update({ status: 'ACTIVE', ended_at: null })
-                                .eq('id', existingExternalCall.id);
+                        // Reactivate and set org (overwrite with safeOrgId so wrong org is cleared)
+                        const updatePayload: { status: string; ended_at: null; organization_id: string | null } = { status: 'ACTIVE', ended_at: null, organization_id: safeOrgId };
+                        const { error: extUpdateErr } = await supabaseAdmin.from('calls')
+                            .update(updatePayload)
+                            .eq('id', existingExternalCall.id);
+                        if (extUpdateErr) {
+                            logger.error({ err: extUpdateErr, callId: existingExternalCall.id }, '❌ Failed to reactivate call (external_id path)');
+                        } else {
+                            logger.info(`✅ Call ${existingExternalCall.id} reactivated to ACTIVE (external_id=${externalId})`);
                         }
 
                         callId = existingExternalCall.id;
@@ -580,7 +645,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                 // 2. Resolve Script ID (New Call)
                 let finalScriptId = scriptId;
-                if (!scriptId || scriptId === 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') {
+                if (orgId && (!scriptId || scriptId === 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')) {
                     const { data: defaultScript } = await supabaseAdmin
                         .from('scripts')
                         .select('id')
@@ -593,18 +658,20 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     }
                 }
 
-                // 3. Insert Call into DB
+                // 3. Insert Call into DB (omit organization_id when invalid so DB stores NULL)
+                const insertPayload = {
+                    user_id: userId,
+                    script_id: finalScriptId,
+                    platform: platform || 'OTHER',
+                    status: 'ACTIVE',
+                    started_at: new Date().toISOString(),
+                    external_id: externalId,
+                    ...(safeOrgId != null && safeOrgId !== '' && { organization_id: safeOrgId })
+                };
+                logger.info({ rawOrgId, safeOrgId, userId, hasOrgInPayload: 'organization_id' in insertPayload }, '📞 call:insert payload org');
                 const { data: call, error: insertError } = await supabaseAdmin
                     .from('calls')
-                    .insert({
-                        user_id: userId,
-                        organization_id: orgId,
-                        script_id: finalScriptId,
-                        platform: platform || 'OTHER',
-                        status: 'ACTIVE',
-                        started_at: new Date().toISOString(),
-                        external_id: externalId
-                    })
+                    .insert(insertPayload)
                     .select()
                     .single();
 

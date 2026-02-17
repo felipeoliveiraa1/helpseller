@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LiveKitRoom, useRoomContext, useRemoteParticipants } from '@livekit/components-react';
 import { Track, TrackEvent } from 'livekit-client';
 
@@ -55,6 +55,16 @@ function ViewerContent() {
     const attachedVideoRef = useRef<{ track: Track; pub: { off: (e: string, fn: (t: Track) => void) => void } } | null>(null);
     const attachedAudioRef = useRef<{ track: Track; pub: { off: (e: string, fn: (t: Track) => void) => void } } | null>(null);
 
+    // Stable key: only re-run when participant set or their first video/audio pub actually changes (avoids flicker from detach/reattach on every room update)
+    const participantsKey = useMemo(
+        () =>
+            remoteParticipants
+                .map((p) => `${p.sid}:${Array.from(p.trackPublications.keys()).sort().join(',')}`)
+                .sort()
+                .join('|'),
+        [remoteParticipants]
+    );
+
     useEffect(() => {
         let videoPub: { setSubscribed: (v: boolean) => void; track?: Track | null; on: (e: string, fn: (t: Track) => void) => void; off: (e: string, fn: (t: Track) => void) => void } | null = null;
         let audioPub: { setSubscribed: (v: boolean) => void; track?: Track | null; on: (e: string, fn: (t: Track) => void) => void; off: (e: string, fn: (t: Track) => void) => void } | null = null;
@@ -67,6 +77,11 @@ function ViewerContent() {
                     audioPub = pub as typeof audioPub;
                 }
             }
+        }
+        const alreadySameVideo = attachedVideoRef.current?.track && videoPub?.track && attachedVideoRef.current.track === videoPub.track;
+        const alreadySameAudio = attachedAudioRef.current?.track && audioPub?.track && attachedAudioRef.current.track === audioPub.track;
+        if (alreadySameVideo && alreadySameAudio) {
+            return;
         }
         const onVideoSubscribed = (track: Track): void => {
             const el = videoRef.current;
@@ -85,7 +100,11 @@ function ViewerContent() {
                 attachedAudioRef.current = { track, pub: audioPub! };
             }
         };
-        if (videoPub) {
+        if (videoPub && !alreadySameVideo) {
+            if (attachedVideoRef.current?.track && videoRef.current) {
+                attachedVideoRef.current.track.detach(videoRef.current);
+                attachedVideoRef.current = null;
+            }
             if (videoPub.track) {
                 onVideoSubscribed(videoPub.track);
             } else {
@@ -93,7 +112,11 @@ function ViewerContent() {
                 videoPub.setSubscribed(true);
             }
         }
-        if (audioPub) {
+        if (audioPub && !alreadySameAudio) {
+            if (attachedAudioRef.current?.track && audioRef.current) {
+                attachedAudioRef.current.track.detach(audioRef.current);
+                attachedAudioRef.current = null;
+            }
             if (audioPub.track) {
                 onAudioSubscribed(audioPub.track);
             } else {
@@ -102,19 +125,23 @@ function ViewerContent() {
             }
         }
         return () => {
-            if (attachedVideoRef.current?.track && videoRef.current) {
+            if (!alreadySameVideo && attachedVideoRef.current?.track && videoRef.current) {
                 attachedVideoRef.current.track.detach(videoRef.current);
             }
-            if (attachedAudioRef.current?.track && audioRef.current) {
+            if (!alreadySameAudio && attachedAudioRef.current?.track && audioRef.current) {
                 attachedAudioRef.current.track.detach(audioRef.current);
             }
-            videoPub?.off(TrackEvent.Subscribed, onVideoSubscribed);
-            audioPub?.off(TrackEvent.Subscribed, onAudioSubscribed);
-            attachedVideoRef.current = null;
-            attachedAudioRef.current = null;
-            setHasVideo(false);
+            if (!alreadySameVideo) {
+                videoPub?.off(TrackEvent.Subscribed, onVideoSubscribed);
+                attachedVideoRef.current = null;
+                setHasVideo(false);
+            }
+            if (!alreadySameAudio) {
+                audioPub?.off(TrackEvent.Subscribed, onAudioSubscribed);
+                attachedAudioRef.current = null;
+            }
         };
-    }, [remoteParticipants]);
+    }, [participantsKey]);
 
     if (remoteParticipants.length === 0) {
         return (

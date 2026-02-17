@@ -54,7 +54,18 @@ export default function LivePage() {
     const supabase = createClient();
 
     const fetchActiveCalls = async () => {
-        const { data, error } = await supabase
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role, organization_id')
+            .eq('id', user.id)
+            .single();
+
+        const orgId = (profile as { organization_id?: string | null } | null)?.organization_id ?? null;
+
+        let query = supabase
             .from('calls')
             .select(`
                 *,
@@ -64,26 +75,44 @@ export default function LivePage() {
             .eq('status', 'ACTIVE')
             .order('started_at', { ascending: false });
 
+        if (orgId) {
+            query = query.eq('organization_id', orgId);
+        } else {
+            query = query.eq('user_id', user.id);
+        }
+
+        const { data, error } = await query;
+
         if (error) {
-            const fallback = await supabase
-                .from('calls')
-                .select('*, user:profiles!user_id(full_name)')
-                .eq('status', 'ACTIVE')
-                .order('started_at', { ascending: false });
+            const fallbackSelect = orgId
+                ? supabase.from('calls').select('*, user:profiles!user_id(full_name)').eq('status', 'ACTIVE').eq('organization_id', orgId).order('started_at', { ascending: false })
+                : supabase.from('calls').select('*, user:profiles!user_id(full_name)').eq('status', 'ACTIVE').eq('user_id', user.id).order('started_at', { ascending: false });
+            const fallback = await fallbackSelect;
             if (!fallback.error && fallback.data) {
                 setActiveCalls(fallback.data as any);
+                setSelectedCall((current) => {
+                    if (!current) return current;
+                    const fresh = (fallback.data as Call[]).find((c) => c.id === current.id);
+                    return fresh ?? current;
+                });
                 return;
             }
-            const minimal = await supabase
-                .from('calls')
-                .select('*')
-                .eq('status', 'ACTIVE')
-                .order('started_at', { ascending: false });
+            const minimalSelect = orgId
+                ? supabase.from('calls').select('*').eq('status', 'ACTIVE').eq('organization_id', orgId).order('started_at', { ascending: false })
+                : supabase.from('calls').select('*').eq('status', 'ACTIVE').eq('user_id', user.id).order('started_at', { ascending: false });
+            const minimal = await minimalSelect;
             if (!minimal.error && minimal.data) setActiveCalls(minimal.data as any);
             return;
         }
 
-        if (data) setActiveCalls(data as any);
+        if (data) {
+            setActiveCalls(data as any);
+            setSelectedCall((current) => {
+                if (!current) return current;
+                const fresh = (data as Call[]).find((c) => c.id === current.id);
+                return fresh ?? current;
+            });
+        }
     };
 
     // 2. EFEITOS

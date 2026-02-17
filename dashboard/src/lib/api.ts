@@ -18,8 +18,12 @@ export const api = {
             },
         })
 
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`)
-        return res.json()
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+            const message = (data?.error as string) || res.statusText
+            throw new Error(message)
+        }
+        return data
     },
 
     post: async (endpoint: string, body: any) => {
@@ -40,7 +44,11 @@ export const api = {
             body: JSON.stringify(body),
         })
 
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`)
-        return res.json()
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+            const message = (data?.error as string) || res.statusText
+            throw new Error(message)
+        }
+        return data
     }
 }

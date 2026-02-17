@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,8 +23,16 @@ import {
     ChevronDown,
     ChevronUp,
     Play,
-    Zap
+    Zap,
+    Target,
+    MessageSquare
 } from 'lucide-react';
+
+const NEON_PINK = '#ff007a';
+const NEON_GREEN = '#00ff94';
+const NEON_ORANGE = '#ff8a00';
+const CARD_BG = '#1e1e1e';
+const CARD_BORDER = 'rgba(255,255,255,0.08)';
 
 interface Call {
     id: string;
@@ -166,7 +176,12 @@ export default function CallDetailsPage() {
 
             } catch (err: any) {
                 console.error('Error loading call:', err);
-                setError(err.message || 'Failed to load call details');
+                const msg = err?.message ?? '';
+                if (msg.includes('Unauthorized') || err?.code === 'PGRST116' || msg.toLowerCase().includes('not found')) {
+                    setError('Chamada não encontrada ou você não tem permissão para visualizá-la.');
+                } else {
+                    setError(msg || 'Não foi possível carregar os detalhes da chamada.');
+                }
             } finally {
                 setLoading(false);
             }
@@ -266,138 +281,155 @@ export default function CallDetailsPage() {
         } catch { return ''; }
     };
 
-    return (
-        <div className="p-6 space-y-6 max-w-7xl mx-auto" suppressHydrationWarning={true}>
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <Button variant="ghost" className="mb-2 pl-0 hover:bg-transparent text-gray-400" onClick={() => router.back()}>
-                        <ArrowLeft className="w-4 h-4 mr-2" /> Voltar para Calls
-                    </Button>
-                    <h1 className="text-2xl font-bold tracking-tight text-white">Raio-X da Venda</h1>
-                    <div className="flex items-center gap-4 text-sm text-gray-500 mt-1" suppressHydrationWarning={true}>
-                        <span className="flex items-center gap-1">
-                            <User className="w-4 h-4" /> {call.user?.full_name ?? call.lead_profile?.name ?? 'Lead'}
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <Clock className="w-4 h-4" /> {formatDuration(call.duration_seconds)}
-                        </span>
-                        <span className="flex items-center gap-1" suppressHydrationWarning={true}>
-                            <Calendar className="w-4 h-4" /> {new Date(call.started_at).toLocaleDateString('pt-BR')}
-                        </span>
-                        <Badge variant="outline" className="border-white/10 text-gray-400">{call.script?.name || 'Sem Script'}</Badge>
-                        {objections.length > 0 && (
-                            <span className="flex items-center gap-1 text-orange-400">
-                                <Zap className="w-4 h-4" /> {objections.length} objeç{objections.length === 1 ? 'ão' : 'ões'}
-                            </span>
-                        )}
-                    </div>
-                </div>
+    const resultLabel: Record<string, string> = {
+        CONVERTED: 'Venda realizada',
+        LOST: 'Venda perdida',
+        FOLLOW_UP: 'Em follow-up',
+        UNKNOWN: 'A definir',
+    };
+    const resultColor = call.summary?.result === 'CONVERTED' ? 'bg-green-500/20 border-green-400/50 text-green-300' : call.summary?.result === 'LOST' ? 'bg-red-500/20 border-red-400/50 text-red-300' : 'bg-amber-500/20 border-amber-400/50 text-amber-300';
 
-                <div className="flex items-center gap-2">
+    return (
+        <div className="space-y-6 max-w-6xl mx-auto" suppressHydrationWarning={true}>
+            <DashboardHeader title="Raio X da Venda" />
+            <Link
+                href="/calls"
+                className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors mb-2"
+            >
+                <ArrowLeft className="w-4 h-4" /> Voltar para Chamadas
+            </Link>
+
+            {/* Contexto da chamada */}
+            <div className="rounded-2xl border p-4 sm:p-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
+                <span className="flex items-center gap-2 text-white font-medium">
+                    <User className="w-4 h-4 text-gray-400" /> {call.user?.full_name ?? call.lead_profile?.name ?? 'Lead'}
+                </span>
+                <span className="flex items-center gap-2 text-gray-400">
+                    <Clock className="w-4 h-4" /> {formatDuration(call.duration_seconds)}
+                </span>
+                <span className="flex items-center gap-2 text-gray-400" suppressHydrationWarning={true}>
+                    <Calendar className="w-4 h-4" /> {new Date(call.started_at).toLocaleDateString('pt-BR')}
+                </span>
+                <Badge variant="outline" className="border-white/20 text-gray-300">{call.script?.name || 'Sem Script'}</Badge>
+                {objections.length > 0 && (
+                    <span className="flex items-center gap-1.5 font-medium" style={{ color: NEON_ORANGE }}>
+                        <Zap className="w-4 h-4" /> {objections.length} objeç{objections.length === 1 ? 'ão' : 'ões'}
+                    </span>
+                )}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
                     {(!call.summary?.result || call.summary.result === 'UNKNOWN' || call.summary.result === 'FOLLOW_UP') && (
                         <>
-                            <Button
-                                variant="outline"
-                                className="border-green-500/30 text-green-400 hover:bg-green-900/20"
-                                onClick={() => handleUpdateOutcome('CONVERTED')}
-                                disabled={loading}
-                            >
+                            <Button size="sm" className="bg-green-600 hover:bg-green-500 text-white border-0" onClick={() => handleUpdateOutcome('CONVERTED')} disabled={loading}>
                                 <ThumbsUp className="w-4 h-4 mr-2" /> Venda Realizada
                             </Button>
-                            <Button
-                                variant="outline"
-                                className="border-red-500/30 text-red-400 hover:bg-red-900/20"
-                                onClick={() => handleUpdateOutcome('LOST')}
-                                disabled={loading}
-                            >
+                            <Button size="sm" variant="outline" className="border-red-500/50 text-red-400 hover:bg-red-900/20" onClick={() => handleUpdateOutcome('LOST')} disabled={loading}>
                                 <ThumbsDown className="w-4 h-4 mr-2" /> Venda Perdida
                             </Button>
                         </>
                     )}
-
                     {currentUser && ['ADMIN', 'MANAGER'].includes(currentUser.role) && (
-                        <Button variant="outline" disabled className="border-white/10 text-gray-500">
+                        <Button variant="outline" size="sm" disabled className="border-white/10 text-gray-500">
                             <Play className="w-4 h-4 mr-2" /> Gravação
                         </Button>
                     )}
                 </div>
             </div>
 
+            {/* Faixa de resultado (quando já tem summary) */}
+            {call.summary?.result && !isProcessing && (
+                <div className={`rounded-2xl border-2 p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4 ${resultColor}`}>
+                    <div className="flex items-center gap-4">
+                        <span className="text-xs font-bold uppercase tracking-widest opacity-80">Resultado</span>
+                        <span className="text-xl sm:text-2xl font-bold">{resultLabel[call.summary.result] ?? call.summary.result}</span>
+                    </div>
+                    <div className="flex items-center gap-6 sm:gap-8">
+                        <div className="text-center">
+                            <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Sentimento</div>
+                            <div className="text-lg font-bold mt-0.5">{call.summary?.lead_sentiment || 'NEUTRAL'}</div>
+                        </div>
+                        {call.summary?.script_adherence_score !== undefined && (
+                            <div className="text-center">
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Aderência ao script</div>
+                                <div className="text-2xl font-bold mt-0.5 text-white">{call.summary.script_adherence_score}%</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Main Intelligence Grid */}
             {isProcessing ? (
-                <Card className="border-blue-500/20 bg-blue-900/10">
-                    <CardContent className="flex flex-col items-center justify-center p-12 text-center text-blue-300">
-                        <BrainCircuit className="w-12 h-12 mb-4 animate-pulse" />
-                        <h3 className="text-lg font-semibold">Processando Inteligência...</h3>
-                        <p className="mt-2 text-blue-400">Nossa IA está analisando a conversa para gerar seus insights.</p>
-                    </CardContent>
-                </Card>
+                <div className="rounded-2xl border-2 border-blue-500/30 p-12 text-center" style={{ backgroundColor: 'rgba(59, 130, 246, 0.08)' }}>
+                    <BrainCircuit className="w-16 h-16 mx-auto mb-6 text-blue-400 animate-pulse" />
+                    <h3 className="text-xl font-bold text-white">Processando Inteligência...</h3>
+                    <p className="mt-3 text-blue-300 max-w-md mx-auto">Nossa IA está analisando a conversa para gerar seus insights. Esta página será atualizada automaticamente.</p>
+                </div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Left Column */}
+                    {/* Coluna esquerda */}
                     <div className="space-y-6">
-                        {/* Thermometer */}
-                        <Card className="bg-[#1e1e1e] border-white/5">
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">
-                                    Termômetro da Lead
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className={`flex items-center justify-between p-4 rounded-lg border ${getSentimentColor(call.summary?.lead_sentiment)}`}>
-                                    <div className="flex items-center gap-3">
-                                        {getSentimentIcon(call.summary?.lead_sentiment)}
-                                        <span className="font-bold text-lg">{call.summary?.lead_sentiment || 'NEUTRAL'}</span>
-                                    </div>
-                                    {call.summary?.script_adherence_score !== undefined && (
-                                        <div className="text-right">
-                                            <div className="text-xs text-gray-500 uppercase">Aderência</div>
-                                            <div className="font-bold text-xl text-white">{call.summary.script_adherence_score}%</div>
+                        {/* Termômetro (quando não mostrado na faixa) */}
+                        {call.summary && (call.summary.lead_sentiment || call.summary.script_adherence_score !== undefined) && (
+                            <Card className="rounded-2xl border shadow-none" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                                        <Target className="w-5 h-5" style={{ color: NEON_PINK }} />
+                                        Termômetro da Lead
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className={`flex items-center justify-between p-5 rounded-xl border-2 ${getSentimentColor(call.summary?.lead_sentiment)}`}>
+                                        <div className="flex items-center gap-4">
+                                            {getSentimentIcon(call.summary?.lead_sentiment)}
+                                            <span className="font-bold text-xl text-white">{call.summary?.lead_sentiment || 'NEUTRAL'}</span>
                                         </div>
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
+                                        {call.summary?.script_adherence_score !== undefined && (
+                                            <div className="text-right">
+                                                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Aderência</div>
+                                                <div className="font-bold text-2xl text-white">{call.summary.script_adherence_score}%</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
 
-                        {/* AI Context / Summary */}
-                        <Card className="bg-[#1e1e1e] border-white/5">
+                        {/* Resumo da IA */}
+                        <Card className="rounded-2xl border shadow-none" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
                             <CardHeader>
-                                <CardTitle className="flex items-center gap-2 text-white">
-                                    <FileText className="w-5 h-5 text-indigo-400" />
+                                <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                                    <MessageSquare className="w-5 h-5" style={{ color: NEON_PINK }} />
                                     Resumo da IA
                                 </CardTitle>
                             </CardHeader>
-                            <CardContent className="text-gray-300 leading-relaxed whitespace-pre-wrap text-sm">
+                            <CardContent className="text-gray-300 leading-relaxed whitespace-pre-wrap text-base">
                                 {call.summary?.ai_notes || "Nenhum resumo gerado ainda."}
                             </CardContent>
                         </Card>
 
-                        {/* Objections Timeline */}
+                        {/* Objeções */}
                         {objections.length > 0 && (
-                            <Card className="bg-[#1e1e1e] border-white/5">
+                            <Card className="rounded-2xl border shadow-none" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
                                 <CardHeader>
-                                    <CardTitle className="flex items-center gap-2 text-white">
-                                        <Zap className="w-5 h-5 text-orange-400" />
+                                    <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                                        <Zap className="w-5 h-5" style={{ color: NEON_ORANGE }} />
                                         Objeções Detectadas ({objections.length})
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="space-y-3">
+                                    <div className="space-y-4">
                                         {objections.map((obj, i) => (
-                                            <div key={obj.id || i} className="flex gap-3 items-start">
-                                                <div className="shrink-0 mt-1">
-                                                    <div className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center text-[10px] font-bold text-orange-400">
-                                                        {i + 1}
-                                                    </div>
+                                            <div key={obj.id || i} className="flex gap-4 items-start p-4 rounded-xl bg-black/20 border border-white/5">
+                                                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ backgroundColor: 'rgba(255, 138, 0, 0.2)' }}>
+                                                    {i + 1}
                                                 </div>
-                                                <div className="flex-1">
-                                                    <div className="text-sm font-medium text-orange-300">{obj.trigger_phrase}</div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-semibold text-white">{obj.trigger_phrase}</div>
                                                     {obj.coaching_tip && (
-                                                        <div className="text-xs text-gray-500 mt-0.5">{obj.coaching_tip}</div>
+                                                        <div className="text-sm text-gray-400 mt-1">{obj.coaching_tip}</div>
                                                     )}
                                                     {obj.detected_at && (
-                                                        <div className="text-[10px] text-gray-600 mt-1" suppressHydrationWarning={true}>
+                                                        <div className="text-xs text-gray-500 mt-2" suppressHydrationWarning={true}>
                                                             {formatTimestamp(obj.detected_at)}
                                                         </div>
                                                     )}
@@ -409,21 +441,21 @@ export default function CallDetailsPage() {
                             </Card>
                         )}
 
-                        {/* Next Steps */}
-                        <Card className="bg-[#1e1e1e] border-white/5">
+                        {/* Próximos Passos */}
+                        <Card className="rounded-2xl border shadow-none" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
                             <CardHeader>
-                                <CardTitle className="flex items-center gap-2 text-white">
-                                    <CheckCircle2 className="w-5 h-5 text-green-400" />
+                                <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                                    <CheckCircle2 className="w-5 h-5" style={{ color: NEON_GREEN }} />
                                     Próximos Passos
                                 </CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <ul className="space-y-2">
+                                <ul className="space-y-3">
                                     {call.summary?.next_steps?.length ? (
                                         call.summary.next_steps.map((step, i) => (
-                                            <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                                                <CheckCircle2 className="w-4 h-4 text-gray-500 mt-0.5 shrink-0" />
-                                                {step}
+                                            <li key={i} className="flex items-start gap-3 text-base text-gray-300 p-3 rounded-lg bg-white/5 border border-white/5">
+                                                <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" style={{ color: NEON_GREEN }} />
+                                                <span>{step}</span>
                                             </li>
                                         ))
                                     ) : (
@@ -434,27 +466,26 @@ export default function CallDetailsPage() {
                         </Card>
                     </div>
 
-                    {/* Right Column: Pontos de Ouro */}
+                    {/* Coluna direita: Pontos de Ouro */}
                     <div className="lg:col-span-2 space-y-6">
-                        <Card className="h-full bg-[#1e1e1e] border-white/5">
+                        <Card className="rounded-2xl border shadow-none min-h-[280px]" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
                             <CardHeader>
-                                <CardTitle className="flex items-center gap-2 text-white">
-                                    <Activity className="w-5 h-5 text-amber-400" />
+                                <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Activity className="w-6 h-6" style={{ color: NEON_ORANGE }} />
                                     Pontos de Ouro
                                 </CardTitle>
-                                <CardDescription className="text-gray-500">O que funcionou e onde podemos melhorar</CardDescription>
+                                <CardDescription className="text-gray-400 text-sm">O que funcionou e onde podemos melhorar</CardDescription>
                             </CardHeader>
-                            <CardContent className="grid md:grid-cols-2 gap-8">
-                                {/* Strengths */}
+                            <CardContent className="grid md:grid-cols-2 gap-6">
                                 <div>
-                                    <h4 className="font-semibold text-green-400 mb-3 flex items-center gap-2">
-                                        <ThumbsUp className="w-4 h-4" /> Acertos
+                                    <h4 className="font-bold text-lg mb-4 flex items-center gap-2 text-green-400">
+                                        <ThumbsUp className="w-5 h-5" /> Acertos
                                     </h4>
                                     <ul className="space-y-3">
                                         {call.summary?.strengths?.length ? (
                                             call.summary.strengths.map((str, i) => (
-                                                <li key={i} className="flex gap-3 text-sm bg-green-900/20 p-3 rounded-md text-green-300 border border-green-500/10">
-                                                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                                                <li key={i} className="flex gap-3 text-base p-4 rounded-xl bg-green-900/20 text-green-200 border border-green-500/20">
+                                                    <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-green-400" />
                                                     {str}
                                                 </li>
                                             ))
@@ -463,17 +494,15 @@ export default function CallDetailsPage() {
                                         )}
                                     </ul>
                                 </div>
-
-                                {/* Improvements */}
                                 <div>
-                                    <h4 className="font-semibold text-red-400 mb-3 flex items-center gap-2">
-                                        <AlertCircle className="w-4 h-4" /> Melhorias
+                                    <h4 className="font-bold text-lg mb-4 flex items-center gap-2 text-amber-400">
+                                        <AlertCircle className="w-5 h-5" /> Melhorias
                                     </h4>
                                     <ul className="space-y-3">
                                         {call.summary?.improvements?.length ? (
                                             call.summary.improvements.map((imp, i) => (
-                                                <li key={i} className="flex gap-3 text-sm bg-red-900/20 p-3 rounded-md text-red-300 border border-red-500/10">
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
+                                                <li key={i} className="flex gap-3 text-base p-4 rounded-xl bg-amber-900/20 text-amber-200 border border-amber-500/20">
+                                                    <div className="w-2 h-2 rounded-full bg-amber-400 mt-1.5 shrink-0" />
                                                     {imp}
                                                 </li>
                                             ))
@@ -488,31 +517,35 @@ export default function CallDetailsPage() {
                 </div>
             )}
 
-            {/* Transcript Section (Collapsible) */}
-            <Card className="bg-[#1e1e1e] border-white/5">
-                <div
-                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] transition-colors border-b border-white/5"
+            {/* Transcrição (expansível) */}
+            <Card className="rounded-2xl border shadow-none overflow-hidden" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
+                <button
+                    type="button"
+                    className="w-full p-5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors border-b text-left"
+                    style={{ borderColor: CARD_BORDER }}
                     onClick={() => setShowTranscript(!showTranscript)}
                 >
-                    <h3 className="font-semibold flex items-center gap-2 text-white">
-                        <FileText className="w-4 h-4" /> Transcrição Completa
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <FileText className="w-5 h-5" style={{ color: NEON_PINK }} /> Transcrição Completa
                     </h3>
-                    <Button variant="ghost" size="sm" className="text-gray-400">
-                        {showTranscript ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </Button>
-                </div>
-
+                    <span className="text-gray-400">
+                        {showTranscript ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </span>
+                </button>
                 {showTranscript && (
                     <CardContent className="p-0">
-                        <div className="max-h-96 overflow-y-auto p-4 space-y-4 bg-black/20">
+                        <div className="max-h-[420px] overflow-y-auto p-5 space-y-4 bg-black/20">
                             {call.transcript && Array.isArray(call.transcript) && call.transcript.length > 0 ? (
                                 call.transcript.map((entry: any, idx: number) => (
                                     <div key={idx} className={`flex gap-4 ${entry.role === 'seller' ? 'flex-row-reverse' : ''}`}>
-                                        <div className={`flex-1 p-3 rounded-lg text-sm ${entry.role === 'seller'
-                                            ? 'bg-neon-pink/10 border border-neon-pink/20 text-white rounded-tr-none'
-                                            : 'bg-white/5 border border-white/10 text-gray-200 rounded-tl-none'
-                                            }`}>
-                                            <div className="font-xs font-semibold mb-1 opacity-70 text-gray-400">
+                                        <div
+                                            className={`flex-1 p-4 rounded-xl text-base ${entry.role === 'seller'
+                                                ? 'text-white rounded-tr-none'
+                                                : 'bg-white/5 border border-white/10 text-gray-200 rounded-tl-none'
+                                                }`}
+                                            style={entry.role === 'seller' ? { backgroundColor: 'rgba(255, 0, 122, 0.15)', borderWidth: 1, borderColor: 'rgba(255, 0, 122, 0.3)' } : undefined}
+                                        >
+                                            <div className="text-xs font-bold uppercase tracking-wider mb-1.5 text-gray-400">
                                                 {entry.speaker || (entry.role === 'seller' ? 'Vendedor' : 'Lead')}
                                             </div>
                                             {entry.text}
@@ -520,7 +553,7 @@ export default function CallDetailsPage() {
                                     </div>
                                 ))
                             ) : (
-                                <p className="text-gray-500 text-center py-8">Transcrição não disponível.</p>
+                                <p className="text-gray-500 text-center py-12">Transcrição não disponível.</p>
                             )}
                         </div>
                     </CardContent>

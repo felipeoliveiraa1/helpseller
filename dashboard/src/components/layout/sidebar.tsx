@@ -15,17 +15,10 @@ const navSections = [
   {
     label: 'App',
     items: [
-      { name: 'Scripts', href: '/scripts', icon: 'description' },
       { name: 'Chamadas', href: '/calls', icon: 'call' },
       { name: 'Ao Vivo', href: '/live', icon: 'cell_tower' },
       { name: 'Analytics', href: '/analytics', icon: 'bar_chart' },
       { name: 'Equipe', href: '/team', icon: 'people' },
-    ],
-  },
-  {
-    label: 'Sistema',
-    items: [
-      { name: 'Configurações', href: '/settings', icon: 'settings' },
     ],
   },
 ] as const
@@ -154,9 +147,12 @@ export function Sidebar() {
       </nav>
 
       {/* User footer */}
-      <div className="p-4 border-t border-white/5" suppressHydrationWarning={true}>
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
+      <div className="p-4 border-t border-white/5 space-y-1" suppressHydrationWarning={true}>
+        <Link
+          href="/settings"
+          className="flex items-center gap-3 rounded-xl p-2 -m-2 hover:bg-white/5 transition-colors group"
+        >
+          <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/15 transition-colors shrink-0">
             <span
               className="text-sm font-bold"
               style={{ color: NEON_PINK }}
@@ -168,24 +164,18 @@ export function Sidebar() {
             <p className="text-xs font-bold text-white truncate">{displayName}</p>
             <p className="text-[10px] text-gray-500 truncate">{role}</p>
           </div>
-        </div>
-        <div className="flex justify-between items-center">
-          <Link
-            href="/settings"
-            className="text-gray-500 hover:text-neon-pink transition-colors flex items-center gap-1 text-xs"
-          >
-            <span className="material-icons-outlined text-[16px]">settings</span>
-            Config
-          </Link>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="text-gray-500 hover:text-red-400 transition-colors flex items-center gap-1 text-xs"
-          >
-            <span className="material-icons-outlined text-[16px]">logout</span>
-            Sair
-          </button>
-        </div>
+          <span className="material-icons-outlined text-gray-500 text-[16px] group-hover:text-neon-pink transition-colors shrink-0">
+            settings
+          </span>
+        </Link>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 px-3 text-xs font-medium text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors"
+        >
+          <span className="material-icons-outlined text-[16px]">logout</span>
+          Sair
+        </button>
       </div>
     </aside>
   )

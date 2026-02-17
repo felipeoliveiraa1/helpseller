@@ -1,6 +1,6 @@
 import { Sidebar } from '@/components/layout/sidebar'
-import { RightSidebar } from '@/components/layout/right-sidebar'
 import { MobileNav } from '@/components/layout/mobile-nav'
+import { DashboardContentGuard } from '@/components/dashboard-content-guard'
 
 export default function DashboardLayout({
   children,
@@ -14,11 +14,8 @@ export default function DashboardLayout({
       </div>
       <MobileNav />
       <main className="flex-1 overflow-y-auto scrollbar-hide p-8 min-h-screen pt-14 md:pt-8">
-        {children}
+        <DashboardContentGuard>{children}</DashboardContentGuard>
       </main>
-      <div className="hidden lg:flex">
-        <RightSidebar />
-      </div>
     </div>
   )
 }

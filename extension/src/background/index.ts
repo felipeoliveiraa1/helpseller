@@ -283,6 +283,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             startCapture(message.tabId || sender.tab?.id);
         } else if (message.type === 'STOP_CAPTURE') {
             stopCapture();
+        } else if (message.type === 'TRY_END_CALL') {
+            send('call:end', {});
         } else if (message.type === 'OFFSCREEN_READY') {
             console.log('✅ [Event]: OFFSCREEN_READY - Generating fresh StreamID...');
             handleOffscreenReady();

@@ -137,6 +137,25 @@
   display: none; /* Chrome, Safari, Edge */
 }
 
+/* Scrollbar escuro (design do sistema) */
+.scrollbar-dark {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) rgba(30, 30, 30, 0.8);
+}
+.scrollbar-dark::-webkit-scrollbar {
+  width: 8px;
+}
+.scrollbar-dark::-webkit-scrollbar-track {
+  background: rgba(30, 30, 30, 0.8);
+}
+.scrollbar-dark::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+}
+.scrollbar-dark::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+
 .glow-pink { filter: drop-shadow(0 0 4px var(--color-neon-pink)); }
 .glow-blue { filter: drop-shadow(0 0 4px var(--color-neon-blue)); }
 .glow-green { filter: drop-shadow(0 0 4px var(--color-neon-green)); }

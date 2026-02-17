@@ -12,47 +12,78 @@ interface NextStep {
     priority: 'high' | 'medium' | 'low'
 }
 
-export function SellerDashboard({ stats }: { stats: { callsToday: number; conversionRate: number } }) {
+interface SellerDashboardProps {
+    stats?: { callsToday: number; conversionRate: number }
+}
+
+export function SellerDashboard({ stats: statsProp }: SellerDashboardProps = {}) {
     const [nextSteps, setNextSteps] = useState<NextStep[]>([])
     const [loading, setLoading] = useState(true)
+    const [callsToday, setCallsToday] = useState(0)
+    const [conversionRate, setConversionRate] = useState(0)
     const supabase = createClient()
+    const callsTodayDisplay = statsProp?.callsToday ?? callsToday
+    const conversionRateDisplay = statsProp?.conversionRate ?? conversionRate
 
     useEffect(() => {
-        async function fetchNextSteps() {
+        async function fetchData() {
             const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-
-            // Fetch last 5 call summaries for this user
-            const { data, error } = await supabase
+            if (!user) {
+                setLoading(false)
+                return
+            }
+            if (statsProp === undefined) {
+                const now = new Date()
+                const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+                const [todayRes, completedRes, convertedRes] = await Promise.all([
+                    supabase
+                        .from('calls')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('status', 'COMPLETED')
+                        .gte('started_at', startOfDay),
+                    supabase
+                        .from('calls')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('status', 'COMPLETED'),
+                    supabase
+                        .from('call_summaries')
+                        .select('call_id', { count: 'exact', head: true })
+                        .eq('result', 'CONVERTED'),
+                ])
+                const today = todayRes.count ?? 0
+                const totalCompleted = completedRes.count ?? 0
+                const converted = convertedRes.count ?? 0
+                setCallsToday(today)
+                setConversionRate(totalCompleted > 0 ? Math.round((converted / totalCompleted) * 100) : 0)
+            }
+            const { data } = await supabase
                 .from('call_summaries')
                 .select(`
                     next_steps,
                     created_at,
                     call:calls!inner(user_id)
                 `)
-                .eq('call.user_id', user.id)
                 .order('created_at', { ascending: false })
                 .limit(5)
-
             if (data) {
                 const steps: NextStep[] = []
-                data.forEach((summary: any) => {
+                data.forEach((summary: { next_steps?: string[] }) => {
                     if (Array.isArray(summary.next_steps)) {
                         summary.next_steps.forEach((step: string) => {
                             steps.push({
                                 task: step,
-                                due: 'A definir', // In a real app, we'd parse dates or have a due_date field
+                                due: 'A definir',
                                 priority: 'medium'
                             })
                         })
                     }
                 })
-                setNextSteps(steps.slice(0, 5)) // Show top 5
+                setNextSteps(steps.slice(0, 5))
             }
             setLoading(false)
         }
-        fetchNextSteps()
-    }, [])
+        fetchData()
+    }, [supabase, statsProp])
 
     return (
         <div className="space-y-6">
@@ -66,7 +97,7 @@ export function SellerDashboard({ stats }: { stats: { callsToday: number; conver
                         <Phone className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{stats.callsToday}</div>
+                        <div className="text-2xl font-bold">{callsTodayDisplay}</div>
                         <p className="text-xs text-muted-foreground">Concluídas hoje</p>
                     </CardContent>
                 </Card>
@@ -76,7 +107,7 @@ export function SellerDashboard({ stats }: { stats: { callsToday: number; conver
                         <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{stats.conversionRate}%</div>
+                        <div className="text-2xl font-bold">{conversionRateDisplay}%</div>
                         <p className="text-xs text-muted-foreground">Concluídas / Total</p>
                     </CardContent>
                 </Card>

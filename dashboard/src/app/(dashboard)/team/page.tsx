@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Users, UserPlus, ShieldAlert, Loader2, Trash2, ArrowUpDown, Shield, User, MoreVertical } from 'lucide-react'
+import { Users, UserPlus, ShieldAlert, Loader2, Trash2, ArrowUpDown, Shield, User, MoreVertical, KeyRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { api } from '@/lib/api'
 
@@ -34,6 +34,10 @@ export default function TeamPage() {
     email: '',
     password: ''
   })
+  const [passwordModal, setPasswordModal] = useState<{ memberId: string; memberName: string } | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordLoading, setPasswordLoading] = useState(false)
   const supabase = createClient()
 
   // Clear feedback after 4s
@@ -178,6 +182,31 @@ export default function TeamPage() {
     setActionLoading(null)
   }
 
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!passwordModal) return
+    if (newPassword.length < 6) {
+      setFeedback({ type: 'error', message: 'A senha deve ter no mínimo 6 caracteres.' })
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setFeedback({ type: 'error', message: 'As senhas não coincidem.' })
+      return
+    }
+    setPasswordLoading(true)
+    try {
+      await api.post('/api/admin/update-password', { user_id: passwordModal.memberId, new_password: newPassword })
+      setFeedback({ type: 'success', message: 'Senha alterada com sucesso.' })
+      setPasswordModal(null)
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Erro ao alterar senha.' })
+    } finally {
+      setPasswordLoading(false)
+    }
+  }
+
   const formatDate = (dateStr: string) => {
     try {
       return new Date(dateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -189,6 +218,60 @@ export default function TeamPage() {
   return (
     <div className="space-y-6" suppressHydrationWarning={true}>
       <DashboardHeader title="Equipe" />
+
+      {/* Modal Alterar senha */}
+      {passwordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => !passwordLoading && setPasswordModal(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#1e1e1e] p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-white mb-1">Alterar senha</h3>
+            <p className="text-sm text-gray-500 mb-4">Para {passwordModal.memberName}</p>
+            <form onSubmit={handleUpdatePassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password" className="text-gray-400">Nova senha</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  placeholder="Mínimo 6 caracteres"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  minLength={6}
+                  className="bg-black/30 border-white/10 text-white placeholder:text-gray-500"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password" className="text-gray-400">Confirmar senha</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  placeholder="Repita a senha"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  minLength={6}
+                  className="bg-black/30 border-white/10 text-white placeholder:text-gray-500"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 border-white/10 text-gray-400 hover:bg-white/5"
+                  disabled={passwordLoading}
+                  onClick={() => { setPasswordModal(null); setNewPassword(''); setConfirmPassword('') }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1 bg-neon-pink hover:bg-neon-pink/90 text-white font-bold"
+                  disabled={passwordLoading}
+                >
+                  {passwordLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Salvar'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Toast */}
       {feedback && (
@@ -294,7 +377,7 @@ export default function TeamPage() {
               • A organização será vinculada automaticamente à sua conta de Gestor.
             </p>
             <p>
-              • Você pode <strong>promover</strong> um vendedor a Gestor ou <strong>remover</strong> da organização a qualquer momento.
+              • Você pode <strong>alterar a senha</strong> dos vendedores, <strong>promover</strong> a Gestor ou <strong>remover</strong> da organização a qualquer momento.
             </p>
             <div className="p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/10 mt-4">
               <p className="text-yellow-500 text-xs">
@@ -388,6 +471,13 @@ export default function TeamPage() {
                             <Loader2 className="w-4 h-4 animate-spin text-gray-400 ml-auto" />
                           ) : (
                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => setPasswordModal({ memberId: member.id, memberName: member.full_name || member.email })}
+                                className="p-1.5 rounded-md hover:bg-white/10 transition-colors text-gray-400 hover:text-blue-400"
+                                title="Alterar senha"
+                              >
+                                <KeyRound size={14} />
+                              </button>
                               <button
                                 onClick={() => handleUpdateRole(member.id, isManager ? 'SELLER' : 'MANAGER')}
                                 className="p-1.5 rounded-md hover:bg-white/10 transition-colors text-gray-400 hover:text-amber-400"

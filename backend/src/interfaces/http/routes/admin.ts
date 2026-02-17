@@ -14,12 +14,16 @@ export async function adminRoutes(fastify: FastifyInstance) {
         if (!email || !password || !name) {
             return reply.code(400).send({ error: 'Missing required fields' });
         }
+        if (!organization_id) {
+            return reply.code(400).send({ error: 'Missing organization. Faça login novamente.' });
+        }
+
+        const managerOrgId = String(organization_id);
 
         try {
-            console.log('Admin Debug: Creating user...', { email, role, organization_id });
+            console.log('Admin Debug: Creating user...', { email, role, organization_id: managerOrgId });
 
-            // 1. Create User in Supabase Auth
-            // Try with auto-confirm first
+            // 1. Create User in Supabase Auth (metadata com organization_id em string para o trigger)
             let authData, authError;
 
             try {
@@ -31,7 +35,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                     user_metadata: {
                         full_name: name,
                         role: 'SELLER',
-                        organization_id: organization_id
+                        organization_id: managerOrgId
                     }
                 });
                 authData = result.data;
@@ -48,7 +52,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                         user_metadata: {
                             full_name: name,
                             role: 'SELLER',
-                            organization_id: organization_id
+                            organization_id: managerOrgId
                         }
                     });
                     authData = result.data;
@@ -69,7 +73,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                         user_metadata: {
                             full_name: name,
                             role: 'SELLER',
-                            organization_id: organization_id
+                            organization_id: managerOrgId
                         }
                     });
                     authData = result.data;
@@ -89,42 +93,95 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
             console.log('Admin Debug: User created, ID:', user.id);
 
-            // 2. Create Profile in public.profiles (if not handled by trigger)
-            // Ideally, a Supabase trigger handles this, but we can double check or enforce additional data here if needed.
-            // For now, we assume the trigger on auth.users -> public.profiles exists or we rely on metadata sync.
-            // However, to be safe and ensure the profile exists instantly for the UI:
-
-            console.log('Admin Debug: Creating/Verifying profile...');
-            const { error: profileError } = await supabaseAdmin
+            // 2. Garantir perfil na organização do gerente e role SELLER (trigger pode ter criado org errada + MANAGER)
+            const profilePayload = {
+                email,
+                full_name: name,
+                role: 'SELLER',
+                organization_id: managerOrgId
+            };
+            const { data: updatedProfile, error: updateError } = await supabaseAdmin
                 .from('profiles')
-                .insert({
-                    id: user.id,
-                    email: email,
-                    full_name: name,
-                    role: 'SELLER',
-                    organization_id: organization_id
-                })
+                .update(profilePayload)
+                .eq('id', user.id)
                 .select()
                 .single();
 
-            // Ignore duplicate key error if trigger already created it
-            if (profileError) {
-                if (!profileError.message.includes('duplicate key')) {
-                    console.error('Admin Debug: Profile creation error', profileError);
-                    request.log.warn({ profileError }, 'Profile creation warning');
-                } else {
-                    console.log('Admin Debug: Profile already exists (duplicate key)');
+            if (updateError || !updatedProfile) {
+                const { error: insertError } = await supabaseAdmin
+                    .from('profiles')
+                    .insert({ id: user.id, ...profilePayload })
+                    .select()
+                    .single();
+                if (insertError) {
+                    console.error('Admin Debug: Profile update/insert error', updateError || insertError);
+                    request.log.warn({ updateError, insertError }, 'Profile fix failed');
                 }
             } else {
-                console.log('Admin Debug: Profile created successfully');
+                console.log('Admin Debug: Profile updated to org', managerOrgId, 'role SELLER');
             }
 
             return { success: true, user: { id: user.id, email: user.email } };
 
         } catch (error: any) {
+            const message = error?.message || String(error);
             console.error('Admin Debug: Catch Block Error', error);
             request.log.error({ error }, 'Failed to create user');
-            return reply.code(500).send({ error: error.message || 'Failed to create user' });
+            if (message.includes('already been registered') || message.includes('already exists') || message.includes('User already registered')) {
+                return reply.code(400).send({ error: 'Este e-mail já está cadastrado.' });
+            }
+            if (message.includes('Profile not found') || message.includes('organization')) {
+                return reply.code(400).send({ error: message });
+            }
+            return reply.code(500).send({ error: message || 'Falha ao criar usuário.' });
+        }
+    });
+
+    /** Alterar senha de um vendedor/membro da organização. Apenas gestor (MANAGER) pode usar. */
+    fastify.post('/update-password', async (request: any, reply) => {
+        const { user_id: targetUserId, new_password } = request.body as { user_id?: string; new_password?: string };
+        const { organization_id, role } = request.user;
+
+        if (role !== 'MANAGER') {
+            return reply.code(403).send({ error: 'Apenas o gestor pode alterar a senha de vendedores.' });
+        }
+        if (!organization_id) {
+            return reply.code(400).send({ error: 'Missing organization. Faça login novamente.' });
+        }
+        if (!targetUserId || !new_password || new_password.length < 6) {
+            return reply.code(400).send({ error: 'Informe o usuário e uma nova senha com no mínimo 6 caracteres.' });
+        }
+
+        try {
+            const { data: targetProfile, error: profileError } = await supabaseAdmin
+                .from('profiles')
+                .select('id, organization_id, role')
+                .eq('id', targetUserId)
+                .single();
+
+            if (profileError || !targetProfile) {
+                return reply.code(404).send({ error: 'Usuário não encontrado.' });
+            }
+            if ((targetProfile as { organization_id: string }).organization_id !== organization_id) {
+                return reply.code(403).send({ error: 'Você só pode alterar a senha de membros da sua organização.' });
+            }
+
+            const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
+                password: new_password
+            });
+
+            if (updateError) {
+                const msg = updateError.message || 'Falha ao atualizar senha.';
+                if (msg.includes('password') && msg.toLowerCase().includes('least')) {
+                    return reply.code(400).send({ error: 'A senha deve ter no mínimo 6 caracteres.' });
+                }
+                return reply.code(500).send({ error: msg });
+            }
+
+            return { success: true, message: 'Senha alterada com sucesso.' };
+        } catch (error: any) {
+            request.log.error({ error }, 'Admin update-password error');
+            return reply.code(500).send({ error: error?.message || 'Falha ao alterar senha.' });
         }
     });
 }

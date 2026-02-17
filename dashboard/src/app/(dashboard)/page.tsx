@@ -2,7 +2,6 @@
 
 import { DashboardHeader } from '@/components/layout/dashboard-header'
 import { SellerDashboard } from '@/components/analytics/seller-dashboard'
-import { ObjectionAnalytics } from '@/components/analytics/objection-analytics'
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -13,78 +12,93 @@ const NEON_BLUE = '#00d1ff'
 const NEON_GREEN = '#00ff94'
 const NEON_ORANGE = '#ff8a00'
 
-/** Dados para o gráfico de estatística de chamadas (meses Jan–Ago) */
-const LINE_CHART_PREVIOUS = [120, 80, 140, 40, 100, 85, 130, 60]
-const LINE_CHART_CURRENT = [150, 100, 120, 90, 140, 110, 95, 105]
-
-const METRICS = [
-  {
-    change: '2.65%',
-    positive: true,
-    value: '1.450',
-    label: 'Total de Chamadas',
-    color: NEON_PINK,
-    path: 'M0 25 Q 10 5, 20 20 T 40 10 T 60 15',
-  },
-  {
-    change: '1.12%',
-    positive: true,
-    value: '412',
-    label: 'Por Script',
-    color: NEON_BLUE,
-    path: 'M0 15 Q 15 25, 30 10 T 60 20',
-  },
-  {
-    change: '0.45%',
-    positive: false,
-    value: '198',
-    label: 'Convertidas',
-    color: NEON_GREEN,
-    path: 'M0 10 Q 15 5, 30 20 T 60 15',
-  },
-  {
-    change: '2.12%',
-    positive: true,
-    value: '335',
-    label: 'Em follow-up',
-    color: NEON_ORANGE,
-    path: 'M0 20 Q 15 10, 30 25 T 60 15',
-  },
-]
-
-const TOP_LEADERS = [
-  { name: 'Maria Silva', role: 'Vendas', target: 'R$ 124.500', conversion: '12%', performance: 75, color: NEON_PINK },
-  { name: 'João Santos', role: 'SDR', target: 'R$ 98.200', conversion: '18%', performance: 100, color: NEON_BLUE },
-  { name: 'Ana Oliveira', role: 'Vendas', target: 'R$ 87.000', conversion: '9%', performance: 60, color: NEON_GREEN },
-]
-
 const CHART_WIDTH = 960
 const CHART_HEIGHT = 240
 const CHART_VIEW_HEIGHT = 262
 const CHART_PADDING = 20
 const CHART_MARGIN_LEFT = -10
 const PLOT_WIDTH = CHART_WIDTH - CHART_MARGIN_LEFT
-const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago']
+const RECENT_CALLS_LIMIT = 3
+const CHART_MONTHS_COUNT = 8
 
-function getChartScale(valuesPrev: number[], valuesCurr: number[]) {
-  const all = [...valuesPrev, ...valuesCurr]
-  const dataMin = Math.min(...all)
-  const dataMax = Math.max(...all)
+interface ProfileInfo {
+  role: string | null
+  organizationId: string | null
+}
+
+interface RecentCallRow {
+  id: string
+  started_at: string
+  ended_at: string | null
+  user?: { full_name: string }
+}
+
+interface TopPerfRow {
+  userId: string
+  name: string
+  role: string
+  totalCalls: number
+  converted: number
+  conversionRate: number
+  performance: number
+  color: string
+}
+
+interface ChartMonth {
+  label: string
+  count: number
+}
+
+const MONTH_LABELS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
+function getChartScale(values: number[]) {
+  const dataMin = Math.min(...values, 0)
+  const dataMax = Math.max(...values, 1)
   const range = dataMax - dataMin || 1
   const innerHeight = CHART_HEIGHT - CHART_PADDING * 2
   const valueToY = (v: number) =>
     CHART_PADDING + innerHeight - ((v - dataMin) / range) * innerHeight
   const ticks = 5
-  const step = (dataMax - dataMin) / (ticks - 1)
+  const step = (dataMax - dataMin) / (ticks - 1) || 1
   const yTickValues = Array.from({ length: ticks }, (_, i) =>
     Math.round(dataMin + step * i)
   )
   return { dataMin, dataMax, valueToY, yTickValues }
 }
 
+function formatRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return '...'
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diffMs = now - then
+  const diffMinutes = Math.floor(diffMs / 60000)
+  if (diffMinutes < 1) return 'agora'
+  if (diffMinutes < 60) return `${diffMinutes}m`
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours}h`
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays}d`
+}
+
+const METRIC_COLORS = [NEON_PINK, NEON_BLUE, NEON_GREEN, NEON_ORANGE]
+const METRIC_PATHS = [
+  'M0 25 Q 10 5, 20 20 T 40 10 T 60 15',
+  'M0 15 Q 15 25, 30 10 T 60 20',
+  'M0 10 Q 15 5, 30 20 T 60 15',
+  'M0 20 Q 15 10, 30 25 T 60 15',
+]
+
 export default function DashboardPage() {
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [profile, setProfile] = useState<ProfileInfo | null>(null)
+  const [loadingProfile, setLoadingProfile] = useState(true)
+  const [totalMonth, setTotalMonth] = useState(0)
+  const [todayCompleted, setTodayCompleted] = useState(0)
+  const [convertedCount, setConvertedCount] = useState(0)
+  const [followUpCount, setFollowUpCount] = useState(0)
+  const [recentCalls, setRecentCalls] = useState<RecentCallRow[]>([])
+  const [chartData, setChartData] = useState<ChartMonth[]>([])
+  const [topLeaders, setTopLeaders] = useState<TopPerfRow[]>([])
+  const [loadingData, setLoadingData] = useState(true)
   const [progressReady, setProgressReady] = useState(false)
   const [chartTooltip, setChartTooltip] = useState<{
     index: number
@@ -100,43 +114,242 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    async function checkRole() {
+    async function loadProfile() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-        if (profile) setUserRole((profile as { role?: string }).role ?? null)
+      if (!user) {
+        setLoadingProfile(false)
+        return
       }
-      setLoading(false)
+      const { data: row } = await supabase
+        .from('profiles')
+        .select('role, organization_id')
+        .eq('id', user.id)
+        .single()
+      if (row) {
+        setProfile({
+          role: (row as { role?: string }).role ?? null,
+          organizationId: (row as { organization_id?: string }).organization_id ?? null,
+        })
+      }
+      setLoadingProfile(false)
     }
-    checkRole()
-  }, [])
+    loadProfile()
+  }, [supabase])
 
-  if (loading) {
+  useEffect(() => {
+    if (profile === null && !loadingProfile) return
+    if (loadingProfile) return
+
+    async function loadDashboardData() {
+      setLoadingData(true)
+      const now = new Date()
+      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+      const startOfDay = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      ).toISOString()
+
+      try {
+        const [resumoMonth, resumoToday, convertedRes, followUpRes, recentRes, chartCalls, topPerfData] =
+          await Promise.all([
+            supabase
+              .from('calls')
+              .select('*', { count: 'exact', head: true })
+              .eq('status', 'COMPLETED')
+              .gte('started_at', firstOfMonth),
+            supabase
+              .from('calls')
+              .select('*', { count: 'exact', head: true })
+              .eq('status', 'COMPLETED')
+              .gte('started_at', startOfDay),
+            supabase
+              .from('call_summaries')
+              .select('call_id', { count: 'exact', head: true })
+              .eq('result', 'CONVERTED'),
+            supabase
+              .from('call_summaries')
+              .select('call_id', { count: 'exact', head: true })
+              .eq('result', 'FOLLOW_UP'),
+            supabase
+              .from('calls')
+              .select(`
+                id,
+                started_at,
+                ended_at,
+                user:profiles!user_id(full_name)
+              `)
+              .eq('status', 'COMPLETED')
+              .order('ended_at', { ascending: false })
+              .limit(RECENT_CALLS_LIMIT),
+            (() => {
+              const start = new Date(now.getFullYear(), now.getMonth() - (CHART_MONTHS_COUNT - 1), 1)
+              return supabase
+                .from('calls')
+                .select('started_at')
+                .eq('status', 'COMPLETED')
+                .gte('started_at', start.toISOString())
+            })(),
+            profile?.role === 'MANAGER' && profile?.organizationId
+              ? Promise.all([
+                  supabase
+                    .from('profiles')
+                    .select('id, full_name, role')
+                    .eq('organization_id', profile.organizationId),
+                  supabase
+                    .from('calls')
+                    .select('user_id')
+                    .eq('status', 'COMPLETED'),
+                  supabase
+                    .from('call_summaries')
+                    .select('call_id, result, calls!call_id(user_id)')
+                    .eq('result', 'CONVERTED'),
+                ])
+              : Promise.resolve([null, null, null]),
+          ])
+
+        setTotalMonth(resumoMonth.count ?? 0)
+        setTodayCompleted(resumoToday.count ?? 0)
+        setConvertedCount(convertedRes.count ?? 0)
+        setFollowUpCount(followUpRes.count ?? 0)
+
+        if (recentRes.data) {
+          const mapped: RecentCallRow[] = (recentRes.data as unknown[]).map((r: unknown) => {
+            const row = r as Record<string, unknown>
+            return {
+              id: row.id as string,
+              started_at: row.started_at as string,
+              ended_at: row.ended_at as string | null,
+              user: row.user
+                ? { full_name: (row.user as { full_name?: string }).full_name ?? '' }
+                : undefined,
+            }
+          })
+          setRecentCalls(mapped)
+        } else {
+          setRecentCalls([])
+        }
+
+        if (chartCalls.data && chartCalls.data.length >= 0) {
+          const byMonth: Record<string, number> = {}
+          const firstChart = new Date(now.getFullYear(), now.getMonth() - (CHART_MONTHS_COUNT - 1), 1)
+          for (let i = 0; i < CHART_MONTHS_COUNT; i++) {
+            const d = new Date(firstChart.getFullYear(), firstChart.getMonth() + i, 1)
+            const key = `${d.getFullYear()}-${d.getMonth()}`
+            byMonth[key] = 0
+          }
+          ;(chartCalls.data as { started_at: string }[]).forEach((c) => {
+            const d = new Date(c.started_at)
+            const key = `${d.getFullYear()}-${d.getMonth()}`
+            if (key in byMonth) byMonth[key] += 1
+          })
+          const labels: ChartMonth[] = []
+          for (let i = 0; i < CHART_MONTHS_COUNT; i++) {
+            const d = new Date(firstChart.getFullYear(), firstChart.getMonth() + i, 1)
+            const key = `${d.getFullYear()}-${d.getMonth()}`
+            labels.push({
+              label: `${MONTH_LABELS_PT[d.getMonth()]}`,
+              count: byMonth[key] ?? 0,
+            })
+          }
+          setChartData(labels)
+        } else {
+          const firstChart = new Date(now.getFullYear(), now.getMonth() - (CHART_MONTHS_COUNT - 1), 1)
+          setChartData(
+            Array.from({ length: CHART_MONTHS_COUNT }, (_, i) => {
+              const d = new Date(firstChart.getFullYear(), firstChart.getMonth() + i, 1)
+              return { label: MONTH_LABELS_PT[d.getMonth()], count: 0 }
+            })
+          )
+        }
+
+        if (profile?.role === 'MANAGER' && topPerfData[0]?.data && topPerfData[1]?.data && topPerfData[2]?.data) {
+          const profilesList = topPerfData[0].data as { id: string; full_name: string; role: string }[]
+          const callsList = topPerfData[1].data as { user_id: string }[]
+          const summariesList = topPerfData[2].data as { call_id: string; calls: { user_id: string } | null }[]
+          const callsByUser: Record<string, number> = {}
+          const convertedByUser: Record<string, number> = {}
+          profilesList.forEach((p) => {
+            callsByUser[p.id] = 0
+            convertedByUser[p.id] = 0
+          })
+          callsList.forEach((c) => {
+            if (callsByUser[c.user_id] !== undefined) callsByUser[c.user_id] += 1
+          })
+          summariesList.forEach((s) => {
+            const uid = s.calls?.user_id
+            if (uid && convertedByUser[uid] !== undefined) convertedByUser[uid] += 1
+          })
+          const maxCalls = Math.max(...Object.values(callsByUser), 1)
+          const rows: TopPerfRow[] = profilesList.map((p, idx) => {
+            const total = callsByUser[p.id] ?? 0
+            const converted = convertedByUser[p.id] ?? 0
+            const rate = total > 0 ? Math.round((converted / total) * 100) : 0
+            const performance = maxCalls > 0 ? Math.round((total / maxCalls) * 100) : 0
+            return {
+              userId: p.id,
+              name: p.full_name ?? 'Sem nome',
+              role: p.role ?? 'Vendas',
+              totalCalls: total,
+              converted,
+              conversionRate: rate,
+              performance,
+              color: METRIC_COLORS[idx % METRIC_COLORS.length],
+            }
+          })
+          rows.sort((a, b) => b.totalCalls - a.totalCalls)
+          setTopLeaders(rows)
+        } else {
+          setTopLeaders([])
+        }
+      } catch {
+        setTotalMonth(0)
+        setTodayCompleted(0)
+        setConvertedCount(0)
+        setFollowUpCount(0)
+        setRecentCalls([])
+        setChartData([])
+        setTopLeaders([])
+      } finally {
+        setLoadingData(false)
+      }
+    }
+
+    loadDashboardData()
+  }, [profile, loadingProfile, supabase])
+
+  if (loadingProfile) {
     return (
       <div className="p-8 text-gray-400">Carregando...</div>
     )
   }
 
-  if (userRole === 'SELLER') {
+  if (profile?.role === 'SELLER') {
     return (
       <>
         <DashboardHeader title="Dashboard" />
-        <SellerDashboard stats={{ callsToday: 0, conversionRate: 0 }} />
+        <SellerDashboard />
       </>
     )
   }
+
+  const metrics = [
+    { value: String(totalMonth), label: 'Total de Chamadas', color: NEON_PINK, path: METRIC_PATHS[0] },
+    { value: String(todayCompleted), label: 'Chamadas hoje', color: NEON_BLUE, path: METRIC_PATHS[1] },
+    { value: String(convertedCount), label: 'Convertidas', color: NEON_GREEN, path: METRIC_PATHS[2] },
+    { value: String(followUpCount), label: 'Em follow-up', color: NEON_ORANGE, path: METRIC_PATHS[3] },
+  ]
+  const chartValues = chartData.map((d) => d.count)
+  const chartLabels = chartData.map((d) => d.label)
+  const hasChartData = chartValues.some((v) => v > 0)
 
   return (
     <>
       <DashboardHeader title="Dashboard" />
 
-      {/* Card de métricas (4 colunas) */}
+      {/* Cards de métricas (4 colunas) */}
       <div
         className="rounded-[24px] border mb-8 flex flex-col md:flex-row items-stretch"
         style={{
@@ -144,7 +357,7 @@ export default function DashboardPage() {
           borderColor: 'rgba(255,255,255,0.05)',
         }}
       >
-        {METRICS.map((m, i) => (
+        {metrics.map((m, i) => (
           <div key={m.label} className="flex flex-1 flex-col md:flex-row min-w-0">
             {i > 0 && (
               <div
@@ -175,22 +388,9 @@ export default function DashboardPage() {
               className="flex-1 p-6 flex flex-col justify-center min-w-0 animate-chart-in opacity-0"
               style={{ animationDelay: `${i * 80}ms` }}
             >
-              <div className="flex items-center gap-1 mb-2">
-                <span
-                  className={`material-icons-outlined text-lg ${m.positive ? '' : 'rotate-180'
-                    }`}
-                  style={{ color: m.positive ? NEON_GREEN : '#ef4444' }}
-                >
-                  arrow_drop_up
-                </span>
-                <span
-                  className="text-xs font-bold"
-                  style={{ color: m.positive ? NEON_GREEN : '#ef4444' }}
-                >
-                  {m.change}
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-1">{m.value}</h3>
+              <h3 className="text-2xl font-bold text-white mb-1">
+                {loadingData ? '—' : m.value}
+              </h3>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-gray-500 text-sm">{m.label}</p>
                 <svg
@@ -218,34 +418,27 @@ export default function DashboardPage() {
 
       {/* Estatística de Chamadas (gráfico linha) */}
       <div
-        className="p-6 rounded-[24px] border mb-8 animate-chart-in opacity-0"
+        className="p-4 sm:p-6 rounded-2xl sm:rounded-[24px] border mb-8 animate-chart-in opacity-0 overflow-hidden"
         style={{
           backgroundColor: '#1e1e1e',
           borderColor: 'rgba(255,255,255,0.05)',
           animationDelay: '320ms',
         }}
       >
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-lg font-bold text-white">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
+          <h2 className="text-base sm:text-lg font-bold text-white shrink-0">
             Estatística de Chamadas
           </h2>
-          <div className="flex gap-4 items-center">
+          <div className="flex flex-wrap gap-3 sm:gap-4 items-center">
             <div className="flex items-center gap-2">
               <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: NEON_PINK }}
-              />
-              <span className="text-xs text-gray-400">Anterior</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span
-                className="w-2 h-2 rounded-full"
+                className="w-2 h-2 rounded-full shrink-0"
                 style={{ backgroundColor: NEON_BLUE }}
               />
-              <span className="text-xs text-gray-400">Atual</span>
+              <span className="text-xs text-gray-400">Chamadas por mês</span>
             </div>
             <select
-              className="bg-black/20 border-none rounded-lg text-xs py-1.5 px-3 text-gray-400 focus:ring-0 focus:outline-none"
+              className="bg-black/20 border border-white/10 rounded-lg text-xs py-1.5 px-3 text-gray-400 focus:ring-0 focus:outline-none focus:border-white/20"
               defaultValue="monthly"
             >
               <option value="monthly">Mensal</option>
@@ -253,219 +446,251 @@ export default function DashboardPage() {
             </select>
           </div>
         </div>
-        <div
-          className="w-full aspect-[4/1] min-h-[200px] max-h-[320px] relative cursor-crosshair"
-          onMouseMove={(e) => {
-            const svg = chartRef.current
-            if (!svg) return
-            const rect = svg.getBoundingClientRect()
-            const x = ((e.clientX - rect.left) / rect.width) * CHART_WIDTH
-            const plotX = x - CHART_MARGIN_LEFT
-            if (plotX < 0 || plotX > PLOT_WIDTH) {
-              setChartTooltip(null)
-              return
-            }
-            const index = Math.min(
-              7,
-              Math.max(0, Math.round((plotX / PLOT_WIDTH) * 7))
-            )
-            setChartTooltip({
-              index,
-              x: e.clientX - rect.left,
-              y: e.clientY - rect.top,
-            })
-          }}
-          onMouseLeave={() => setChartTooltip(null)}
-        >
-          <svg
-            ref={chartRef}
-            className="w-full h-full"
-            viewBox={`0 0 ${CHART_WIDTH} ${CHART_VIEW_HEIGHT}`}
+        <div className="w-full overflow-hidden">
+          <div
+            className="w-full aspect-4/1 min-h-[180px] sm:min-h-[200px] max-h-[280px] sm:max-h-[320px] lg:max-h-[400px] relative cursor-crosshair"
+            onMouseMove={(e) => {
+              const svg = chartRef.current
+              if (!svg) return
+              const rect = svg.getBoundingClientRect()
+              const x = ((e.clientX - rect.left) / rect.width) * CHART_WIDTH
+              const plotX = x - CHART_MARGIN_LEFT
+              if (plotX < 0 || plotX > PLOT_WIDTH) {
+                setChartTooltip(null)
+                return
+              }
+              const index = Math.min(
+                chartLabels.length - 1,
+                Math.max(0, Math.round((plotX / PLOT_WIDTH) * (chartLabels.length - 1)))
+              )
+              const cursorX = e.clientX - rect.left
+              const cursorY = e.clientY - rect.top
+              const tooltipWidth = 220
+              const padding = 12
+              const tooltipLeft = Math.max(
+                padding,
+                Math.min(cursorX + padding, rect.width - tooltipWidth - padding)
+              )
+              const tooltipTop = Math.max(padding, cursorY - 8)
+              setChartTooltip({
+                index,
+                x: tooltipLeft,
+                y: tooltipTop,
+              })
+            }}
+            onMouseLeave={() => setChartTooltip(null)}
           >
-            <defs>
-              <linearGradient id="grad-pink" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor={NEON_PINK} stopOpacity="0.2" />
-                <stop offset="100%" stopColor={NEON_PINK} stopOpacity="0" />
-              </linearGradient>
-              <linearGradient id="grad-blue" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor={NEON_BLUE} stopOpacity="0.2" />
-                <stop offset="100%" stopColor={NEON_BLUE} stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            {(() => {
-              const { valueToY, yTickValues } = getChartScale(
-                LINE_CHART_PREVIOUS,
-                LINE_CHART_CURRENT
-              )
-              return (
-                <>
-                  {/* Eixo Y: linha, ticks e labels */}
-                  <line
-                    x1={CHART_MARGIN_LEFT - 2}
-                    y1={CHART_PADDING}
-                    x2={CHART_MARGIN_LEFT - 2}
-                    y2={CHART_HEIGHT - CHART_PADDING}
-                    stroke="rgba(148, 163, 184, 0.4)"
-                    strokeWidth="1"
-                  />
-                  {yTickValues.map((v) => {
-                    const y = valueToY(v)
-                    return (
-                      <g key={v}>
-                        <line
-                          x1={CHART_MARGIN_LEFT - 2}
-                          y1={y}
-                          x2={CHART_WIDTH}
-                          y2={y}
-                          stroke="rgba(148, 163, 184, 0.12)"
-                          strokeWidth="1"
-                          strokeDasharray="4 4"
-                        />
-                        <text
-                          x={CHART_MARGIN_LEFT - 8}
-                          y={y}
-                          textAnchor="end"
-                          dominantBaseline="middle"
-                          className="fill-gray-500 text-[10px] font-semibold"
-                        >
-                          {v}
-                        </text>
-                      </g>
-                    )
-                  })}
-                  {/* Eixo X: linha e ticks */}
-                  <line
-                    x1={CHART_MARGIN_LEFT}
-                    y1={CHART_HEIGHT - CHART_PADDING}
-                    x2={CHART_WIDTH}
-                    y2={CHART_HEIGHT - CHART_PADDING}
-                    stroke="rgba(148, 163, 184, 0.4)"
-                    strokeWidth="1"
-                  />
-                  {MONTH_LABELS.map((label, i) => {
-                    const tickX =
-                      CHART_MARGIN_LEFT + (PLOT_WIDTH * i) / (MONTH_LABELS.length - 1)
-                    return (
-                      <g key={label}>
-                        <line
-                          x1={tickX}
-                          y1={CHART_HEIGHT - CHART_PADDING}
-                          x2={tickX}
-                          y2={CHART_HEIGHT}
-                          stroke="rgba(148, 163, 184, 0.25)"
-                          strokeWidth="1"
-                        />
-                        <text
-                          x={tickX}
-                          y={CHART_VIEW_HEIGHT - 6}
-                          textAnchor="middle"
-                          dominantBaseline="auto"
-                          className="fill-gray-500 text-[10px] font-bold uppercase tracking-widest"
-                        >
-                          {label}
-                        </text>
-                      </g>
-                    )
-                  })}
-                </>
-              )
-            })()}
-            <g transform={`translate(${CHART_MARGIN_LEFT}, 0)`}>
-              <path
-                className="animate-chart-area"
-                d={areaPathFromData(
-                  LINE_CHART_PREVIOUS,
-                  PLOT_WIDTH,
-                  CHART_HEIGHT,
-                  CHART_PADDING
-                )}
-                fill="url(#grad-pink)"
-              />
-              <path
-                className="chart-path animate-chart-path"
-                d={linePathFromData(
-                  LINE_CHART_PREVIOUS,
-                  PLOT_WIDTH,
-                  CHART_HEIGHT,
-                  CHART_PADDING
-                )}
-                fill="none"
-                stroke={NEON_PINK}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                pathLength={100}
-                style={{
-                  filter: `drop-shadow(0 0 4px ${NEON_PINK})`,
-                  animationDelay: '0.4s',
-                }}
-              />
-              <path
-                className="chart-path animate-chart-path"
-                d={linePathFromData(
-                  LINE_CHART_CURRENT,
-                  PLOT_WIDTH,
-                  CHART_HEIGHT,
-                  CHART_PADDING
-                )}
-                fill="none"
-                stroke={NEON_BLUE}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                pathLength={100}
-                style={{
-                  filter: `drop-shadow(0 0 4px ${NEON_BLUE})`,
-                  animationDelay: '0.55s',
-                }}
-              />
-            </g>
-          </svg>
-          {chartTooltip !== null && (
+          {loadingData ? (
+            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+              Carregando gráfico...
+            </div>
+          ) : !hasChartData ? (
+            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+              Nenhuma chamada no período
+            </div>
+          ) : (
+            <svg
+              ref={chartRef}
+              className="w-full h-full"
+              viewBox={`0 0 ${CHART_WIDTH} ${CHART_VIEW_HEIGHT}`}
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <defs>
+                <linearGradient id="grad-blue" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor={NEON_BLUE} stopOpacity="0.2" />
+                  <stop offset="100%" stopColor={NEON_BLUE} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {(() => {
+                const { valueToY, yTickValues } = getChartScale(chartValues)
+                return (
+                  <>
+                    <line
+                      x1={CHART_MARGIN_LEFT - 2}
+                      y1={CHART_PADDING}
+                      x2={CHART_MARGIN_LEFT - 2}
+                      y2={CHART_HEIGHT - CHART_PADDING}
+                      stroke="rgba(148, 163, 184, 0.4)"
+                      strokeWidth="1"
+                    />
+                    {yTickValues.map((v) => {
+                      const y = valueToY(v)
+                      return (
+                        <g key={v}>
+                          <line
+                            x1={CHART_MARGIN_LEFT - 2}
+                            y1={y}
+                            x2={CHART_WIDTH}
+                            y2={y}
+                            stroke="rgba(148, 163, 184, 0.12)"
+                            strokeWidth="1"
+                            strokeDasharray="4 4"
+                          />
+                          <text
+                            x={CHART_MARGIN_LEFT - 8}
+                            y={y}
+                            textAnchor="end"
+                            dominantBaseline="middle"
+                            className="fill-gray-500 text-[10px] font-semibold"
+                          >
+                            {v}
+                          </text>
+                        </g>
+                      )
+                    })}
+                    <line
+                      x1={CHART_MARGIN_LEFT}
+                      y1={CHART_HEIGHT - CHART_PADDING}
+                      x2={CHART_WIDTH}
+                      y2={CHART_HEIGHT - CHART_PADDING}
+                      stroke="rgba(148, 163, 184, 0.4)"
+                      strokeWidth="1"
+                    />
+                    {chartLabels.map((label, i) => {
+                      const tickX =
+                        CHART_MARGIN_LEFT +
+                        (PLOT_WIDTH * i) / Math.max(chartLabels.length - 1, 1)
+                      return (
+                        <g key={label + i}>
+                          <line
+                            x1={tickX}
+                            y1={CHART_HEIGHT - CHART_PADDING}
+                            x2={tickX}
+                            y2={CHART_HEIGHT}
+                            stroke="rgba(148, 163, 184, 0.25)"
+                            strokeWidth="1"
+                          />
+                          <text
+                            x={tickX}
+                            y={CHART_VIEW_HEIGHT - 6}
+                            textAnchor="middle"
+                            dominantBaseline="auto"
+                            className="fill-gray-500 text-[10px] font-bold uppercase tracking-widest"
+                          >
+                            {label}
+                          </text>
+                        </g>
+                      )
+                    })}
+                  </>
+                )
+              })()}
+              <g transform={`translate(${CHART_MARGIN_LEFT}, 0)`}>
+                <path
+                  className="animate-chart-area"
+                  d={areaPathFromData(
+                    chartValues,
+                    PLOT_WIDTH,
+                    CHART_HEIGHT,
+                    CHART_PADDING
+                  )}
+                  fill="url(#grad-blue)"
+                />
+                <path
+                  className="chart-path animate-chart-path"
+                  d={linePathFromData(
+                    chartValues,
+                    PLOT_WIDTH,
+                    CHART_HEIGHT,
+                    CHART_PADDING
+                  )}
+                  fill="none"
+                  stroke={NEON_BLUE}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  pathLength={100}
+                  style={{
+                    filter: `drop-shadow(0 0 4px ${NEON_BLUE})`,
+                    animationDelay: '0.4s',
+                  }}
+                />
+              </g>
+            </svg>
+          )}
+          {chartTooltip !== null && chartLabels[chartTooltip.index] !== undefined && (
             <div
               className="absolute z-10 pointer-events-none rounded-xl border p-4 shadow-xl backdrop-blur-sm"
               style={{
-                left: chartTooltip.x + 12,
-                top: chartTooltip.y - 8,
+                left: chartTooltip.x,
+                top: chartTooltip.y,
                 backgroundColor: 'rgba(30, 30, 30, 0.95)',
                 borderColor: 'rgba(255, 255, 255, 0.1)',
-                minWidth: 200,
+                width: 220,
+                maxWidth: 'calc(100% - 24px)',
               }}
             >
               <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
-                {MONTH_LABELS[chartTooltip.index]}
+                {chartLabels[chartTooltip.index]}
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between gap-4">
-                  <span className="text-gray-400">Anterior</span>
+                  <span className="text-gray-400">Chamadas</span>
                   <span className="font-bold text-white">
-                    {LINE_CHART_PREVIOUS[chartTooltip.index]} chamadas
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-gray-400">Atual</span>
-                  <span className="font-bold text-white">
-                    {LINE_CHART_CURRENT[chartTooltip.index]} chamadas
-                  </span>
-                </div>
-                <div className="border-t border-white/10 pt-2 mt-2 flex justify-between gap-4">
-                  <span className="text-gray-400">Meta do mês</span>
-                  <span className="font-semibold text-white">150</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-gray-400">Taxa conversão</span>
-                  <span className="font-semibold text-neon-green">
-                    {Math.round(
-                      (LINE_CHART_CURRENT[chartTooltip.index] / 150) * 100
-                    )}
-                    %
+                    {chartValues[chartTooltip.index]} concluídas
                   </span>
                 </div>
               </div>
             </div>
           )}
         </div>
+        </div>
       </div>
 
-      {/* Top Leader / Performance */}
+      {/* Chamadas recentes */}
+      <div
+        className="p-6 rounded-[24px] border mb-8 animate-chart-in opacity-0"
+        style={{
+          backgroundColor: '#1e1e1e',
+          borderColor: 'rgba(255,255,255,0.05)',
+          animationDelay: '400ms',
+        }}
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-bold text-white">Chamadas recentes</h2>
+          <Link
+            href="/calls"
+            className="text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-opacity"
+            style={{ color: NEON_PINK }}
+          >
+            Ver tudo
+          </Link>
+        </div>
+        {loadingData ? (
+          <p className="text-gray-500 text-sm">Carregando...</p>
+        ) : recentCalls.length === 0 ? (
+          <p className="text-gray-500 text-sm">Nenhuma chamada recente.</p>
+        ) : (
+          <ul className="space-y-3">
+            {recentCalls.map((call) => (
+              <li key={call.id}>
+                <Link
+                  href={`/calls/${call.id}`}
+                  className="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                      {(call.user?.full_name ?? '?').charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white truncate">
+                        {call.user?.full_name ?? 'Desconhecido'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatRelativeTime(call.ended_at ?? call.started_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="material-icons-outlined text-gray-500 text-lg shrink-0">
+                    arrow_forward
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Top Performance */}
       <div
         className="p-6 rounded-[24px] border mb-8 animate-chart-in opacity-0"
         style={{
@@ -484,60 +709,62 @@ export default function DashboardPage() {
             Ver tudo
           </Link>
         </div>
-        <table className="w-full">
-          <thead>
-            <tr className="text-left text-gray-500 text-xs font-bold uppercase tracking-widest border-b border-white/5">
-              <th className="pb-4 font-bold">Usuário</th>
-              <th className="pb-4 font-bold">Meta</th>
-              <th className="pb-4 font-bold">Conversão</th>
-              <th className="pb-4 font-bold">Performance</th>
-            </tr>
-          </thead>
-          <tbody className="text-sm">
-            {TOP_LEADERS.map((row, idx) => (
-              <tr
-                key={row.name}
-                className="border-b border-white/5 last:border-0 animate-chart-in opacity-0"
-                style={{ animationDelay: `${560 + idx * 80}ms` }}
-              >
-                <td className="py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gray-700 border border-white/10 flex items-center justify-center text-white text-xs font-bold">
-                      {row.name.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="font-bold text-white">{row.name}</div>
-                      <div className="text-[10px] text-gray-500">{row.role}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-4 font-medium text-white">{row.target}</td>
-                <td
-                  className="py-4 font-bold"
-                  style={{ color: NEON_GREEN }}
-                >
-                  {row.conversion}
-                </td>
-                <td className="py-4">
-                  <div className="w-24 h-1.5 bg-black/40 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-700 ease-out"
-                      style={{
-                        width: `${progressReady ? row.performance : 0}%`,
-                        backgroundColor: row.color,
-                        boxShadow: `0 0 8px ${row.color}`,
-                      }}
-                    />
-                  </div>
-                </td>
+        {loadingData ? (
+          <p className="text-gray-500 text-sm">Carregando...</p>
+        ) : topLeaders.length === 0 ? (
+          <p className="text-gray-500 text-sm">Nenhum dado de performance no período.</p>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="text-left text-gray-500 text-xs font-bold uppercase tracking-widest border-b border-white/5">
+                <th className="pb-4 font-bold">Usuário</th>
+                <th className="pb-4 font-bold">Total</th>
+                <th className="pb-4 font-bold">Conversão</th>
+                <th className="pb-4 font-bold">Performance</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mb-8 animate-chart-in opacity-0" style={{ animationDelay: '640ms' }}>
-        <ObjectionAnalytics />
+            </thead>
+            <tbody className="text-sm">
+              {topLeaders.map((row, idx) => (
+                <tr
+                  key={row.userId}
+                  className="border-b border-white/5 last:border-0 animate-chart-in opacity-0"
+                  style={{ animationDelay: `${560 + idx * 80}ms` }}
+                >
+                  <td className="py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gray-700 border border-white/10 flex items-center justify-center text-white text-xs font-bold">
+                        {row.name.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="font-bold text-white">{row.name}</div>
+                        <div className="text-[10px] text-gray-500">{row.role}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-4 font-medium text-white">{row.totalCalls}</td>
+                  <td
+                    className="py-4 font-bold"
+                    style={{ color: NEON_GREEN }}
+                  >
+                    {row.conversionRate}%
+                  </td>
+                  <td className="py-4">
+                    <div className="w-24 h-1.5 bg-black/40 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700 ease-out"
+                        style={{
+                          width: `${progressReady ? row.performance : 0}%`,
+                          backgroundColor: row.color,
+                          boxShadow: `0 0 8px ${row.color}`,
+                        }}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </>
   )

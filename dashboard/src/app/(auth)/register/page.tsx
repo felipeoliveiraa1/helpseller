@@ -13,6 +13,10 @@ const INPUT_CLASS =
 export default function RegisterPage() {
   const [name, setName] = useState('')
   const [orgName, setOrgName] = useState('')
+  const [orgDocument, setOrgDocument] = useState('')
+  const [orgPhone, setOrgPhone] = useState('')
+  const [orgEmail, setOrgEmail] = useState('')
+  const [orgAddress, setOrgAddress] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,12 +26,24 @@ export default function RegisterPage() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
+    const trimmedOrgName = orgName?.trim()
+    if (!trimmedOrgName) {
+      toast.error('Informe o nome da empresa.')
+      return
+    }
     setLoading(true)
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: name, company_name: orgName },
+        data: {
+          full_name: name,
+          company_name: trimmedOrgName,
+          organization_document: orgDocument.trim() || null,
+          organization_phone: orgPhone.trim() || null,
+          organization_email: orgEmail.trim() || null,
+          organization_address: orgAddress.trim() || null,
+        },
       },
     })
     if (error) {
@@ -86,22 +102,75 @@ export default function RegisterPage() {
                     placeholder="Seu nome"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Nome da empresa
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={orgName}
-                    onChange={(e) => setOrgName(e.target.value)}
-                    className={INPUT_CLASS}
-                    placeholder="Sua empresa"
-                  />
+                <div className="space-y-4">
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Dados da organização
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Nome da empresa
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={orgName}
+                      onChange={(e) => setOrgName(e.target.value)}
+                      className={INPUT_CLASS}
+                      placeholder="Sua empresa"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      CNPJ / CPF
+                    </label>
+                    <input
+                      type="text"
+                      value={orgDocument}
+                      onChange={(e) => setOrgDocument(e.target.value)}
+                      className={INPUT_CLASS}
+                      placeholder="00.000.000/0001-00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Telefone da empresa
+                    </label>
+                    <input
+                      type="tel"
+                      value={orgPhone}
+                      onChange={(e) => setOrgPhone(e.target.value)}
+                      className={INPUT_CLASS}
+                      placeholder="(11) 99999-9999"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      E-mail da empresa
+                    </label>
+                    <input
+                      type="email"
+                      value={orgEmail}
+                      onChange={(e) => setOrgEmail(e.target.value)}
+                      className={INPUT_CLASS}
+                      placeholder="contato@empresa.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Endereço
+                    </label>
+                    <input
+                      type="text"
+                      value={orgAddress}
+                      onChange={(e) => setOrgAddress(e.target.value)}
+                      className={INPUT_CLASS}
+                      placeholder="Rua, número, bairro, cidade"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Email
+                    Seu email
                   </label>
                   <input
                     type="email"
@@ -114,7 +183,7 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Senha
+                    Sua senha
                   </label>
                   <input
                     type="password"

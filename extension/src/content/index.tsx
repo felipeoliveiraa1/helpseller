@@ -12,6 +12,12 @@ if (window.location.hostname === 'meet.google.com') {
     if (document.readyState !== 'complete') {
         window.addEventListener('load', () => startParticipantMonitoring());
     }
+    // Ao sair/atualizar a página, pedir ao background para enviar call:end (backend finaliza a call)
+    const tryEndCall = () => {
+        chrome.runtime.sendMessage({ type: 'TRY_END_CALL' }).catch(() => {});
+    };
+    window.addEventListener('beforeunload', tryEndCall);
+    window.addEventListener('pagehide', tryEndCall);
 }
 
 // Painel flutuante: posição (left/top) aplicada pelo SimpleSidebar

@@ -356,28 +356,40 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 commandHandler = null;
             }
 
-            // Finalize call if not explicitly ended (client crash / disconnect)
-            if (callId && sessionData) {
+            // Finalize call if not explicitly ended (refresh, troca de conta, crash)
+            let finalCallId = callId;
+            let finalSession = sessionData;
+            if (!finalCallId) {
+                const fromRedis = await redis.get<string>(`user:${user.id}:current_call`);
+                if (fromRedis) {
+                    finalCallId = fromRedis;
+                    finalSession = await redis.get<CallSession>(`call:${finalCallId}:session`) ?? null;
+                    logger.info(`🔗 Recovered callId from Redis for user ${user.id}: ${finalCallId}`);
+                }
+            }
+            if (finalCallId && finalSession) {
                 try {
                     const { data: callRow } = await supabaseAdmin
                         .from('calls')
                         .select('status')
-                        .eq('id', callId)
+                        .eq('id', finalCallId)
                         .single();
 
                     if (callRow && (callRow as any).status === 'ACTIVE') {
                         const endedAt = new Date();
                         let durationSeconds: number | undefined;
-                        if (sessionData.startedAt) {
-                            durationSeconds = Math.round((endedAt.getTime() - sessionData.startedAt) / 1000);
+                        if (finalSession.startedAt) {
+                            durationSeconds = Math.round((endedAt.getTime() - finalSession.startedAt) / 1000);
                         }
                         await supabaseAdmin.from('calls').update({
                             status: 'COMPLETED',
                             ended_at: endedAt.toISOString(),
                             duration_seconds: durationSeconds || null,
-                            transcript: sessionData.transcript,
-                        }).eq('id', callId);
-                        logger.info(`🔒 Auto-finalized call ${callId} on disconnect (${durationSeconds}s)`);
+                            transcript: finalSession.transcript ?? [],
+                        }).eq('id', finalCallId);
+                        logger.info(`🔒 Auto-finalized call ${finalCallId} on disconnect (${durationSeconds}s)`);
+                        await redis.del(`call:${finalCallId}:session`);
+                        await redis.del(`user:${user.id}:current_call`);
                     }
                 } catch (e: any) {
                     logger.error({ message: e?.message }, '❌ Failed to auto-finalize call on disconnect');
@@ -470,6 +482,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         }
 
                         callId = existingExternalCall.id;
+                        await redis.set(`user:${userId}:current_call`, callId, 14400);
 
                         // Reconstruct Session Data
                         // Try Redis first
@@ -528,6 +541,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         logger.info(`✅ Resumed session for call ${existingCall.id}`);
                         callId = existingCall.id;
                         sessionData = existingSession;
+                        await redis.set(`user:${userId}:current_call`, callId, 14400);
                         logger.info(`[LIVE_DEBUG] call:start (resume) done callId=${callId}`);
 
                         // Check if we have a lead name to apply (Payload > Buffered > Redis)
@@ -626,8 +640,9 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     leadName: leadName || bufferedLeadName || undefined
                 };
 
-                // 5. Cache Session
+                // 5. Cache Session + current call by user (para finalizar ao desconectar mesmo se closure perder callId)
                 await redis.set(`call:${callId}:session`, sessionData, 3600);
+                await redis.set(`user:${userId}:current_call`, callId, 14400);
 
                 // 6. Subscribe to Manager Commands
                 commandHandler = (command: any) => {
@@ -731,8 +746,9 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     ...summary
                 });
             }
-            // 7. Clear Redis
+            // 7. Clear Redis (permite ao disconnect saber que a call já foi finalizada)
             await redis.del(`call:${currentCallId}:session`);
+            if (sessionData?.userId) await redis.del(`user:${sessionData.userId}:current_call`);
         }
 
         async function handleAudioChunk(event: any, ws: WebSocket) {

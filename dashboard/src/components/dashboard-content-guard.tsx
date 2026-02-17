@@ -36,7 +36,7 @@ export function DashboardContentGuard({ children }: DashboardContentGuardProps) 
 
   if (!mounted || organizationId === undefined) {
     return (
-      <div className="flex items-center justify-center min-h-[40vh]">
+      <div className="flex items-center justify-center min-h-[40vh]" suppressHydrationWarning={true}>
         <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
       </div>
     )

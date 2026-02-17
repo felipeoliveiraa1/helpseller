@@ -9,7 +9,7 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="dark flex h-screen overflow-hidden bg-[#121212] text-white" suppressHydrationWarning={true}>
-      <div className="hidden md:flex">
+      <div className="hidden md:flex" suppressHydrationWarning={true}>
         <Sidebar />
       </div>
       <MobileNav />

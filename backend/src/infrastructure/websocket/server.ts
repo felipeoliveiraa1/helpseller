@@ -958,31 +958,48 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         // ============================================
 
                         const now = Date.now();
-                        const COACH_CHUNK_THRESHOLD = 3; // Fire coach every 3 transcriptions (~10s)
-                        const SUMMARY_INTERVAL = 20000; // 20s
+                        const COACH_INTERVAL = 15000;   // 15s
+                        const SUMMARY_INTERVAL = 30000; // 30s
                         const CONTEXT_WINDOW = 60000;   // 60s sliding window
 
                         // Increment chunk counter
                         if (!sessionData.chunksSinceLastCoach) sessionData.chunksSinceLastCoach = 0;
                         sessionData.chunksSinceLastCoach++;
 
-                        // Build 60s sliding window context
-                        const buildContext60s = (): string => {
-                            const cutoff = now - CONTEXT_WINDOW;
+                        // Build FULL context (all history)
+                        const buildFullContext = (): string => {
+                            // No cutoff - send everything
                             return sessionData!.transcript
-                                .filter(t => t.timestamp > cutoff)
                                 .map(t => `${t.speaker === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
                                 .join('\n');
                         };
 
-                        // A. SPIN Coach (Every 3 chunks ≈ 10s) → coach:tip + objection:detected
-                        if (sessionData.chunksSinceLastCoach >= COACH_CHUNK_THRESHOLD) {
+                        // A. SPIN Coach (Every 15s) → coach:tip + objection:detected
+                        if (!sessionData.lastCoachingAt || (now - sessionData.lastCoachingAt) >= COACH_INTERVAL) {
                             sessionData.chunksSinceLastCoach = 0;
                             sessionData.lastCoachingAt = now;
                             try {
-                                const context60s = buildContext60s();
-                                logger.info(`🧠 SPIN Coach analyzing ${context60s.length} chars for call ${callId}`);
-                                const spinResult = await coachEngine.analyzeTranscription(context60s);
+                                // 1. Fetch latest transcript from DB (Source of Truth)
+                                const { data: dbCall, error: dbError } = await supabaseAdmin
+                                    .from('calls')
+                                    .select('transcript')
+                                    .eq('id', callId)
+                                    .single();
+
+                                let transcriptList = sessionData.transcript; // Fallback to memory
+                                if (!dbError && dbCall?.transcript && Array.isArray(dbCall.transcript)) {
+                                    transcriptList = dbCall.transcript;
+                                } else {
+                                    logger.warn({ dbError }, `⚠️ Failed to fetch transcript from DB for Coach, using memory. Call ${callId}`);
+                                }
+
+                                // 2. Build Full Context
+                                const fullContext = transcriptList
+                                    .map((t: any) => `${t.speaker === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
+                                    .join('\n');
+
+                                logger.info(`🧠 SPIN Coach analyzing DB CONTEXT (${fullContext.length} chars) for call ${callId}`);
+                                const spinResult = await coachEngine.analyzeTranscription(fullContext);
 
                                 if (spinResult && ws.readyState === WebSocket.OPEN) {
                                     // Always send the coaching tip

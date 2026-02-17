@@ -391,7 +391,7 @@ export default function LivePage() {
                                             <div>
                                                 <h4 className="text-white font-semibold text-lg">IA Analisando em Tempo Real</h4>
                                                 <p className="text-sm text-gray-400 mt-2 max-w-xs">
-                                                    O resumo estratégico será gerado a cada <strong className="text-neon-pink">20 segundos</strong> com os insights mais relevantes da chamada.
+                                                    O resumo estratégico será gerado a cada <strong className="text-neon-pink">30 segundos</strong> com os insights mais relevantes da chamada.
                                                 </p>
                                                 <div className="mt-4 flex items-center justify-center gap-2">
                                                     <span className="w-2 h-2 rounded-full bg-neon-pink animate-pulse" />

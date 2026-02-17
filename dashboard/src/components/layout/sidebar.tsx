@@ -61,8 +61,9 @@ export function Sidebar() {
       className="w-64 shrink-0 bg-black border-r border-white/5 flex flex-col"
       style={{ borderColor: 'rgba(255,255,255,0.05)' }}
     >
-      <div className="p-8 flex items-center gap-3">
+      <div className="p-8 flex items-center gap-3" suppressHydrationWarning={true}>
         <div
+          suppressHydrationWarning={true}
           className="w-8 h-8 rounded-lg flex items-center justify-center"
           style={{
             backgroundColor: NEON_PINK,
@@ -90,6 +91,7 @@ export function Sidebar() {
                   {section.items.map((item) => (
                     <div
                       key={item.name}
+                      suppressHydrationWarning={true}
                       className="flex items-center gap-3 px-4 py-3 rounded-xl"
                     >
                       <div className="w-5 h-5 rounded bg-white/5 animate-pulse" />
@@ -125,6 +127,7 @@ export function Sidebar() {
                       <Link
                         key={item.name}
                         href={item.href}
+                        suppressHydrationWarning={true}
                         className={cn(
                           'flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors',
                           isActive
@@ -150,9 +153,10 @@ export function Sidebar() {
       <div className="p-4 border-t border-white/5 space-y-1" suppressHydrationWarning={true}>
         <Link
           href="/settings"
+          suppressHydrationWarning={true}
           className="flex items-center gap-3 rounded-xl p-2 -m-2 hover:bg-white/5 transition-colors group"
         >
-          <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/15 transition-colors shrink-0">
+          <div suppressHydrationWarning={true} className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/15 transition-colors shrink-0">
             <span
               className="text-sm font-bold"
               style={{ color: NEON_PINK }}
@@ -160,7 +164,7 @@ export function Sidebar() {
               {displayName.charAt(0).toUpperCase()}
             </span>
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1" suppressHydrationWarning={true}>
             <p className="text-xs font-bold text-white truncate">{displayName}</p>
             <p className="text-[10px] text-gray-500 truncate">{role}</p>
           </div>

@@ -68,7 +68,15 @@ export function CardItem({ card, onDismiss }: { card: CoachCard; onDismiss?: (id
                 </button>
             </div>
             <h4 style={{ fontWeight: 500, fontSize: 13, marginBottom: 2, color: TEXT, lineHeight: 1.25 }}>{card.title}</h4>
-            <p style={{ fontSize: 12, color: TEXT_SECONDARY, lineHeight: 1.5 }}>{card.description}</p>
+            <p style={{ fontSize: 12, color: TEXT_SECONDARY, lineHeight: 1.5 }}>
+                {card.description.split(/(\*\*.*?\*\*)/).map((part, i) =>
+                    part.startsWith('**') && part.endsWith('**') ? (
+                        <strong key={i} style={{ color: TEXT, fontWeight: 700 }}>{part.slice(2, -2)}</strong>
+                    ) : (
+                        part
+                    )
+                )}
+            </p>
             {card.type === 'objection' && card.metadata?.objection && (
                 <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: TEXT_SECONDARY, background: INPUT_BG, borderRadius: 4, padding: '4px 8px', border: `1px solid ${BORDER}` }}>
                     <Target size={10} style={{ flexShrink: 0 }} />

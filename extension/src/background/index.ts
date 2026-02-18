@@ -74,6 +74,7 @@ onWsMessage(async (data: any) => {
         if (callId && callId !== lastLiveKitCallId) {
             lastLiveKitCallId = callId;
             try {
+                console.log('🎬 Requesting LiveKit token for room:', callId);
                 const accessToken = await authService.getFreshToken();
                 const session = await authService.getSession();
                 const userId = session?.user?.id ?? 'unknown';
@@ -93,13 +94,17 @@ onWsMessage(async (data: any) => {
                     const err = await res.json().catch(() => ({}));
                     console.warn('⚠️ LiveKit token failed:', (err as { error?: string }).error ?? res.statusText);
                 } else {
-                    const { token, serverUrl } = await res.json();
+                    const data = await res.json() as { token?: string; serverUrl?: string };
+                    const { token, serverUrl } = data;
                     if (token && serverUrl) {
+                        console.log('✅ LiveKit token received, sending START_LIVEKIT_PUBLISH to offscreen');
                         chrome.runtime.sendMessage({
                             type: 'START_LIVEKIT_PUBLISH',
                             token,
                             serverUrl,
                         }).catch((e) => console.warn('⚠️ Send START_LIVEKIT_PUBLISH failed:', e));
+                    } else {
+                        console.warn('⚠️ LiveKit token missing token or serverUrl (check NEXT_PUBLIC_LIVEKIT_URL on dashboard):', !!token, !!serverUrl);
                     }
                 }
             } catch (error) {

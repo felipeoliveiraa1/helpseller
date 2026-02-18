@@ -12,6 +12,22 @@ const BodySchema = z.object({
 
 export type LiveKitTokenBody = z.infer<typeof BodySchema>;
 
+/** CORS headers so the Chrome extension can call this API (extension origin varies per install). */
+function corsHeaders(request: NextRequest): Record<string, string> {
+    const origin = request.headers.get('origin');
+    return {
+        'Access-Control-Allow-Origin': origin || '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400',
+    };
+}
+
+/** OPTIONS for preflight when extension calls from chrome-extension:// origin */
+export async function OPTIONS(request: NextRequest) {
+    return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
+}
+
 /**
  * POST /api/livekit/token
  * Generates a LiveKit access token for the given room and role.
@@ -24,7 +40,7 @@ export async function POST(request: NextRequest) {
         if (!apiKey || !apiSecret) {
             return NextResponse.json(
                 { error: 'LiveKit is not configured (missing LIVEKIT_API_KEY or LIVEKIT_API_SECRET)' },
-                { status: 503 }
+                { status: 503, headers: corsHeaders(request) }
             );
         }
 
@@ -48,7 +64,7 @@ export async function POST(request: NextRequest) {
             user = u;
         }
         if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders(request) });
         }
 
         const body = await request.json();
@@ -56,7 +72,7 @@ export async function POST(request: NextRequest) {
         if (!parsed.success) {
             return NextResponse.json(
                 { error: 'Invalid request', details: parsed.error.flatten() },
-                { status: 400 }
+                { status: 400, headers: corsHeaders(request) }
             );
         }
 
@@ -79,12 +95,15 @@ export async function POST(request: NextRequest) {
 
         const token = await at.toJwt();
         const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? '';
-        return NextResponse.json({ token, serverUrl });
+        if (!serverUrl) {
+            console.warn('[LIVEKIT_TOKEN] NEXT_PUBLIC_LIVEKIT_URL is not set; extension will not publish to LiveKit');
+        }
+        return NextResponse.json({ token, serverUrl }, { headers: corsHeaders(request) });
     } catch (err) {
         console.error('[LIVEKIT_TOKEN] Error generating token:', err);
         return NextResponse.json(
             { error: 'Failed to generate token' },
-            { status: 500 }
+            { status: 500, headers: corsHeaders(request) }
         );
     }
 }

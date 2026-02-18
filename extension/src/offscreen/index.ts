@@ -53,7 +53,10 @@ chrome.runtime.onMessage.addListener((message) => {
     } else if (message.type === 'START_LIVEKIT_PUBLISH') {
         const { token, serverUrl } = message as { token: string; serverUrl: string };
         if (token && serverUrl) {
+            log('🎬 START_LIVEKIT_PUBLISH received, stream ready:', !!currentDisplayStreamForLiveKit);
             tryStartLiveKitPublishWithRetry(token, serverUrl);
+        } else {
+            log('⚠️ START_LIVEKIT_PUBLISH missing token or serverUrl');
         }
     }
 });

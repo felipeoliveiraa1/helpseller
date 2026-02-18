@@ -128,8 +128,10 @@ export default function SettingsPage() {
         email: form.email.trim() || null,
         address: form.address.trim() || null,
       }
+      // Supabase client can infer update payload as 'never' when generics are not fully applied
       const { error } = await supabase
         .from('organizations')
+        // @ts-expect-error - OrgUpdate is correct; client generic inference can yield never
         .update(update)
         .eq('id', organization.id)
       if (error) throw error

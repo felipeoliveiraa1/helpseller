@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LiveKitRoom, useRoomContext, useRemoteParticipants } from '@livekit/components-react';
-import { Track, TrackEvent } from 'livekit-client';
+import { Track, TrackEvent, type RemoteTrackPublication } from 'livekit-client';
 
 const LOG_PREFIX = '[LIVEKIT_VIEWER]';
 
@@ -52,8 +52,8 @@ function ViewerContent() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
     const [hasVideo, setHasVideo] = useState(false);
-    const attachedVideoRef = useRef<{ track: Track; pub: { off: (e: string, fn: (t: Track) => void) => void } } | null>(null);
-    const attachedAudioRef = useRef<{ track: Track; pub: { off: (e: string, fn: (t: Track) => void) => void } } | null>(null);
+    const attachedVideoRef = useRef<{ track: Track; pub: RemoteTrackPublication } | null>(null);
+    const attachedAudioRef = useRef<{ track: Track; pub: RemoteTrackPublication } | null>(null);
 
     // Stable key: only re-run when participant set or their first video/audio pub actually changes (avoids flicker from detach/reattach on every room update)
     const participantsKey = useMemo(
@@ -66,15 +66,15 @@ function ViewerContent() {
     );
 
     useEffect(() => {
-        let videoPub: { setSubscribed: (v: boolean) => void; track?: Track | null; on: (e: string, fn: (t: Track) => void) => void; off: (e: string, fn: (t: Track) => void) => void } | null = null;
-        let audioPub: { setSubscribed: (v: boolean) => void; track?: Track | null; on: (e: string, fn: (t: Track) => void) => void; off: (e: string, fn: (t: Track) => void) => void } | null = null;
+        let videoPub: RemoteTrackPublication | null = null;
+        let audioPub: RemoteTrackPublication | null = null;
         for (const p of remoteParticipants) {
             for (const pub of p.trackPublications.values()) {
                 if (!videoPub && pub.kind === Track.Kind.Video && (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.Camera)) {
-                    videoPub = pub as typeof videoPub;
+                    videoPub = pub;
                 }
                 if (!audioPub && pub.kind === Track.Kind.Audio && (pub.source === Track.Source.Microphone || pub.source === Track.Source.ScreenShareAudio)) {
-                    audioPub = pub as typeof audioPub;
+                    audioPub = pub;
                 }
             }
         }

@@ -12,7 +12,9 @@ Visão geral do que sobe onde e o que configurar.
 **Passos:**
 
 1. Conectar o repositório à Vercel e escolher a **root** do projeto.
-2. Definir **Root Directory**: `dashboard`.
+2. **Importante:** Definir **Root Directory** = `dashboard`.  
+   Se não definir, o Vercel faz o build na raiz do repo (onde não há Next.js) e o site retorna **404 NOT_FOUND**.  
+   Onde: **Vercel Dashboard** → seu projeto **helpseller** → **Settings** → **General** → **Root Directory** → clique em **Edit** → digite `dashboard` → **Save**. Depois faça **Redeploy** (Deployments → ⋮ no último deploy → Redeploy).
 3. Configurar variáveis de ambiente na Vercel (Settings → Environment Variables):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -74,11 +76,14 @@ npm run build
 
 O resultado fica em `extension/dist/` (ou o output configurado no Vite). Para publicar na Chrome Web Store, envie o conteúdo desse build (geralmente em zip).
 
-**Produção:** A extension hoje usa URLs fixas (`localhost:3000`, `localhost:3001`). Para produção:
+**Produção:** A extension usa `extension/src/config/env.ts`, que lê `VITE_API_URL` e `VITE_DASHBOARD_URL` (default: localhost). Para produção:
 
-- Definir no build da extension (ex.: variáveis de ambiente Vite `VITE_DASHBOARD_URL`, `VITE_API_URL`) a URL do dashboard (Vercel) e a URL do backend (Cloud Run).
-- Atualizar `extension/manifest.json` em `host_permissions` para incluir o domínio do dashboard em produção (ex.: `https://seu-app.vercel.app/*`).
-- Trocar no código da extension todas as referências a `localhost:3001` e `localhost:3000` por essas variáveis (ou por um config que mude conforme dev/prod).
+1. Na pasta `extension`, crie ou edite `.env` (veja `extension/.env.example`):
+   - `VITE_API_URL` = URL do backend no Cloud Run (ex.: `https://helpseller-backend-xxx-ew.a.run.app`)
+   - `VITE_DASHBOARD_URL` = URL do dashboard na Vercel (ex.: `https://seu-app.vercel.app`)
+2. Dê build de novo: `npm run build`. O output em `extension/dist/` já usa essas URLs.
+3. O `manifest.json` já inclui `https://*.vercel.app/*` em `host_permissions` para o dashboard na Vercel.
+4. Para publicar: envie o conteúdo de `extension/dist/` (zip) à Chrome Web Store ou carregue como “unpacked” em `chrome://extensions` para teste.
 
 ---
 

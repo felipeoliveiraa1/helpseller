@@ -1,6 +1,7 @@
 import { authService } from './auth';
+import { wsBaseUrl } from '@/config/env';
 
-const WS_BASE_URL = 'ws://localhost:3001/ws/call'; // Match the existing URL from previous file
+const WS_BASE_URL = `${wsBaseUrl}/ws/call`;
 
 let ws: WebSocket | null = null;
 let messageQueue: string[] = [];

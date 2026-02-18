@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import type { Database } from '@/types/database'
 import { toast } from 'sonner'
 import { Building2, Loader2 } from 'lucide-react'
 
@@ -53,8 +54,9 @@ export function OrgNullForm({ onSuccess }: OrgNullFormProps) {
         return
       }
       const slug = slugFromNameAndUserId(trimmedName, user.id)
-      const { data: newOrg, error: insertError } = await supabase
+      const { data: rawNewOrg, error: insertError } = await supabase
         .from('organizations')
+        // @ts-ignore - Supabase client generic can infer insert as never
         .insert({
           name: trimmedName,
           slug,
@@ -66,6 +68,7 @@ export function OrgNullForm({ onSuccess }: OrgNullFormProps) {
         .select('id')
         .single()
       if (insertError) throw insertError
+      const newOrg = rawNewOrg as { id: string } | null
       if (!newOrg?.id) {
         toast.error('Organização não foi criada.')
         setSaving(false)
@@ -73,6 +76,7 @@ export function OrgNullForm({ onSuccess }: OrgNullFormProps) {
       }
       const { error: updateError } = await supabase
         .from('profiles')
+        // @ts-ignore - Supabase client generic can infer update as never
         .update({ organization_id: newOrg.id })
         .eq('id', user.id)
       if (updateError) throw updateError

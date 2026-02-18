@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       name: productName,
       order_code: orderCode,
       payment_settings: {
-        accepted_payment_methods: ['credit_card', 'pix', 'boleto'] as const,
+        accepted_payment_methods: ['credit_card', 'pix', 'boleto'] as ('credit_card' | 'pix' | 'boleto')[],
       },
       cart_settings: {
         items: [
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     }
 
     const pagarmeResponse = await createPaymentLink(
-      linkPayload as Parameters<typeof createPaymentLink>[0]
+      linkPayload as unknown as Parameters<typeof createPaymentLink>[0]
     );
 
     const checkoutUrl = pagarmeResponse.checkout_url;

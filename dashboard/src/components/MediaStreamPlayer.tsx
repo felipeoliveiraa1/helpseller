@@ -124,8 +124,9 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                 }
             }
             if (isHeader) hasAppendedInitRef.current = true;
-            const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-            sourceBuffer.appendBuffer(buffer);
+            const copy = new Uint8Array(bytes.byteLength);
+            copy.set(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+            sourceBuffer.appendBuffer(copy.buffer);
             if (video?.paused && video.readyState >= 2 && !video.error) {
                 video.play().catch(() => {});
             }

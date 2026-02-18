@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { Room, createLocalVideoTrack, createLocalAudioTrack, Track } from 'livekit-client';
+import { Room, LocalVideoTrack, LocalAudioTrack, Track } from 'livekit-client';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { LiveKitViewer } from '@/components/LiveKitViewer';
 import { Button } from '@/components/ui/button';
@@ -75,17 +75,19 @@ export default function LiveTestPage() {
             const videoTracks = stream.getVideoTracks();
             const audioTracks = stream.getAudioTracks();
             if (videoTracks.length > 0) {
-                const videoTrack = await createLocalVideoTrack(videoTracks[0], {});
+                const videoTrack = new LocalVideoTrack(videoTracks[0], undefined, false);
+                videoTrack.source = Track.Source.ScreenShare;
                 await room.localParticipant.publishTrack(videoTrack, {
                     name: 'screen',
                     source: Track.Source.ScreenShare,
                 });
             }
             if (audioTracks.length > 0) {
-                const audioTrack = await createLocalAudioTrack(audioTracks[0], {});
+                const audioTrack = new LocalAudioTrack(audioTracks[0], undefined, false);
+                audioTrack.source = Track.Source.ScreenShareAudio;
                 await room.localParticipant.publishTrack(audioTrack, {
-                    name: 'microphone',
-                    source: Track.Source.Microphone,
+                    name: 'screen-audio',
+                    source: Track.Source.ScreenShareAudio,
                 });
             }
             setPublishing(true);

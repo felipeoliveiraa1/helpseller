@@ -2,6 +2,7 @@
  * Hardware Detector - Evaluates client hardware capability
  * Determines if local processing should be used or fallback to backend
  */
+import { apiBaseUrl } from '@/config/env';
 
 export interface HardwareProfile {
     cpuCores: number;
@@ -53,14 +54,13 @@ export class HardwareDetector {
      * Measures average network latency to backend with 3 ping attempts
      */
     private async measureLatency(): Promise<number> {
-        const WS_BASE_URL = 'http://localhost:3001'; // Match backend URL
         const attempts = 3;
         const latencies: number[] = [];
 
         for (let i = 0; i < attempts; i++) {
             try {
                 const start = performance.now();
-                await fetch(`${WS_BASE_URL}/health`, {
+                await fetch(`${apiBaseUrl}/health`, {
                     method: 'GET',
                     cache: 'no-cache'
                 });

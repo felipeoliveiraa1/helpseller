@@ -1,6 +1,7 @@
 import { X, ExternalLink, Award } from 'lucide-react';
 import { useCoachingStore } from '../stores/coaching-store';
 import { BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY } from '../lib/theme';
+import { dashboardUrl } from '@/config/env';
 
 export function CallEndModal() {
     const { showEndModal, setCallSummary, buyingSignalsCount } = useCoachingStore();
@@ -55,7 +56,7 @@ export function CallEndModal() {
                             Fechar
                         </button>
                         <a
-                            href="http://localhost:3000/calls/123"
+                            href={`${dashboardUrl}/calls`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="px-3 py-2 rounded text-[13px] font-medium flex items-center justify-center gap-1.5 transition-colors"

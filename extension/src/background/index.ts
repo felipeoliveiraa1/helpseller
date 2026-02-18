@@ -2,6 +2,7 @@ import { authService } from '../services/auth';
 import { connect, send, onWsConnect, onWsMessage, onWsClose } from '../services/websocket';
 import { edgeCoach } from '../services/edge-coach';
 import type { CachedObjection } from '../stores/coaching-store';
+import { dashboardUrl, apiBaseUrl } from '../config/env';
 
 // State
 console.log('Background Service Worker Starting...');
@@ -76,8 +77,7 @@ onWsMessage(async (data: any) => {
                 const accessToken = await authService.getFreshToken();
                 const session = await authService.getSession();
                 const userId = session?.user?.id ?? 'unknown';
-                const dashboardOrigin = (import.meta as any).env?.VITE_DASHBOARD_URL ?? 'http://localhost:3000';
-                const res = await fetch(`${dashboardOrigin}/api/livekit/token`, {
+                const res = await fetch(`${dashboardUrl}/api/livekit/token`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -112,7 +112,7 @@ onWsMessage(async (data: any) => {
         if (scriptId) {
             try {
                 const token = await authService.getFreshToken();
-                const response = await fetch(`http://localhost:3001/api/scripts/${scriptId}/objections`, {
+                const response = await fetch(`${apiBaseUrl}/api/scripts/${scriptId}/objections`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 

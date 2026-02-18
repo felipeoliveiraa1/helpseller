@@ -57,12 +57,7 @@ export async function middleware(request: NextRequest) {
     const { data: { session } } = await supabase.auth.getSession()
     const pathname = request.nextUrl.pathname
 
-    // Raiz "/" sempre redireciona para a landing page
-    if (pathname === '/') {
-        return NextResponse.redirect(new URL('/landing', request.url))
-    }
-
-    // Rotas públicas: landing, login, register, auth
+    // Rotas públicas: raiz (landing), /landing, login, register, auth
     const isPublic =
         pathname === '/' ||
         pathname.startsWith('/landing') ||

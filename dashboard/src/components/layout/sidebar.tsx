@@ -36,10 +36,26 @@ export function Sidebar() {
   const router = useRouter()
   const supabase = createClient()
   const { user } = useAuth()
+  const [profile, setProfile] = useState<{
+    full_name: string | null
+    role: string | null
+    email: string | null
+    avatar_url: string | null
+  } | null>(null)
 
   useEffect(() => {
     setMounted(true)
-  }, [])
+    if (user) {
+      supabase
+        .from('profiles')
+        .select('full_name, role, email, avatar_url')
+        .eq('id', user.id)
+        .single()
+        .then(({ data }) => {
+          if (data) setProfile(data)
+        })
+    }
+  }, [user, supabase])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -49,10 +65,10 @@ export function Sidebar() {
 
   // Only resolve user data after mount to prevent server/client divergence
   const displayName = mounted
-    ? (user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuário')
+    ? (profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuário')
     : 'Usuário'
-  const role = mounted
-    ? (user?.user_metadata?.role || 'Membro')
+  const displayRole = mounted
+    ? (profile?.role || user?.user_metadata?.role || 'Membro')
     : 'Membro'
 
   return (
@@ -94,7 +110,7 @@ export function Sidebar() {
           /* REAL CONTENT — only rendered after useEffect sets mounted=true */
           navSections.map((section) => {
             const filteredItems = section.items.filter((item) => {
-              if (role === 'SELLER') {
+              if (displayRole === 'SELLER') {
                 if (['Scripts', 'Equipe', 'Ao Vivo'].includes(item.name))
                   return false
               }
@@ -144,17 +160,23 @@ export function Sidebar() {
           suppressHydrationWarning={true}
           className="flex items-center gap-3 rounded-xl p-2 -m-2 hover:bg-white/5 transition-colors group"
         >
-          <div suppressHydrationWarning={true} className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/15 transition-colors shrink-0">
-            <span
-              className="text-sm font-bold"
-              style={{ color: NEON_PINK }}
-            >
-              {displayName.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          <div className="min-w-0 flex-1" suppressHydrationWarning={true}>
-            <p className="text-xs font-bold text-white truncate">{displayName}</p>
-            <p className="text-[10px] text-gray-500 truncate">{role}</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-sm font-bold text-white">
+                  {displayName.charAt(0).toUpperCase()}
+                </span>
+              )}
+              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-black" style={{ backgroundColor: '#ff007a' }} />
+            </div>
+            <div className="hidden md:block overflow-hidden">
+              <p className="text-sm font-bold text-white truncate max-w-[140px]">
+                {displayName.toUpperCase()}
+              </p>
+              <p className="text-[10px] text-gray-500 truncate">{displayRole}</p>
+            </div>
           </div>
           <span className="material-icons-outlined text-gray-500 text-[16px] group-hover:text-neon-pink transition-colors shrink-0">
             settings

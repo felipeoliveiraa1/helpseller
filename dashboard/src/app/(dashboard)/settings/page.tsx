@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { DashboardHeader } from '@/components/layout/dashboard-header'
-import { Settings, Building2, Loader2, User, Mail, Shield, Briefcase, CreditCard, Lock } from 'lucide-react'
+import { Settings, Building2, Loader2, User, Mail, Shield, Briefcase, CreditCard, Lock, Camera, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { Database } from '@/types/database'
@@ -38,12 +38,14 @@ export default function SettingsPage() {
     email: string | null
     role: string
     organization_id: string | null
+    avatar_url: string | null
   } | null>(null)
   const [organization, setOrganization] = useState<OrgRow | null>(null)
   const [organizationName, setOrganizationName] = useState<string>('')
   const [organizationPlan, setOrganizationPlan] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' })
   const [form, setForm] = useState({
@@ -70,15 +72,16 @@ export default function SettingsPage() {
       }
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('full_name, email, role, organization_id')
+        .select('full_name, email, role, organization_id, avatar_url')
         .eq('id', user.id)
         .single()
-      const profileRow = profileData as { full_name: string | null; email: string | null; role: string; organization_id: string | null } | null
+      const profileRow = profileData as { full_name: string | null; email: string | null; role: string; organization_id: string | null; avatar_url: string | null } | null
       setProfile(profileRow ?? {
         full_name: user.user_metadata?.full_name ?? null,
         email: user.email ?? null,
         role: 'SELLER',
         organization_id: null,
+        avatar_url: null,
       })
       const orgId = profileRow?.organization_id ?? null
       if (!orgId) {
@@ -168,6 +171,72 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!e.target.files || e.target.files.length === 0 || !profile) return
+
+    const file = e.target.files[0]
+    const fileExt = file.name.split('.').pop()
+    const filePath = `${profile?.email?.split('@')[0]}-${Math.random()}.${fileExt}`
+
+    if (!profile.email) return
+
+    setAvatarUploading(true)
+    try {
+      // 1. Upload logic
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      // 2. Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath)
+
+      // 3. Update profile
+      const { error: updateError } = await supabase
+        .from('profiles')
+        // @ts-expect-error - avatar_url is added to types but inference fails
+        .update({ avatar_url: publicUrl })
+        .eq('email', profile.email)
+
+      if (updateError) throw updateError
+
+      toast.success('Foto de perfil atualizada!')
+
+      // 4. Refresh local state
+      await loadProfileAndOrg()
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao atualizar foto de perfil')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  async function handleAvatarRemove() {
+    if (!profile?.email) return
+    setAvatarUploading(true)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        // @ts-expect-error - avatar_url is added to types but inference fails
+        .update({ avatar_url: null })
+        .eq('email', profile.email)
+
+      if (error) throw error
+
+      toast.success('Foto removida com sucesso')
+      await loadProfileAndOrg()
+    } catch (error) {
+      toast.error('Erro ao remover foto')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+
   if (!mounted || loading) {
     return (
       <>
@@ -185,16 +254,43 @@ export default function SettingsPage() {
   return (
     <>
       <DashboardHeader title="Configurações" />
-      <div className="space-y-8 max-w-3xl">
+      <div className="space-y-8 w-full">
         {/* Seção: Perfil do usuário */}
         <section className="rounded-2xl border p-6 sm:p-8" style={CARD_STYLE}>
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(255, 0, 122, 0.15)' }}>
-              <User className="w-6 h-6" style={{ color: NEON_PINK }} />
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative" style={{ backgroundColor: 'rgba(255, 0, 122, 0.15)' }}>
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-6 h-6" style={{ color: NEON_PINK }} />
+              )}
             </div>
             <div>
               <h2 className="text-lg font-bold text-white">Perfil do usuário</h2>
               <p className="text-sm text-gray-500">Suas informações de acesso e função</p>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <label className="cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-xs font-medium text-white border border-white/10">
+                {avatarUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                {profile?.avatar_url ? 'Alterar' : 'Adicionar foto'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                  disabled={avatarUploading}
+                />
+              </label>
+              {profile?.avatar_url && (
+                <button
+                  onClick={handleAvatarRemove}
+                  disabled={avatarUploading}
+                  className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors border border-red-500/20"
+                  title="Remover foto"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -268,7 +364,7 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-500">Defina uma nova senha para acessar sua conta</p>
             </div>
           </div>
-          <form onSubmit={handleUpdatePassword} className="space-y-5 max-w-md">
+          <form onSubmit={handleUpdatePassword} className="space-y-5 w-full">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-gray-500">Nova senha</label>
               <input

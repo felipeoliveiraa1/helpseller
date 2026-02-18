@@ -5,6 +5,16 @@ import { ReactNode, useState } from 'react'
 import { Toaster } from 'sonner'
 import { ThemeProvider } from '@/components/theme-provider'
 
+if (typeof window !== 'undefined') {
+    const originalError = console.error
+    console.error = (...args) => {
+        if (typeof args[0] === 'string' && args[0].includes('bis_skin_checked')) {
+            return
+        }
+        originalError(...args)
+    }
+}
+
 export default function Providers({ children }: { children: ReactNode }) {
     const [queryClient] = useState(
         () =>

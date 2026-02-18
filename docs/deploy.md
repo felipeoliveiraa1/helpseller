@@ -25,6 +25,25 @@ Visão geral do que sobe onde e o que configurar.
 
 **Ajuste para produção:** Em `dashboard/src/app/(dashboard)/live/page.tsx` a URL do WebSocket está fixa em `ws://localhost:3001/ws/manager`. Trocar para usar a URL do backend em produção, por exemplo derivar de `NEXT_PUBLIC_API_URL` (ex.: `wss://seu-backend.run.app/ws/manager`).
 
+### Se `/` ou `/landing` retornam 404 na Vercel (build OK, produção 404)
+
+1. **Root Directory**  
+   **Settings** → **General** → **Root Directory** = `dashboard` (sem barra no final).
+
+2. **Framework Preset e Output Directory**  
+   **Settings** → **Build & Development** (ou **General**):
+   - **Framework Preset** deve ser **Next.js**. Se estiver "Other" ou outro valor, a Vercel pode não processar o output do Next e servir 404.
+   - **Output Directory**: deixe **vazio** (não preencha). Next.js usa `.next` e a Vercel espera o output padrão do framework. Se estiver preenchido (ex.: `out` ou `.next`), pode causar 404.
+
+3. **Redeploy com cache limpo**  
+   **Deployments** → ⋮ no último deploy → **Redeploy** → marque **Clear build cache and redeploy**.
+
+4. **Testar outras rotas**  
+   Teste `https://seu-app.vercel.app/login`. Se `/login` também der 404, o app inteiro não está sendo servido (confirme Framework Preset e Output Directory).
+
+5. **Se ainda 404: testar build com Webpack**  
+   No Next.js 16 o build padrão é Turbopack. Para descartar problema de integração Turbopack + Vercel: em **Settings** → **Build & Development** → **Build Command** altere para `npm run build:webpack` (o script já existe em `dashboard/package.json`), faça **Redeploy**. Se passar a funcionar, o problema é compatibilidade Turbopack na Vercel; depois pode voltar o Build Command para `npm run build`.
+
 ---
 
 ## 2. Backend (Fastify) → **GCP (Cloud Run)**

@@ -61,20 +61,8 @@ export function Sidebar() {
       className="w-64 shrink-0 bg-black border-r border-white/5 flex flex-col"
       style={{ borderColor: 'rgba(255,255,255,0.05)' }}
     >
-      <div className="p-8 flex items-center gap-3" suppressHydrationWarning={true}>
-        <div
-          suppressHydrationWarning={true}
-          className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{
-            backgroundColor: NEON_PINK,
-            boxShadow: `0 0 15px rgba(255,0,122,0.4)`,
-          }}
-        >
-          <span className="text-white font-bold text-lg">C</span>
-        </div>
-        <span className="text-xl font-bold tracking-tight text-white">
-          CloseIA
-        </span>
+      <div className="p-8 flex items-center" suppressHydrationWarning={true}>
+        <img src="/logo.svg" alt="HelpSeller" className="h-8 w-auto" />
       </div>
 
       {/* Navigation: render skeleton or real content based on mounted state */}

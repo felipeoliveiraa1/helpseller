@@ -1,6 +1,6 @@
 import { Maximize2, Radio } from 'lucide-react';
 import { useCoachingStore } from '../stores/coaching-store';
-import { BG, BORDER, TEXT_SECONDARY, ACCENT_DANGER } from '../lib/theme';
+import { BG, BORDER, TEXT_SECONDARY, ACCENT_DANGER, ACCENT_ACTIVE } from '../lib/theme';
 
 export function MinimizedBar() {
     const { toggleMinimize, connectionStatus, cards } = useCoachingStore();
@@ -10,7 +10,7 @@ export function MinimizedBar() {
         Date.now() - c.timestamp < 5000
     );
 
-    const dotColor = connectionStatus === 'recording' ? ACCENT_DANGER : connectionStatus === 'connected' ? '#3b82f6' : '#525252';
+    const dotColor = connectionStatus === 'recording' ? ACCENT_DANGER : connectionStatus === 'connected' ? ACCENT_ACTIVE : '#525252';
 
     return (
         <div
@@ -30,7 +30,7 @@ export function MinimizedBar() {
             <div className="flex-1 flex items-center justify-center">
                 <div className="rotate-90 whitespace-nowrap flex items-center gap-1 text-[10px] font-semibold tracking-widest" style={{ color: TEXT_SECONDARY, opacity: 0.7 }}>
                     <Radio size={12} className="-rotate-90" />
-                    Call Coach
+                    HelpSeller
                 </div>
             </div>
         </div>

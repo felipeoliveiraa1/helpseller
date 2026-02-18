@@ -48,19 +48,8 @@ export default function LoginPage() {
               className="p-8 rounded-[24px] border bg-card-dark"
               style={{ borderColor: 'rgba(255,255,255,0.05)' }}
             >
-              <div className="flex items-center gap-3 mb-8">
-                <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{
-                    backgroundColor: NEON_PINK,
-                    boxShadow: '0 0 15px rgba(255,0,122,0.4)',
-                  }}
-                >
-                  <span className="text-white font-bold text-xl">C</span>
-                </div>
-                <span className="text-2xl font-bold tracking-tight text-white">
-                  CloseIA
-                </span>
+              <div className="flex items-center mb-8">
+                <img src="/logo.svg" alt="HelpSeller" className="h-10 w-auto" />
               </div>
               <h1 className="text-2xl font-bold text-white mb-1">
                 Bem-vindo de volta

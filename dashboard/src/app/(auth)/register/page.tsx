@@ -76,17 +76,14 @@ export default function RegisterPage() {
         <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
           <div className="w-full max-w-md">
             <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-10 h-10 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-xl">C</span>
-                </div>
-                <span className="text-2xl font-bold tracking-tight">CloseIA</span>
+              <div className="flex items-center mb-8">
+                <img src="/logo.svg" alt="HelpSeller" className="h-10 w-auto" />
               </div>
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
                 Criar conta
               </h1>
               <p className="text-slate-500 dark:text-slate-400 text-sm mb-8">
-                Comece a usar o CloseIA agora
+                Comece a usar o HelpSeller agora
               </p>
               <form className="space-y-5" onSubmit={handleRegister}>
                 <div>
@@ -222,11 +219,8 @@ export default function RegisterPage() {
       >
         <div className="absolute inset-0 bg-white/30 pointer-events-none" aria-hidden />
         <div className="relative z-10 flex flex-col justify-center p-12 max-w-md">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold text-2xl">C</span>
-            </div>
-            <span className="text-3xl font-bold tracking-tight text-slate-900">CloseIA</span>
+          <div className="flex items-center mb-6">
+            <img src="/logo.svg" alt="HelpSeller" className="h-12 w-auto" />
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">
             Junte-se a nós

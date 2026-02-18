@@ -4,7 +4,7 @@ import SimpleSidebar from '@/components/SimpleSidebar';
 import { startParticipantMonitoring, sendParticipantInfoNow, startMicStateMonitoring } from './meet-participants';
 // import '@/index.css';
 
-console.log('Call Coach Content Script Loaded');
+console.log('HelpSeller Content Script Loaded');
 
 if (window.location.hostname === 'meet.google.com') {
     startParticipantMonitoring();
@@ -23,7 +23,7 @@ if (window.location.hostname === 'meet.google.com') {
 // Painel flutuante: posição (left/top) aplicada pelo SimpleSidebar
 const host = document.createElement('div');
 host.id = 'sales-copilot-root';
-host.style.cssText = 'position:fixed;width:0;height:80vh;z-index:2147483647;transition: width 0.2s ease, height 0.2s ease;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.4);';
+host.style.cssText = 'position:fixed;width:0;height:80vh;z-index:2147483647;transition: width 0.2s ease, height 0.2s ease;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,0,122,0.1);';
 document.body.appendChild(host);
 
 chrome.storage.local.get(['sidebarPosition'], (r: { sidebarPosition?: { left: number; top: number } }) => {
@@ -72,19 +72,19 @@ style.textContent = `
     .space-y-1 > * + * { margin-top: 0.25rem; }
     .space-y-2 > * + * { margin-top: 0.5rem; }
     
-    /* Colors */
-    .bg-\\[\\#1A1B2E\\] { background-color: #1A1B2E; }
-    .bg-\\[\\#252640\\] { background-color: #252640; }
+    /* Colors - black + pink theme */
+    .bg-\\[\\#1A1B2E\\] { background-color: #0d0d0d; }
+    .bg-\\[\\#252640\\] { background-color: #1a1a1a; }
     .text-white { color: white; }
-    .text-blue-400 { color: #60a5fa; }
-    .text-slate-400 { color: #94a3b8; }
-    .text-slate-300 { color: #cbd5e1; }
-    .text-emerald-400 { color: #34d399; }
+    .text-blue-400 { color: #ff007a; }
+    .text-slate-400 { color: #a1a1aa; }
+    .text-slate-300 { color: #d4d4d8; }
+    .text-emerald-400 { color: #ff007a; }
     
     /* Borders */
     .border-b { border-bottom-width: 1px; }
-    .border-white\\/10 { border-color: rgba(255, 255, 255, 0.1); }
-    .border-white\\/5 { border-color: rgba(255, 255, 255, 0.05); }
+    .border-white\\/10 { border-color: rgba(255, 0, 122, 0.15); }
+    .border-white\\/5 { border-color: rgba(255, 0, 122, 0.08); }
     
     /* Padding & Margin */
     .p-1 { padding: 0.25rem; }
@@ -170,7 +170,7 @@ style.textContent = `
         background: rgba(0, 0, 0, 0.1);
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.3);
+        background: rgba(255, 0, 122, 0.35);
         border-radius: 3px;
     }
 `;
@@ -181,26 +181,36 @@ shadow.appendChild(style);
 
 const root = ReactDOM.createRoot(shadow);
 
-// Message Listener to toggle sidebar
+// Sidebar starts closed; never auto-opens. User opens via popup or (if no popup) icon click.
 let isOpen = false;
 
-chrome.runtime.onMessage.addListener((msg) => {
+function persistSidebarOpen(open: boolean): void {
+    chrome.storage.local.set({ sidebarOpen: open }).catch(() => {});
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     console.log('Content script received message:', msg.type);
 
     if (msg.type === 'TOGGLE_SIDEBAR') {
         isOpen = !isOpen;
         host.style.width = isOpen ? '360px' : '0';
         host.style.height = isOpen ? '80vh' : '80vh';
+        persistSidebarOpen(isOpen);
         console.log('Sidebar toggled:', isOpen ? 'OPEN' : 'CLOSED');
     } else if (msg.type === 'OPEN_SIDEBAR') {
         isOpen = true;
         host.style.width = '360px';
         host.style.height = '80vh';
+        persistSidebarOpen(true);
         console.log('Sidebar opened');
     } else if (msg.type === 'CLOSE_SIDEBAR') {
         isOpen = false;
         host.style.width = '0';
+        persistSidebarOpen(false);
         console.log('Sidebar closed');
+    } else if (msg.type === 'GET_SIDEBAR_OPEN') {
+        sendResponse({ open: isOpen });
+        return true;
     } else if (msg.type === 'STATUS_UPDATE' && msg.status === 'RECORDING' && window.location.hostname === 'meet.google.com') {
         sendParticipantInfoNow();
     }

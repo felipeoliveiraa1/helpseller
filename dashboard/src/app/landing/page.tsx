@@ -121,7 +121,7 @@ const PLANS = [
     name: 'Grátis',
     price: 'R$ 0',
     period: '/mês',
-    description: 'Para testar o CloseIA com seu time.',
+    description: 'Para testar o HelpSeller com seu time.',
     features: [
       'Até 3 vendedores',
       'Coaching em tempo real',
@@ -186,7 +186,7 @@ const FAQ_ITEMS = [
   },
   {
     question: 'Integra com Google Meet e Zoom?',
-    answer: 'Sim. O CloseIA se integra com as principais plataformas de reunião e CRMs. O setup é feito em poucos minutos, sem depender de TI.',
+    answer: 'Sim. O HelpSeller se integra com as principais plataformas de reunião e CRMs. O setup é feito em poucos minutos, sem depender de TI.',
   },
 ]
 
@@ -271,14 +271,8 @@ export default function LandingPage() {
           }`}
       >
         <Container className="flex items-center justify-between h-[72px]">
-          <Link href="/" className="group flex items-center gap-3 font-medium text-lg z-50">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105 text-white font-bold text-sm"
-              style={{ backgroundColor: NEON_PINK, boxShadow: '0 0 16px rgba(255,0,122,0.4)' }}
-            >
-              C
-            </div>
-            <span className="font-bold tracking-tight">CloseIA</span>
+          <Link href="/" className="group flex items-center font-medium text-lg z-50">
+            <img src="/logo.svg" alt="HelpSeller" className="h-12 w-auto transition-transform group-hover:scale-105" />
           </Link>
           <nav className="hidden md:flex items-center gap-8 text-[15px] font-medium text-gray-400">
             <a href="#features" className="hover:text-white transition-colors">Recursos</a>
@@ -369,7 +363,7 @@ export default function LandingPage() {
                 <div className="w-3 h-3 rounded-full bg-[#292929]" />
                 <div className="w-3 h-3 rounded-full bg-[#292929]" />
               </div>
-              <span className="mx-auto text-xs font-mono text-gray-500">Chamada ao vivo • CloseIA</span>
+              <span className="mx-auto text-xs font-mono text-gray-500">Chamada ao vivo • HelpSeller</span>
             </div>
             <div className="p-4 space-y-3 bg-[#111216]/50">
               <div className="flex items-start gap-3">
@@ -465,7 +459,7 @@ export default function LandingPage() {
                 Colabore com sua <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">IA de vendas</span>
               </h2>
               <p className="text-lg text-gray-500 mb-8 leading-relaxed max-w-lg">
-                O CloseIA não só escuta; entende o contexto. Sugere respostas na hora, trata objeções e desbloqueia seu time em tempo real.
+                O HelpSeller não só escuta; entende o contexto. Sugere respostas na hora, trata objeções e desbloqueia seu time em tempo real.
               </p>
               <Link href="/register" className="inline-flex items-center gap-2 h-11 px-6 rounded-full border border-white/10 bg-white/2 hover:bg-white/5 hover:border-white/20 text-white text-sm font-medium transition-all">
                 Começar agora <ChevronRight className="w-4 h-4" />
@@ -480,7 +474,7 @@ export default function LandingPage() {
                     <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/80" />
                     <div className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
                   </div>
-                  <span className="text-[10px] font-mono text-gray-500">CloseIA • Chamada</span>
+                  <span className="text-[10px] font-mono text-gray-500">HelpSeller • Chamada</span>
                 </div>
                 <div className="flex items-start gap-4 mb-6">
                   <div className="w-8 h-8 rounded-full bg-linear-to-br from-neon-pink to-neon-blue/80 flex items-center justify-center shrink-0 shadow-lg shadow-neon-pink/20">
@@ -551,7 +545,7 @@ export default function LandingPage() {
           </div>
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-3xl md:text-5xl font-semibold text-white mb-4 tracking-tight">
-              Por que usar o <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">CloseIA</span>?
+              Por que usar o <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">HelpSeller</span>?
             </h2>
             <p className="text-lg text-gray-500 leading-relaxed">
               Menos treinamento genérico, mais resultado na ponta. Seu time vende melhor e você acompanha tudo.
@@ -642,7 +636,7 @@ export default function LandingPage() {
               Perguntas frequentes
             </h2>
             <p className="text-lg text-gray-500 max-w-xl mx-auto">
-              Tudo o que você precisa saber sobre o CloseIA e os planos.
+              Tudo o que você precisa saber sobre o HelpSeller e os planos.
             </p>
           </div>
           <div className="max-w-3xl mx-auto divide-y divide-[#2A2A2A] border-y border-[#2A2A2A]">
@@ -708,9 +702,8 @@ export default function LandingPage() {
         <Container>
           <div className="grid grid-cols-2 md:grid-cols-6 gap-10 mb-16">
             <div className="col-span-2 md:col-span-2">
-              <Link href="/" className="flex items-center gap-2 text-white font-medium mb-6 text-lg">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: NEON_PINK, boxShadow: '0 0 12px rgba(255,0,122,0.3)' }}>C</div>
-                <span className="font-semibold tracking-tight">CloseIA</span>
+              <Link href="/" className="flex items-center text-white font-medium mb-6 text-lg">
+                <img src="/logo.svg" alt="HelpSeller" className="h-12 w-auto" />
               </Link>
               <p className="text-sm text-gray-500 max-w-xs">Coaching de vendas powered by IA. Seu time vende mais.</p>
             </div>
@@ -742,7 +735,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="pt-8 text-xs text-gray-500">
-            © {new Date().getFullYear()} CloseIA. Todos os direitos reservados.
+            © {new Date().getFullYear()} HelpSeller. Todos os direitos reservados.
           </div>
         </Container>
       </footer>

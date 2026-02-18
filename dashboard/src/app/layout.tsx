@@ -10,7 +10,7 @@ const urbanist = Urbanist({
 });
 
 export const metadata: Metadata = {
-  title: "CloseIA",
+  title: "HelpSeller",
   description: "AI-powered sales coaching platform",
 };
 

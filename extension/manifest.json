@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Sales Copilot AI",
+  "name": "HelpSeller",
   "version": "1.0.0",
   "description": "Coach de vendas em tempo real com IA",
   "permissions": [
@@ -14,7 +14,8 @@
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
     "https://app.zoom.us/*",
-    "http://localhost:3000/*","https://*.vercel.app/*"
+    "http://localhost:3000/*",
+    "https://*.vercel.app/*"
   ],
   "background": {
     "service_worker": "src/background/index.ts",
@@ -38,7 +39,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "src/index.css"
+        "src/index.css",
+        "logo.svg"
       ],
       "matches": [
         "<all_urls>"

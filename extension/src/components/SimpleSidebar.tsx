@@ -5,6 +5,7 @@ import { type CoachCard } from '../stores/coaching-store';
 import { GripVertical, Mic, Minus, LogOut, AlertCircle, X, Cpu } from 'lucide-react';
 import { BG, BG_ELEVATED, BORDER, BORDER_SUBTLE, TEXT, TEXT_SECONDARY, TEXT_MUTED, INPUT_BG, INPUT_BORDER, ACCENT_ACTIVE, ACCENT_DANGER, RADIUS } from '../lib/theme';
 
+const logoUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('logo.svg') : '';
 const SIDEBAR_W = 360;
 const SIDEBAR_H = '80vh';
 const MIN_W = 48;
@@ -312,9 +313,9 @@ export default function SimpleSidebar() {
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <GripVertical size={14} style={{ color: TEXT_MUTED }} />
-                    <Mic size={16} style={{ color: isRecording ? ACCENT_DANGER : TEXT_MUTED }} />
+                    {logoUrl ? <img src={logoUrl} alt="HelpSeller" style={{ height: 20, width: 'auto' }} /> : <Mic size={16} style={{ color: isRecording ? ACCENT_DANGER : TEXT_MUTED }} />}
                     <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY }}>{isRecording ? 'Gravando' : 'Parado'}</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY }}>HelpSeller · {isRecording ? 'Gravando' : 'Parado'}</div>
                         <div style={{ fontSize: 10, color: TEXT_MUTED }}>{session.user?.email}</div>
                     </div>
                 </div>

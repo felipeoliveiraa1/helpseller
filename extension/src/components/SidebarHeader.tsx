@@ -3,6 +3,8 @@ import { useCoachingStore } from '../stores/coaching-store';
 import { Minimize2, Radio } from 'lucide-react';
 import { BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, ACCENT_ACTIVE, ACCENT_DANGER } from '../lib/theme';
 
+const logoUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('logo.svg') : '';
+
 export function SidebarHeader() {
     const { isMinimized, toggleMinimize, connectionStatus, startTime } = useCoachingStore();
     const [elapsed, setElapsed] = useState('00:00');
@@ -28,8 +30,8 @@ export function SidebarHeader() {
             style={{ background: BG_ELEVATED, borderColor: BORDER }}
         >
             <div className="flex items-center gap-2">
-                <Radio size={14} style={{ color: TEXT_SECONDARY }} />
-                <span className="font-semibold text-[13px] tracking-tight" style={{ color: TEXT }}>Call Coach</span>
+                {logoUrl ? <img src={logoUrl} alt="HelpSeller" style={{ height: 20, width: 'auto' }} /> : <Radio size={14} style={{ color: TEXT_SECONDARY }} />}
+                <span className="font-semibold text-[13px] tracking-tight" style={{ color: TEXT }}>HelpSeller</span>
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: dotColor }} />
             </div>
             <div className="flex items-center gap-2">

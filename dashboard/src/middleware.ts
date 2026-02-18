@@ -57,9 +57,9 @@ export async function middleware(request: NextRequest) {
     const { data: { session } } = await supabase.auth.getSession()
     const pathname = request.nextUrl.pathname
 
-    // Landing como primeira página: "/" sem sessão mostra a landing (rewrite para /landing)
+    // Landing como primeira página: "/" sem sessão redireciona para /landing (evita 404 com rewrite no Vercel)
     if (pathname === '/' && !session) {
-        return NextResponse.rewrite(new URL('/landing', request.url))
+        return NextResponse.redirect(new URL('/landing', request.url))
     }
 
     // Rotas públicas: landing, login, register, auth

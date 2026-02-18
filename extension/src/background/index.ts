@@ -129,11 +129,9 @@ onWsMessage(async (data: any) => {
                     const objections = await response.json();
                     cachedObjections = objections;
                     console.log(`📦 Cached ${objections.length} objections for edge processing`);
-                } else {
-                    console.warn('⚠️ Failed to fetch objections for caching');
                 }
-            } catch (error) {
-                console.error('❌ Error caching objections:', error);
+            } catch {
+                // Script or API may not exist; objections optional for edge coach
             }
         }
     }

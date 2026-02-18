@@ -145,11 +145,8 @@ function ViewerContent() {
 
     if (remoteParticipants.length === 0) {
         return (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-black rounded-lg p-4 text-center">
-                <p className="text-gray-500 text-sm">Aguardando participante...</p>
-                <p className="text-gray-600 text-xs max-w-sm">
-                    A extensão do vendedor precisa publicar na sala. Confira no console do Service Worker da extensão (chrome://extensions → detalhes → &quot;Service worker&quot;) se aparecem &quot;🎬 Requesting LiveKit token&quot; e &quot;✅ LiveKit token received&quot;.
-                </p>
+            <div className="flex flex-1 flex-col items-center justify-center bg-black rounded-lg p-4 text-center">
+                <p className="text-gray-500 text-sm">Aguardando transmissão do vendedor...</p>
             </div>
         );
     }
@@ -164,11 +161,8 @@ function ViewerContent() {
             />
             <audio ref={audioRef} autoPlay playsInline className="hidden" />
             {!hasVideo && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 text-sm text-center px-4">
-                    <span>Aguardando transmissão do vendedor...</span>
-                    <span className="mt-2 text-xs text-gray-600 max-w-sm">
-                        A extensão do vendedor precisa publicar na sala. No console do Service Worker da extensão (chrome://extensions → detalhes → &quot;Service worker&quot;) confira se aparecem &quot;🎬 Requesting LiveKit token&quot; e &quot;✅ LiveKit token received&quot;.
-                    </span>
+                <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
+                    Aguardando transmissão do vendedor...
                 </div>
             )}
         </div>

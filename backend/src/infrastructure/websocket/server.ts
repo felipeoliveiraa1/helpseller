@@ -822,7 +822,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             const audioData = Buffer.from(event.payload.audio, 'base64');
             audioBuffer.push(audioData);
 
-            logger.info(`📦 Received audio chunk: ${audioData.length} bytes, buffer size: ${audioBuffer.length}`);
+            logger.debug(`📦 Received audio chunk: ${audioData.length} bytes, buffer size: ${audioBuffer.length}`);
 
             // Logic: Transcribe every ~3 seconds of audio (3 chunks of 1s)
             const CHUNKS_TO_PROCESS = 3;
@@ -833,7 +833,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                 const headerHex = finalBuffer.length >= 4 ? finalBuffer.slice(0, 4).toString('hex') : '';
                 if (headerHex !== '1a45dfa3') {
-                    logger.warn(`⚠️ audio:chunk (legacy) invalid WebM header (${headerHex}); skipping Whisper. Use audio:segment for transcription.`);
+                    logger.debug(`audio:chunk (legacy) invalid WebM header (${headerHex}); skipping Whisper.`);
                     return;
                 }
 

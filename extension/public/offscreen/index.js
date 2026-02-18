@@ -83,17 +83,8 @@ async function startTranscription(streamId) {
 
         mediaRecorder.ondataavailable = async (event) => {
             if (event.data.size > 0) {
-                log(`📦 Audio chunk captured: ${event.data.size} bytes`);
-                // Convert to Base64
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const base64 = reader.result.split(',')[1];
-                    chrome.runtime.sendMessage({
-                        type: 'AUDIO_CHUNK',
-                        data: base64
-                    }).catch(err => log('❌ Error sending chunk:', err.message));
-                };
-                reader.readAsDataURL(event.data);
+                // Legacy path: do not send AUDIO_CHUNK (invalid WebM when concatenated).
+                // Transcription uses AUDIO_SEGMENT from the main offscreen (src/offscreen).
             }
         };
 

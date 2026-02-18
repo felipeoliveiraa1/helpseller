@@ -22,7 +22,7 @@ export default function LoginPage() {
     if (error) {
       toast.error('Erro ao fazer login. Verifique suas credenciais.')
     } else {
-      router.push('/')
+      router.push('/dashboard')
       router.refresh()
     }
     setLoading(false)

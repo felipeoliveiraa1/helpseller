@@ -57,8 +57,8 @@ export async function middleware(request: NextRequest) {
     const { data: { session } } = await supabase.auth.getSession()
     const pathname = request.nextUrl.pathname
 
-    // Landing como primeira página: "/" sem sessão redireciona para /landing (evita 404 com rewrite no Vercel)
-    if (pathname === '/' && !session) {
+    // Raiz "/" sempre redireciona para a landing page
+    if (pathname === '/') {
         return NextResponse.redirect(new URL('/landing', request.url))
     }
 
@@ -75,7 +75,7 @@ export async function middleware(request: NextRequest) {
     }
 
     if ((pathname.startsWith('/login') || pathname.startsWith('/register')) && session) {
-        return NextResponse.redirect(new URL('/', request.url))
+        return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
     return response
@@ -83,13 +83,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
     matcher: [
-        /*
-         * Match all request paths except for the ones starting with:
-         * - _next/static (static files)
-         * - _next/image (image optimization files)
-         * - favicon.ico (favicon file)
-         * Feel free to modify this pattern to include more paths.
-         */
+        '/',
         '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 }

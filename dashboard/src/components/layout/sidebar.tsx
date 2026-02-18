@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/use-auth'
 const navSections = [
   {
     label: 'Home',
-    items: [{ name: 'Dashboard', href: '/', icon: 'dashboard' }],
+    items: [{ name: 'Dashboard', href: '/dashboard', icon: 'dashboard' }],
   },
   {
     label: 'App',
@@ -24,7 +24,7 @@ const navSections = [
 ] as const
 
 function isActivePath(pathname: string, href: string): boolean {
-  if (href === '/') return pathname === '/'
+  if (href === '/dashboard') return pathname === '/dashboard'
   return pathname.startsWith(href)
 }
 

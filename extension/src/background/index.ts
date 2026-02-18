@@ -52,9 +52,10 @@ onWsClose(() => {
 
 // Listen for messages from WebSocket
 onWsMessage(async (data: any) => {
-    if (data.type === 'call:started') {
+        if (data.type === 'call:started') {
         const callId = data.payload?.callId as string | undefined;
         console.log('✅ Call started confirmed by backend. CallId:', callId);
+        console.log('🎬 Requesting LiveKit token for room:', callId);
         isCallConfirmed = true;
         if (callStartRetryIntervalId) {
             clearInterval(callStartRetryIntervalId);
@@ -98,14 +99,16 @@ onWsMessage(async (data: any) => {
                     const data = await res.json() as { token?: string; serverUrl?: string };
                     const { token, serverUrl } = data;
                     if (token && serverUrl) {
-                        console.log('✅ LiveKit token received, sending START_LIVEKIT_PUBLISH to offscreen');
+                        console.log('✅ LiveKit token received');
+                        console.log('✅ Sending START_LIVEKIT_PUBLISH to offscreen (video will appear in dashboard when published)');
                         chrome.runtime.sendMessage({
                             type: 'START_LIVEKIT_PUBLISH',
                             token,
                             serverUrl,
                         }).catch((e) => console.warn('⚠️ Send START_LIVEKIT_PUBLISH failed:', e));
                     } else {
-                        console.warn('⚠️ LiveKit token missing token or serverUrl (check NEXT_PUBLIC_LIVEKIT_URL on dashboard):', !!token, !!serverUrl);
+                        console.warn('⚠️ LiveKit token missing token or serverUrl. No video in dashboard until fixed.');
+                        console.warn('   → Set NEXT_PUBLIC_LIVEKIT_URL in the dashboard (Vercel) and redeploy.');
                     }
                 }
             } catch (error) {

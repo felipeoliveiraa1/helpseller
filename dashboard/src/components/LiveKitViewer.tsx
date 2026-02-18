@@ -164,8 +164,11 @@ function ViewerContent() {
             />
             <audio ref={audioRef} autoPlay playsInline className="hidden" />
             {!hasVideo && (
-                <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
-                    Aguardando transmissão do vendedor...
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 text-sm text-center px-4">
+                    <span>Aguardando transmissão do vendedor...</span>
+                    <span className="mt-2 text-xs text-gray-600 max-w-sm">
+                        A extensão do vendedor precisa publicar na sala. No console do Service Worker da extensão (chrome://extensions → detalhes → &quot;Service worker&quot;) confira se aparecem &quot;🎬 Requesting LiveKit token&quot; e &quot;✅ LiveKit token received&quot;.
+                    </span>
                 </div>
             )}
         </div>

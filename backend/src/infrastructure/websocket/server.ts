@@ -828,9 +828,14 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             const CHUNKS_TO_PROCESS = 3;
 
             if (audioBuffer.length >= CHUNKS_TO_PROCESS) {
-                // Concatenate all binary buffers (MediaRecorder chunks form valid WebM when concatenated)
                 const finalBuffer = Buffer.concat(audioBuffer);
                 audioBuffer = []; // Clear buffer immediately
+
+                const headerHex = finalBuffer.length >= 4 ? finalBuffer.slice(0, 4).toString('hex') : '';
+                if (headerHex !== '1a45dfa3') {
+                    logger.warn(`⚠️ audio:chunk (legacy) invalid WebM header (${headerHex}); skipping Whisper. Use audio:segment for transcription.`);
+                    return;
+                }
 
                 logger.info(`🎤 Transcribing ${finalBuffer.length} bytes of audio...`);
 
@@ -841,7 +846,6 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     if (text && text.trim().length > 0) {
                         logger.info(`✨ Transcription result: ${text}`);
 
-                        // Send transcription result to socket
                         ws.send(JSON.stringify({
                             type: 'transcript:chunk',
                             payload: {

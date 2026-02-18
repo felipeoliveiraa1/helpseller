@@ -22,6 +22,7 @@ interface Call {
     user?: {
         full_name: string;
         email: string;
+        avatar_url?: string;
     };
     script?: {
         name: string;
@@ -70,7 +71,7 @@ export default function LivePage() {
             .from('calls')
             .select(`
                 *,
-                user:profiles!user_id(full_name),
+                user:profiles!user_id(full_name, avatar_url),
                 script:scripts!calls_script_relationship(name)
             `)
             .eq('status', 'ACTIVE')
@@ -86,8 +87,8 @@ export default function LivePage() {
 
         if (error) {
             const fallbackSelect = orgId
-                ? supabase.from('calls').select('*, user:profiles!user_id(full_name)').eq('status', 'ACTIVE').eq('organization_id', orgId).order('started_at', { ascending: false })
-                : supabase.from('calls').select('*, user:profiles!user_id(full_name)').eq('status', 'ACTIVE').eq('user_id', user.id).order('started_at', { ascending: false });
+                ? supabase.from('calls').select('*, user:profiles!user_id(full_name, avatar_url)').eq('status', 'ACTIVE').eq('organization_id', orgId).order('started_at', { ascending: false })
+                : supabase.from('calls').select('*, user:profiles!user_id(full_name, avatar_url)').eq('status', 'ACTIVE').eq('user_id', user.id).order('started_at', { ascending: false });
             const fallback = await fallbackSelect;
             if (!fallback.error && fallback.data) {
                 setActiveCalls(fallback.data as any);
@@ -279,9 +280,23 @@ export default function LivePage() {
                                     onClick={() => setSelectedCall(call)}
                                 >
                                     <div className="flex justify-between items-start gap-2 mb-2">
-                                        <div className="min-w-0">
-                                            <p className="font-semibold text-white truncate">{call.user?.full_name ?? 'Vendedor'}</p>
-                                            <p className="text-xs text-gray-500 truncate">{call.script?.name || 'Script Geral'}</p>
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-8 h-8 rounded-full bg-gray-800 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                                                {call.user?.avatar_url ? (
+                                                    <img
+                                                        src={call.user.avatar_url}
+                                                        alt={call.user.full_name}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <span className="text-xs font-bold text-gray-400">
+                                                        {call.user?.full_name?.charAt(0).toUpperCase() || 'V'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-white truncate">{call.user?.full_name ?? 'Vendedor'}</p>
+                                            </div>
                                         </div>
                                         <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-neon-pink/20 text-neon-pink animate-pulse flex items-center gap-1">
                                             AO VIVO

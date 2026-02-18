@@ -21,6 +21,7 @@ interface Call {
     transcript?: Array<{ speaker?: string; role?: string; text?: string }>;
     user?: {
         full_name: string;
+        avatar_url?: string;
     };
     script?: {
         name: string;
@@ -129,82 +130,73 @@ export default function CallsPage() {
 
         const fullSelect = `
             *,
-            user:profiles!user_id(full_name),
+            user:profiles!user_id(full_name, avatar_url),
             script:scripts!calls_script_relationship(name),
             summary:call_summaries(lead_sentiment, result)
         `;
-        const [resActive, resCompleted] = await Promise.all([
-            (async () => {
-                let q = supabase.from('calls').select(fullSelect).eq('status', 'ACTIVE').order('started_at', { ascending: false }).limit(50);
-                if (userRole === 'SELLER') q = q.eq('user_id', currentUserId);
-                else {
+
+        try {
+            let q = supabase
+                .from('calls')
+                .select(fullSelect)
+                .neq('status', 'ACTIVE') // Filter out active calls
+                .order('started_at', { ascending: false })
+                .limit(50);
+
+            if (userRole === 'SELLER') {
+                q = q.eq('user_id', currentUserId);
+            } else {
+                if (orgId) q = q.eq('organization_id', orgId);
+                if (selectedSeller !== 'all') q = q.eq('user_id', selectedSeller);
+            }
+
+            const { data, error } = await q;
+
+            if (error) throw error;
+
+            setCallsLoadError(false);
+            setCalls(
+                (data as any[] || []).map((c: any) => ({
+                    ...c,
+                    user: c.user,
+                    summary: Array.isArray(c.summary) ? c.summary[0] : c.summary,
+                }))
+            );
+        } catch (error) {
+            console.error('Error fetching calls:', error);
+            // Fallback: fetch without joins if types/relationships are failing
+            try {
+                let q = supabase
+                    .from('calls')
+                    .select('*')
+                    .neq('status', 'ACTIVE')
+                    .order('started_at', { ascending: false })
+                    .limit(50);
+
+                if (userRole === 'SELLER') {
+                    q = q.eq('user_id', currentUserId);
+                } else {
                     if (orgId) q = q.eq('organization_id', orgId);
                     if (selectedSeller !== 'all') q = q.eq('user_id', selectedSeller);
                 }
-                return q;
-            })(),
-            (async () => {
-                let q = supabase.from('calls').select(fullSelect).eq('status', 'COMPLETED').order('started_at', { ascending: false }).limit(50);
-                if (userRole === 'SELLER') q = q.eq('user_id', currentUserId);
-                else {
-                    if (orgId) q = q.eq('organization_id', orgId);
-                    if (selectedSeller !== 'all') q = q.eq('user_id', selectedSeller);
-                }
-                return q;
-            })(),
-        ]);
 
-        const dataActive = resActive.error ? [] : (resActive.data ?? []);
-        const dataCompleted = resCompleted.error ? [] : (resCompleted.data ?? []);
-        const merged = [...(dataActive as any[]), ...(dataCompleted as any[])];
-        merged.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
-        const slice = merged.slice(0, 50);
+                const { data: fallbackData, error: fallbackError } = await q;
+                if (fallbackError) throw fallbackError;
 
-        if (resActive.error && resCompleted.error) {
-            const [minActive, minCompleted] = await Promise.all([
-                (async () => {
-                    let q = supabase.from('calls').select('*').eq('status', 'ACTIVE').order('started_at', { ascending: false }).limit(50);
-                    if (userRole === 'SELLER') q = q.eq('user_id', currentUserId);
-                    else {
-                        if (orgId) q = q.eq('organization_id', orgId);
-                        if (selectedSeller !== 'all') q = q.eq('user_id', selectedSeller);
-                    }
-                    return q;
-                })(),
-                (async () => {
-                    let q = supabase.from('calls').select('*').eq('status', 'COMPLETED').order('started_at', { ascending: false }).limit(50);
-                    if (userRole === 'SELLER') q = q.eq('user_id', currentUserId);
-                    else {
-                        if (orgId) q = q.eq('organization_id', orgId);
-                        if (selectedSeller !== 'all') q = q.eq('user_id', selectedSeller);
-                    }
-                    return q;
-                })(),
-            ]);
-            const fallbackActive = minActive.error ? [] : (minActive.data ?? []);
-            const fallbackCompleted = minCompleted.error ? [] : (minCompleted.data ?? []);
-            const fallbackMerged = [...(fallbackActive as any[]), ...(fallbackCompleted as any[])];
-            fallbackMerged.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
-            const fallbackSlice = fallbackMerged.slice(0, 50);
-
-            if (minActive.error && minCompleted.error) {
+                setCallsLoadError(false);
+                setCalls(
+                    (fallbackData as any[] || []).map((c: any) => ({
+                        ...c,
+                        user: c.user ?? undefined,
+                        summary: c.summary,
+                    }))
+                );
+            } catch (finalError) {
+                console.error('Final error fetching calls:', finalError);
                 setCalls([]);
                 setCallsLoadError(true);
-                return;
             }
-            setCallsLoadError(false);
-            setCalls(fallbackSlice.map((c) => ({ ...c, user: c.user ?? undefined, summary: c.summary })));
-            return;
         }
-
-        setCallsLoadError(false);
-        setCalls(
-            slice.map((c) => ({
-                ...c,
-                user: c.user,
-                summary: Array.isArray(c.summary) ? c.summary[0] : c.summary,
-            }))
-        );
     };
 
     const formatDuration = (startedAt: string, endedAt?: string) => {
@@ -250,7 +242,7 @@ export default function CallsPage() {
             <div className="flex flex-col lg:flex-row gap-4 min-h-0 lg:min-h-[calc(100vh-12rem)]">
                 {/* Calls List Sidebar */}
                 <div
-                    className="w-full lg:w-80 shrink-0 rounded-2xl sm:rounded-[24px] border flex flex-col overflow-hidden max-h-[50vh] lg:max-h-none"
+                    className="w-full lg:w-80 shrink-0 rounded-2xl sm:rounded-[24px] border flex flex-col overflow-hidden max-h-[50vh] lg:max-h-none lg:h-[490px]"
                     style={{ ...CARD_STYLE, borderColor: 'rgba(255,255,255,0.05)' }}
                 >
                     <div className="p-3 sm:p-4 border-b border-white/10 shrink-0">
@@ -273,12 +265,27 @@ export default function CallsPage() {
                                     onClick={() => setSelectedCall(call)}
                                 >
                                     <div className="flex items-start justify-between gap-2">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-medium text-white truncate">
-                                                {call.user?.full_name ?? 'Vendedor'}
+                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                            <div className="w-8 h-8 rounded-full bg-gray-800 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                                                {call.user?.avatar_url ? (
+                                                    <img
+                                                        src={call.user.avatar_url}
+                                                        alt={call.user.full_name}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <span className="text-xs font-bold text-gray-400">
+                                                        {call.user?.full_name?.charAt(0).toUpperCase() || 'V'}
+                                                    </span>
+                                                )}
                                             </div>
-                                            <div className="text-xs text-gray-500 truncate">
-                                                {call.script?.name || 'Script Geral'}
+                                            <div className="min-w-0">
+                                                <div className="font-medium text-white truncate">
+                                                    {call.user?.full_name ?? 'Vendedor'}
+                                                </div>
+                                                <div className="text-xs text-gray-500 truncate">
+                                                    {call.script?.name || 'Script Geral'}
+                                                </div>
                                             </div>
                                         </div>
                                         {call.status === 'ACTIVE' ? (

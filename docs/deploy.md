@@ -27,30 +27,37 @@ Visão geral do que sobe onde e o que configurar.
 
 ### Se `/` ou `/landing` retornam 404 na Vercel (build OK, produção 404)
 
+**O que já está no repo:** Em `dashboard/vercel.json` está definido `"framework": "nextjs"` para forçar a Vercel a tratar o projeto como Next.js (sobrescreve o preset do painel). Isso pode resolver o 404 sozinho após um novo deploy.
+
 **Checklist (em ordem):**
 
-1. **URL / projeto errado**  
+1. **Testar rota de diagnóstico**  
+   Após o deploy, abra **https://helpseller.vercel.app/api/health**.  
+   - Se retornar `{"ok":true,...}` (200): o app Next está no ar; o 404 pode ser só em rotas de página (config de rotas/rewrites).  
+   - Se der 404: o app inteiro não está sendo servido; confira o item 2 e o Framework Preset.
+
+2. **URL / projeto errado**  
    O 404 pode ser do roteador da Vercel quando o domínio não aponta para o deployment correto.  
    **Como checar:** Vercel → seu projeto → **Deployments** → clique no **último deployment** → **Open**. Abra exatamente esse link. Se esse link abrir e o seu domínio (ex.: helpseller.vercel.app) não, o domínio está apontando para outro projeto/deployment ou a config de domínio está errada.
 
-2. **vercel.json na raiz do repositório**  
+3. **vercel.json na raiz do repositório**  
    Se existir um `vercel.json` **na raiz do repo** (fora de `dashboard/`) com `rewrites`, `routes`, `build` etc., ele pode sobrepor o Next e causar 404.  
    **O que fazer:** No repositório que a Vercel clona (ex.: helpseller), procure `vercel.json` na raiz. Se tiver, remova temporariamente ou garanta que não define rotas/build manual. O projeto só deve usar `dashboard/vercel.json` (e ele deve estar vazio `{}` ou sem rewrites conflitantes).
 
-3. **Build Settings**  
+4. **Build Settings**  
    **Settings** → **Build & Development**:
    - **Framework Preset**: **Next.js**
    - **Root Directory**: `dashboard`
    - **Build Command**: `npm run build` (ou `next build`)
    - **Output Directory**: **vazio** (default). Se estiver preenchido com `dist`, `out` etc., a Vercel pode servir “nada” e dar 404.
 
-4. **Middleware**  
+5. **Middleware**  
    Se o 404 continuar, teste sem o middleware: o arquivo ativo é `dashboard/src/middleware.ts`. Foi deixado em modo **pass-through** (só repassa a requisição) para teste. O backup do middleware com auth está em `dashboard/src/middleware.disabled.ts`. Faça deploy e teste. Se o 404 sumir, o problema era redirect/rewrite no middleware; para reativar a auth, restaure o conteúdo de `middleware.disabled.ts` em `middleware.ts`.
 
-5. **Redeploy**  
+6. **Redeploy**  
    **Deployments** → ⋮ no último deploy → **Redeploy** → marque **Clear build cache and redeploy**.
 
-6. **Novo projeto (teste)**  
+7. **Novo projeto (teste)**  
    Se ainda 404: crie um **novo projeto** na Vercel, importe o mesmo repo, Root Directory = `dashboard`, Framework = **Next.js**. Se o novo projeto abrir normal, o projeto antigo tem config travada; use o novo e desative o antigo.
 
 ---

@@ -310,29 +310,13 @@ export default function CallDetailsPage() {
                 <span className="flex items-center gap-2 text-gray-400" suppressHydrationWarning={true}>
                     <Calendar className="w-4 h-4" /> {new Date(call.started_at).toLocaleDateString('pt-BR')}
                 </span>
-                <Badge variant="outline" className="border-white/20 text-gray-300">{call.script?.name || 'Sem Script'}</Badge>
+
                 {objections.length > 0 && (
                     <span className="flex items-center gap-1.5 font-medium" style={{ color: NEON_ORANGE }}>
                         <Zap className="w-4 h-4" /> {objections.length} objeç{objections.length === 1 ? 'ão' : 'ões'}
                     </span>
                 )}
-                <div className="ml-auto flex flex-wrap items-center gap-2">
-                    {(!call.summary?.result || call.summary.result === 'UNKNOWN' || call.summary.result === 'FOLLOW_UP') && (
-                        <>
-                            <Button size="sm" className="bg-green-600 hover:bg-green-500 text-white border-0" onClick={() => handleUpdateOutcome('CONVERTED')} disabled={loading}>
-                                <ThumbsUp className="w-4 h-4 mr-2" /> Venda Realizada
-                            </Button>
-                            <Button size="sm" variant="outline" className="border-red-500/50 text-red-400 hover:bg-red-900/20" onClick={() => handleUpdateOutcome('LOST')} disabled={loading}>
-                                <ThumbsDown className="w-4 h-4 mr-2" /> Venda Perdida
-                            </Button>
-                        </>
-                    )}
-                    {currentUser && ['ADMIN', 'MANAGER'].includes(currentUser.role) && (
-                        <Button variant="outline" size="sm" disabled className="border-white/10 text-gray-500">
-                            <Play className="w-4 h-4 mr-2" /> Gravação
-                        </Button>
-                    )}
-                </div>
+
             </div>
 
             {/* Faixa de resultado (quando já tem summary) */}

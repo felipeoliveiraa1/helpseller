@@ -298,20 +298,7 @@ export default function CallsPage() {
                                             {new Date(call.started_at).toLocaleTimeString()} - {new Date(call.started_at).toLocaleDateString()}
                                         </span>
                                     </div>
-                                    {call.status === 'COMPLETED' && (
-                                        <div className="mt-2 text-xs flex items-center gap-1 flex-wrap">
-                                            {call.summary?.lead_sentiment && (
-                                                <span className="px-2 py-0.5 rounded bg-white/10 text-gray-400">
-                                                    {call.summary.lead_sentiment}
-                                                </span>
-                                            )}
-                                            {call.summary?.result && (
-                                                <span className="px-2 py-0.5 rounded bg-white/10 text-gray-400">
-                                                    {call.summary.result}
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
+
                                 </div>
                             ))
                         )}

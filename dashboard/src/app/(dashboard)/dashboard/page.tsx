@@ -194,19 +194,19 @@ export default function DashboardPage() {
             })(),
             profile?.role === 'MANAGER' && profile?.organizationId
               ? Promise.all([
-                  supabase
-                    .from('profiles')
-                    .select('id, full_name, role')
-                    .eq('organization_id', profile.organizationId),
-                  supabase
-                    .from('calls')
-                    .select('user_id')
-                    .eq('status', 'COMPLETED'),
-                  supabase
-                    .from('call_summaries')
-                    .select('call_id, result, calls!call_id(user_id)')
-                    .eq('result', 'CONVERTED'),
-                ])
+                supabase
+                  .from('profiles')
+                  .select('id, full_name, role')
+                  .eq('organization_id', profile.organizationId),
+                supabase
+                  .from('calls')
+                  .select('user_id')
+                  .eq('status', 'COMPLETED'),
+                supabase
+                  .from('call_summaries')
+                  .select('call_id, result, calls!call_id(user_id)')
+                  .eq('result', 'CONVERTED'),
+              ])
               : Promise.resolve([null, null, null]),
           ])
 
@@ -240,7 +240,7 @@ export default function DashboardPage() {
             const key = `${d.getFullYear()}-${d.getMonth()}`
             byMonth[key] = 0
           }
-          ;(chartCalls.data as { started_at: string }[]).forEach((c) => {
+          ; (chartCalls.data as { started_at: string }[]).forEach((c) => {
             const d = new Date(c.started_at)
             const key = `${d.getFullYear()}-${d.getMonth()}`
             if (key in byMonth) byMonth[key] += 1
@@ -339,7 +339,6 @@ export default function DashboardPage() {
     { value: String(totalMonth), label: 'Total de Chamadas', color: NEON_PINK, path: METRIC_PATHS[0] },
     { value: String(todayCompleted), label: 'Chamadas hoje', color: NEON_BLUE, path: METRIC_PATHS[1] },
     { value: String(convertedCount), label: 'Convertidas', color: NEON_GREEN, path: METRIC_PATHS[2] },
-    { value: String(followUpCount), label: 'Em follow-up', color: NEON_ORANGE, path: METRIC_PATHS[3] },
   ]
   const chartValues = chartData.map((d) => d.count)
   const chartLabels = chartData.map((d) => d.label)
@@ -480,159 +479,159 @@ export default function DashboardPage() {
             }}
             onMouseLeave={() => setChartTooltip(null)}
           >
-          {loadingData ? (
-            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-              Carregando gráfico...
-            </div>
-          ) : !hasChartData ? (
-            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-              Nenhuma chamada no período
-            </div>
-          ) : (
-            <svg
-              ref={chartRef}
-              className="w-full h-full"
-              viewBox={`0 0 ${CHART_WIDTH} ${CHART_VIEW_HEIGHT}`}
-              preserveAspectRatio="xMidYMid meet"
-            >
-              <defs>
-                <linearGradient id="grad-blue" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor={NEON_BLUE} stopOpacity="0.2" />
-                  <stop offset="100%" stopColor={NEON_BLUE} stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              {(() => {
-                const { valueToY, yTickValues } = getChartScale(chartValues)
-                return (
-                  <>
-                    <line
-                      x1={CHART_MARGIN_LEFT - 2}
-                      y1={CHART_PADDING}
-                      x2={CHART_MARGIN_LEFT - 2}
-                      y2={CHART_HEIGHT - CHART_PADDING}
-                      stroke="rgba(148, 163, 184, 0.4)"
-                      strokeWidth="1"
-                    />
-                    {yTickValues.map((v) => {
-                      const y = valueToY(v)
-                      return (
-                        <g key={v}>
-                          <line
-                            x1={CHART_MARGIN_LEFT - 2}
-                            y1={y}
-                            x2={CHART_WIDTH}
-                            y2={y}
-                            stroke="rgba(148, 163, 184, 0.12)"
-                            strokeWidth="1"
-                            strokeDasharray="4 4"
-                          />
-                          <text
-                            x={CHART_MARGIN_LEFT - 8}
-                            y={y}
-                            textAnchor="end"
-                            dominantBaseline="middle"
-                            className="fill-gray-500 text-[10px] font-semibold"
-                          >
-                            {v}
-                          </text>
-                        </g>
-                      )
-                    })}
-                    <line
-                      x1={CHART_MARGIN_LEFT}
-                      y1={CHART_HEIGHT - CHART_PADDING}
-                      x2={CHART_WIDTH}
-                      y2={CHART_HEIGHT - CHART_PADDING}
-                      stroke="rgba(148, 163, 184, 0.4)"
-                      strokeWidth="1"
-                    />
-                    {chartLabels.map((label, i) => {
-                      const tickX =
-                        CHART_MARGIN_LEFT +
-                        (PLOT_WIDTH * i) / Math.max(chartLabels.length - 1, 1)
-                      return (
-                        <g key={label + i}>
-                          <line
-                            x1={tickX}
-                            y1={CHART_HEIGHT - CHART_PADDING}
-                            x2={tickX}
-                            y2={CHART_HEIGHT}
-                            stroke="rgba(148, 163, 184, 0.25)"
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={tickX}
-                            y={CHART_VIEW_HEIGHT - 6}
-                            textAnchor="middle"
-                            dominantBaseline="auto"
-                            className="fill-gray-500 text-[10px] font-bold uppercase tracking-widest"
-                          >
-                            {label}
-                          </text>
-                        </g>
-                      )
-                    })}
-                  </>
-                )
-              })()}
-              <g transform={`translate(${CHART_MARGIN_LEFT}, 0)`}>
-                <path
-                  className="animate-chart-area"
-                  d={areaPathFromData(
-                    chartValues,
-                    PLOT_WIDTH,
-                    CHART_HEIGHT,
-                    CHART_PADDING
-                  )}
-                  fill="url(#grad-blue)"
-                />
-                <path
-                  className="chart-path animate-chart-path"
-                  d={linePathFromData(
-                    chartValues,
-                    PLOT_WIDTH,
-                    CHART_HEIGHT,
-                    CHART_PADDING
-                  )}
-                  fill="none"
-                  stroke={NEON_BLUE}
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  pathLength={100}
-                  style={{
-                    filter: `drop-shadow(0 0 4px ${NEON_BLUE})`,
-                    animationDelay: '0.4s',
-                  }}
-                />
-              </g>
-            </svg>
-          )}
-          {chartTooltip !== null && chartLabels[chartTooltip.index] !== undefined && (
-            <div
-              className="absolute z-10 pointer-events-none rounded-xl border p-4 shadow-xl backdrop-blur-sm"
-              style={{
-                left: chartTooltip.x,
-                top: chartTooltip.y,
-                backgroundColor: 'rgba(30, 30, 30, 0.95)',
-                borderColor: 'rgba(255, 255, 255, 0.1)',
-                width: 220,
-                maxWidth: 'calc(100% - 24px)',
-              }}
-            >
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
-                {chartLabels[chartTooltip.index]}
+            {loadingData ? (
+              <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                Carregando gráfico...
               </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between gap-4">
-                  <span className="text-gray-400">Chamadas</span>
-                  <span className="font-bold text-white">
-                    {chartValues[chartTooltip.index]} concluídas
-                  </span>
+            ) : !hasChartData ? (
+              <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                Nenhuma chamada no período
+              </div>
+            ) : (
+              <svg
+                ref={chartRef}
+                className="w-full h-full"
+                viewBox={`0 0 ${CHART_WIDTH} ${CHART_VIEW_HEIGHT}`}
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <defs>
+                  <linearGradient id="grad-blue" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor={NEON_BLUE} stopOpacity="0.2" />
+                    <stop offset="100%" stopColor={NEON_BLUE} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                {(() => {
+                  const { valueToY, yTickValues } = getChartScale(chartValues)
+                  return (
+                    <>
+                      <line
+                        x1={CHART_MARGIN_LEFT - 2}
+                        y1={CHART_PADDING}
+                        x2={CHART_MARGIN_LEFT - 2}
+                        y2={CHART_HEIGHT - CHART_PADDING}
+                        stroke="rgba(148, 163, 184, 0.4)"
+                        strokeWidth="1"
+                      />
+                      {yTickValues.map((v) => {
+                        const y = valueToY(v)
+                        return (
+                          <g key={v}>
+                            <line
+                              x1={CHART_MARGIN_LEFT - 2}
+                              y1={y}
+                              x2={CHART_WIDTH}
+                              y2={y}
+                              stroke="rgba(148, 163, 184, 0.12)"
+                              strokeWidth="1"
+                              strokeDasharray="4 4"
+                            />
+                            <text
+                              x={CHART_MARGIN_LEFT - 8}
+                              y={y}
+                              textAnchor="end"
+                              dominantBaseline="middle"
+                              className="fill-gray-500 text-[10px] font-semibold"
+                            >
+                              {v}
+                            </text>
+                          </g>
+                        )
+                      })}
+                      <line
+                        x1={CHART_MARGIN_LEFT}
+                        y1={CHART_HEIGHT - CHART_PADDING}
+                        x2={CHART_WIDTH}
+                        y2={CHART_HEIGHT - CHART_PADDING}
+                        stroke="rgba(148, 163, 184, 0.4)"
+                        strokeWidth="1"
+                      />
+                      {chartLabels.map((label, i) => {
+                        const tickX =
+                          CHART_MARGIN_LEFT +
+                          (PLOT_WIDTH * i) / Math.max(chartLabels.length - 1, 1)
+                        return (
+                          <g key={label + i}>
+                            <line
+                              x1={tickX}
+                              y1={CHART_HEIGHT - CHART_PADDING}
+                              x2={tickX}
+                              y2={CHART_HEIGHT}
+                              stroke="rgba(148, 163, 184, 0.25)"
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={tickX}
+                              y={CHART_VIEW_HEIGHT - 6}
+                              textAnchor="middle"
+                              dominantBaseline="auto"
+                              className="fill-gray-500 text-[10px] font-bold uppercase tracking-widest"
+                            >
+                              {label}
+                            </text>
+                          </g>
+                        )
+                      })}
+                    </>
+                  )
+                })()}
+                <g transform={`translate(${CHART_MARGIN_LEFT}, 0)`}>
+                  <path
+                    className="animate-chart-area"
+                    d={areaPathFromData(
+                      chartValues,
+                      PLOT_WIDTH,
+                      CHART_HEIGHT,
+                      CHART_PADDING
+                    )}
+                    fill="url(#grad-blue)"
+                  />
+                  <path
+                    className="chart-path animate-chart-path"
+                    d={linePathFromData(
+                      chartValues,
+                      PLOT_WIDTH,
+                      CHART_HEIGHT,
+                      CHART_PADDING
+                    )}
+                    fill="none"
+                    stroke={NEON_BLUE}
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    pathLength={100}
+                    style={{
+                      filter: `drop-shadow(0 0 4px ${NEON_BLUE})`,
+                      animationDelay: '0.4s',
+                    }}
+                  />
+                </g>
+              </svg>
+            )}
+            {chartTooltip !== null && chartLabels[chartTooltip.index] !== undefined && (
+              <div
+                className="absolute z-10 pointer-events-none rounded-xl border p-4 shadow-xl backdrop-blur-sm"
+                style={{
+                  left: chartTooltip.x,
+                  top: chartTooltip.y,
+                  backgroundColor: 'rgba(30, 30, 30, 0.95)',
+                  borderColor: 'rgba(255, 255, 255, 0.1)',
+                  width: 220,
+                  maxWidth: 'calc(100% - 24px)',
+                }}
+              >
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
+                  {chartLabels[chartTooltip.index]}
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <span className="text-gray-400">Chamadas</span>
+                    <span className="font-bold text-white">
+                      {chartValues[chartTooltip.index]} concluídas
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
         </div>
       </div>
 

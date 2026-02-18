@@ -41,8 +41,11 @@ Visão geral do que sobe onde e o que configurar.
 4. **Testar outras rotas**  
    Teste `https://seu-app.vercel.app/login`. Se `/login` também der 404, o app inteiro não está sendo servido (confirme Framework Preset e Output Directory).
 
-5. **Se ainda 404: testar build com Webpack**  
-   No Next.js 16 o build padrão é Turbopack. Para descartar problema de integração Turbopack + Vercel: em **Settings** → **Build & Development** → **Build Command** altere para `npm run build:webpack` (o script já existe em `dashboard/package.json`), faça **Redeploy**. Se passar a funcionar, o problema é compatibilidade Turbopack na Vercel; depois pode voltar o Build Command para `npm run build`.
+5. **Se ainda 404 com Next.js 16: downgrade para Next.js 15**  
+   O dashboard foi configurado para usar **Next.js 15** (em vez de 16) para máxima compatibilidade com a Vercel. O build na Vercel usa Webpack (padrão no Next 15) e evita problemas conhecidos do Next 16 (Turbopack / proxy). Faça **push** do código atual e **Redeploy** na Vercel.
+
+6. **Framework Preset é obrigatório**  
+   Em **Settings** → **Build & Development** → **Framework Preset** deve estar **Next.js**. Se estiver "Other", todas as rotas podem retornar 404 mesmo com build correto ([referência](https://stackoverflow.com/questions/65771294/nextjs-deployed-to-vercel-404-page-not-found)).
 
 ---
 

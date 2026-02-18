@@ -145,8 +145,11 @@ function ViewerContent() {
 
     if (remoteParticipants.length === 0) {
         return (
-            <div className="flex flex-1 items-center justify-center bg-black rounded-lg text-gray-500 text-sm">
-                Aguardando participante...
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-black rounded-lg p-4 text-center">
+                <p className="text-gray-500 text-sm">Aguardando participante...</p>
+                <p className="text-gray-600 text-xs max-w-sm">
+                    A extensão do vendedor precisa publicar na sala. Confira no console do Service Worker da extensão (chrome://extensions → detalhes → &quot;Service worker&quot;) se aparecem &quot;🎬 Requesting LiveKit token&quot; e &quot;✅ LiveKit token received&quot;.
+                </p>
             </div>
         );
     }

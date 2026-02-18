@@ -2,6 +2,17 @@
 
 Este documento descreve como fazer a extensão Chrome publicar a stream de vídeo/áudio (tela do Meet) para o LiveKit, para que o dashboard (viewer) assista via WebRTC com baixa latência e estabilidade.
 
+## Onde está cada parte (backend não usa LiveKit)
+
+| Componente | Papel no LiveKit |
+|------------|-------------------|
+| **Backend (Cloud Run)** | **Não participa.** Só envia `call:started` com `callId` para a extensão via WebSocket. O `callId` é o mesmo que a extensão usa como `roomName` no LiveKit. |
+| **Dashboard (Vercel)** | Gera o token LiveKit em `POST /api/livekit/token`. O gestor e a extensão pedem o token aqui. Conecta ao LiveKit Cloud como **viewer**. |
+| **Extensão** | Após receber `call:started` do backend, pede token ao **dashboard** (não ao backend) e publica no **LiveKit Cloud** como **publisher**. |
+| **LiveKit Cloud** | SFU: recebe o stream da extensão e entrega ao dashboard. |
+
+Se o dashboard ficar em "Aguardando participante", o problema está na **extensão** (token do dashboard ou publicação no LiveKit) ou no **dashboard** (CORS, `NEXT_PUBLIC_LIVEKIT_URL`), **nunca no backend**. No backend você só precisa ver nos logs a linha `📤 call:started sent` com o `callId` correto.
+
 ## Visão geral
 
 - **Publisher**: extensão Chrome (contexto offscreen ou popup) captura a aba do Meet com `getDisplayMedia` e publica no LiveKit usando `livekit-client`.

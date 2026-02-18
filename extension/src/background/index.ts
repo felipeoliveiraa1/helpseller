@@ -74,11 +74,12 @@ onWsMessage(async (data: any) => {
         if (callId && callId !== lastLiveKitCallId) {
             lastLiveKitCallId = callId;
             try {
-                console.log('🎬 Requesting LiveKit token for room:', callId);
+                const tokenUrl = `${dashboardUrl}/api/livekit/token`;
+                console.log('🎬 Requesting LiveKit token for room:', callId, 'url:', tokenUrl);
                 const accessToken = await authService.getFreshToken();
                 const session = await authService.getSession();
                 const userId = session?.user?.id ?? 'unknown';
-                const res = await fetch(`${dashboardUrl}/api/livekit/token`, {
+                const res = await fetch(tokenUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

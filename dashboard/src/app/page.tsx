@@ -1,7 +1,11 @@
-'use client'
+import Landing from './landing/page'
+
+/** Força a raiz a ser server-rendered na Vercel (evita 404 em static) */
+export const dynamic = 'force-dynamic'
 
 /**
- * Raiz "/" serve o mesmo conteúdo da landing (sem redirect).
- * Evita 404 na Vercel: a rota / entrega HTML real.
+ * Raiz "/" serve o mesmo conteúdo da landing.
  */
-export { default } from './landing/page'
+export default function RootPage() {
+    return <Landing />
+}

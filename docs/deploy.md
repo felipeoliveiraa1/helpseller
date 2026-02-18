@@ -27,30 +27,31 @@ Visão geral do que sobe onde e o que configurar.
 
 ### Se `/` ou `/landing` retornam 404 na Vercel (build OK, produção 404)
 
-1. **Root Directory**  
-   **Settings** → **General** → **Root Directory** = `dashboard` (sem barra no final).
+**Checklist (em ordem):**
 
-2. **Framework Preset e Output Directory**  
-   **Settings** → **Build & Development** (ou **General**):
-   - **Framework Preset** deve ser **Next.js**. Se estiver "Other" ou outro valor, a Vercel pode não processar o output do Next e servir 404.
-   - **Output Directory**: deixe **vazio** (não preencha). Next.js usa `.next` e a Vercel espera o output padrão do framework. Se estiver preenchido (ex.: `out` ou `.next`), pode causar 404.
+1. **URL / projeto errado**  
+   O 404 pode ser do roteador da Vercel quando o domínio não aponta para o deployment correto.  
+   **Como checar:** Vercel → seu projeto → **Deployments** → clique no **último deployment** → **Open**. Abra exatamente esse link. Se esse link abrir e o seu domínio (ex.: helpseller.vercel.app) não, o domínio está apontando para outro projeto/deployment ou a config de domínio está errada.
 
-3. **Redeploy com cache limpo**  
+2. **vercel.json na raiz do repositório**  
+   Se existir um `vercel.json` **na raiz do repo** (fora de `dashboard/`) com `rewrites`, `routes`, `build` etc., ele pode sobrepor o Next e causar 404.  
+   **O que fazer:** No repositório que a Vercel clona (ex.: helpseller), procure `vercel.json` na raiz. Se tiver, remova temporariamente ou garanta que não define rotas/build manual. O projeto só deve usar `dashboard/vercel.json` (e ele deve estar vazio `{}` ou sem rewrites conflitantes).
+
+3. **Build Settings**  
+   **Settings** → **Build & Development**:
+   - **Framework Preset**: **Next.js**
+   - **Root Directory**: `dashboard`
+   - **Build Command**: `npm run build` (ou `next build`)
+   - **Output Directory**: **vazio** (default). Se estiver preenchido com `dist`, `out` etc., a Vercel pode servir “nada” e dar 404.
+
+4. **Middleware**  
+   Se o 404 continuar, teste sem o middleware: o arquivo ativo é `dashboard/src/middleware.ts`. Foi deixado em modo **pass-through** (só repassa a requisição) para teste. O backup do middleware com auth está em `dashboard/src/middleware.disabled.ts`. Faça deploy e teste. Se o 404 sumir, o problema era redirect/rewrite no middleware; para reativar a auth, restaure o conteúdo de `middleware.disabled.ts` em `middleware.ts`.
+
+5. **Redeploy**  
    **Deployments** → ⋮ no último deploy → **Redeploy** → marque **Clear build cache and redeploy**.
 
-4. **Testar outras rotas**  
-   Teste `https://seu-app.vercel.app/login`. Se `/login` também der 404, o app inteiro não está sendo servido (confirme Framework Preset e Output Directory).
-
-5. **Se ainda 404 com Next.js 16: downgrade para Next.js 15**  
-   O dashboard foi configurado para usar **Next.js 15** (em vez de 16) para máxima compatibilidade com a Vercel. O build na Vercel usa Webpack (padrão no Next 15) e evita problemas conhecidos do Next 16 (Turbopack / proxy). Faça **push** do código atual e **Redeploy** na Vercel.
-
-6. **Framework Preset = Next.js (causa mais comum de 404)**  
-   A Vercel confirma: se o preset não for Next.js, o site pode dar 404 mesmo com build OK ([comunidade](https://community.vercel.com/t/deployed-next-js-site-shows-404-despite-successful-build/10600)).
-   - Abra **Settings** → **Build and Deployment** (ou **Build & Development**).
-   - Em **Framework Preset** (ou **Framework Settings**), selecione **Next.js** (não "Other").
-   - **Output Directory**: deixe vazio.
-   - Salve e faça **Redeploy** (com "Clear build cache and redeploy").
-   Se ainda der 404, crie um **novo projeto** na Vercel: importe o mesmo repo, Root Directory = `dashboard`, e na hora de configurar escolha Framework **Next.js**. Se o novo projeto abrir normal, o projeto antigo tem alguma configuração travada; você pode passar a usar o novo e desligar o antigo.
+6. **Novo projeto (teste)**  
+   Se ainda 404: crie um **novo projeto** na Vercel, importe o mesmo repo, Root Directory = `dashboard`, Framework = **Next.js**. Se o novo projeto abrir normal, o projeto antigo tem config travada; use o novo e desative o antigo.
 
 ---
 

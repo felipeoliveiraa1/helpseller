@@ -44,8 +44,13 @@ Visão geral do que sobe onde e o que configurar.
 5. **Se ainda 404 com Next.js 16: downgrade para Next.js 15**  
    O dashboard foi configurado para usar **Next.js 15** (em vez de 16) para máxima compatibilidade com a Vercel. O build na Vercel usa Webpack (padrão no Next 15) e evita problemas conhecidos do Next 16 (Turbopack / proxy). Faça **push** do código atual e **Redeploy** na Vercel.
 
-6. **Framework Preset é obrigatório**  
-   Em **Settings** → **Build & Development** → **Framework Preset** deve estar **Next.js**. Se estiver "Other", todas as rotas podem retornar 404 mesmo com build correto ([referência](https://stackoverflow.com/questions/65771294/nextjs-deployed-to-vercel-404-page-not-found)).
+6. **Framework Preset = Next.js (causa mais comum de 404)**  
+   A Vercel confirma: se o preset não for Next.js, o site pode dar 404 mesmo com build OK ([comunidade](https://community.vercel.com/t/deployed-next-js-site-shows-404-despite-successful-build/10600)).
+   - Abra **Settings** → **Build and Deployment** (ou **Build & Development**).
+   - Em **Framework Preset** (ou **Framework Settings**), selecione **Next.js** (não "Other").
+   - **Output Directory**: deixe vazio.
+   - Salve e faça **Redeploy** (com "Clear build cache and redeploy").
+   Se ainda der 404, crie um **novo projeto** na Vercel: importe o mesmo repo, Root Directory = `dashboard`, e na hora de configurar escolha Framework **Next.js**. Se o novo projeto abrir normal, o projeto antigo tem alguma configuração travada; você pode passar a usar o novo e desligar o antigo.
 
 ---
 

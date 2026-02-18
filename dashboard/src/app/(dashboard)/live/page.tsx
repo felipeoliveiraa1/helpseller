@@ -48,7 +48,8 @@ export default function LivePage() {
     const [role, setRole] = useState<string | null>(null);
     const [token, setToken] = useState<string | null>(null);
     const [managerUserId, setManagerUserId] = useState<string | null>(null);
-    const WS_URL = 'ws://localhost:3001/ws/manager';
+    const apiBase = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') : 'http://localhost:3001';
+    const WS_URL = apiBase.replace(/^http/, 'ws') + (apiBase.endsWith('/') ? '' : '/') + 'ws/manager';
     const useLiveKit = typeof window !== 'undefined' && !!process.env.NEXT_PUBLIC_LIVEKIT_URL;
     const [loading, setLoading] = useState(true);
     const supabase = createClient();

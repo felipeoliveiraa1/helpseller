@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "node --max-old-space-size=4096 node_modules/vite/bin/vite.js",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "package": "node scripts/package-for-distribution.mjs"
   },
   "devDependencies": {
+    "archiver": "^7.0.1",
     "@crxjs/vite-plugin": "^2.0.0-beta.33",
     "@supabase/supabase-js": "^2.95.2",
     "@types/chrome": "^0.1.36",

@@ -476,15 +476,35 @@ async function startCapture(explicitTabId?: number) {
         await connect();
 
         // 3. Ensure Offscreen Document Exists & Wait for Ready
+        const offscreenPath = 'offscreen/index.html';
+        const offscreenUrl = chrome.runtime.getURL(offscreenPath);
         const existingContexts = await chrome.runtime.getContexts({
-            contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType]
+            contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
+            documentUrls: [offscreenUrl]
         });
 
         if (existingContexts.length === 0) {
-            console.log('Creating offscreen document...');
+            // Register listener BEFORE createDocument so we don't miss OFFSCREEN_READY (race)
+            const readyPromise = new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    chrome.runtime.onMessage.removeListener(listener);
+                    reject(new Error('Timeout waiting for OFFSCREEN_READY'));
+                }, 10000);
+                const listener = (msg: any) => {
+                    if (msg.type === 'OFFSCREEN_READY') {
+                        console.log('✅ OFFSCREEN_READY received (Promise resolved)');
+                        chrome.runtime.onMessage.removeListener(listener);
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                };
+                chrome.runtime.onMessage.addListener(listener);
+            });
+
+            console.log('Creating offscreen document...', offscreenUrl);
             try {
                 await chrome.offscreen.createDocument({
-                    url: 'src/offscreen/index.html',
+                    url: offscreenUrl,
                     reasons: ['USER_MEDIA' as chrome.offscreen.Reason, 'AUDIO_PLAYBACK' as chrome.offscreen.Reason],
                     justification: 'Recording tab audio for real-time transcription'
                 });
@@ -496,28 +516,12 @@ async function startCapture(explicitTabId?: number) {
                 }
             }
 
-            // Wait for OFFSCREEN_READY signal
             console.log('⏳ Waiting for OFFSCREEN_READY...');
-            await new Promise<void>((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    chrome.runtime.onMessage.removeListener(listener);
-                    reject(new Error('Timeout waiting for OFFSCREEN_READY'));
-                }, 10000);
-
-                const listener = (msg: any) => {
-                    if (msg.type === 'OFFSCREEN_READY') {
-                        console.log('✅ OFFSCREEN_READY received (Promise resolved)');
-                        chrome.runtime.onMessage.removeListener(listener);
-                        clearTimeout(timeout);
-                        resolve();
-                    }
-                };
-                chrome.runtime.onMessage.addListener(listener);
-            });
+            await readyPromise;
         } else {
             console.log('✅ Offscreen document already exists');
         }
-        offscreenDocument = 'src/offscreen/index.html';
+        offscreenDocument = offscreenPath;
 
         // 4. Generate StreamID (Single Source of Truth - Bug 2 Fix)
         console.log('🎥 Requesting MediaStreamId for tab:', state.currentTabId);

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Call Coach</title>
+  <style>
+    html, body { margin: 0; color: #fafafa; }
+    #root {
+      min-width: 340px;
+      min-height: 380px;
+      background: linear-gradient(165deg, #0f0f1a 0%, #1a1a2e 45%, #0d0d14 100%) !important;
+      position: relative;
+      overflow: hidden;
+    }
+    #root::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(157, 0, 255, 0.15) 0%, transparent 50%),
+                  radial-gradient(ellipse 60% 40% at 50% 100%, rgba(0, 209, 255, 0.08) 0%, transparent 50%);
+      pointer-events: none;
+    }
+    @keyframes neon-pulse {
+      0%, 100% { box-shadow: 0 0 20px rgba(157, 0, 255, 0.4), 0 0 40px rgba(0, 209, 255, 0.2); }
+      50% { box-shadow: 0 0 28px rgba(157, 0, 255, 0.6), 0 0 56px rgba(0, 209, 255, 0.3); }
+    }
+    @keyframes neon-pulse-stop {
+      0%, 100% { box-shadow: 0 0 20px rgba(220, 38, 62, 0.5); }
+      50% { box-shadow: 0 0 30px rgba(220, 38, 62, 0.7); }
+    }
+    @keyframes record-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.1); }
+    }
+  </style>
+  <script type="module" crossorigin src="/assets/popup.html-BIXjUgu7.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/theme-CWql2nic.js">
+  <link rel="modulepreload" crossorigin href="/assets/auth-kta0Vm9R.js">
+  <link rel="stylesheet" crossorigin href="/assets/popup-Cmp7iQAr.css">
+</head>
+
+<body>
+  <div id="root" style="display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;">
+    <span style="color: #a3a3a3; font-size: 13px;">Carregando…</span>
+  </div>
+</body>
+
+</html>

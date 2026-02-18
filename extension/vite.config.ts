@@ -8,6 +8,10 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
+    build: {
+        sourcemap: false,
+        minify: 'esbuild',
+    },
     optimizeDeps: {
         exclude: ['lucide-react'],
     },

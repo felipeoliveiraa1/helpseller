@@ -38,9 +38,9 @@ export async function connect() {
         // ★★★ OBTAIN FRESH TOKEN BEFORE EACH CONNECTION ★★★
         console.log('🔄 Getting fresh token for WS connection...');
         const token = await authService.getFreshToken();
-        console.log('🔌 Connecting WS with fresh token...');
-
-        ws = new WebSocket(`${WS_BASE_URL}?token=${token}`);
+        const wsUrl = `${WS_BASE_URL}?token=${token}`;
+        console.log('🔌 Connecting WS:', WS_BASE_URL);
+        ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
             console.log('✅ WS Connected');
@@ -73,7 +73,7 @@ export async function connect() {
         };
 
         ws.onclose = (event) => {
-            console.error('❌ WS Closed', { code: event.code, reason: event.reason });
+            console.error('❌ WS Closed', { code: event.code, reason: event.reason || '(no reason)', clean: event.wasClean });
             ws = null;
             if (onCloseCallback) onCloseCallback();
 
@@ -94,8 +94,8 @@ export async function connect() {
             reconnectTimer = setTimeout(() => connect(), delay);
         };
 
-        ws.onerror = (error) => {
-            console.error('❌ WS Error:', error);
+        ws.onerror = () => {
+            console.error('❌ WS Error (check WS Closed above for code/reason)');
         };
 
     } catch (err: any) {

@@ -291,7 +291,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.type === 'STOP_CAPTURE') {
             stopCapture();
         } else if (message.type === 'TRY_END_CALL') {
-            send('call:end', {});
+            send('call:end', { callId: lastLiveKitCallId ?? undefined });
         } else if (message.type === 'OFFSCREEN_READY') {
             console.log('✅ [Event]: OFFSCREEN_READY - Generating fresh StreamID...');
             handleOffscreenReady();
@@ -661,9 +661,10 @@ async function stopCapture() {
         }
 
         await setState({ isRecording: false, recordingStartedAt: null });
+        const callIdToEnd = lastLiveKitCallId;
         lastLiveKitCallId = null;
         broadcastStatus('PROGRAMMED');
-        send('call:end', {});
+        send('call:end', { callId: callIdToEnd ?? undefined });
     } catch (err) {
         console.error('❌ stopCapture failed:', err);
     } finally {

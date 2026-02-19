@@ -278,7 +278,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         await handleCallParticipants(event, callId, sessionData);
                         break;
                     case 'call:end':
-                        await handleCallEnd(callId, socket);
+                        await handleCallEnd(callId, user.id, socket, event.payload);
                         break;
                     case 'media:stream': {
                         // [LIVE_DEBUG] Log every N chunks to avoid spam; always log header
@@ -762,8 +762,45 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             await redis.set(`call:${currentCallId}:session`, sessionData, 3600 * 4);
         }
 
-        async function handleCallEnd(currentCallId: string | null, ws: WebSocket) {
-            if (!currentCallId || !sessionData) return;
+        async function handleCallEnd(
+            currentCallId: string | null,
+            userId: string,
+            ws: WebSocket,
+            payload?: { callId?: string }
+        ) {
+            let resolvedCallId = currentCallId ?? (payload?.callId && payload.callId.trim() ? payload.callId.trim() : null);
+            if (!resolvedCallId && userId) {
+                const fromRedis = await redis.get<string>(`user:${userId}:current_call`);
+                if (fromRedis) {
+                    resolvedCallId = fromRedis;
+                    logger.info(`🔗 Recovered callId from Redis for call:end (user ${userId}): ${resolvedCallId}`);
+                }
+            }
+            if (!resolvedCallId) {
+                logger.warn('call:end ignored: no callId (connection, payload, or Redis)');
+                return;
+            }
+            let resolvedSession = sessionData;
+            if (!resolvedSession) {
+                resolvedSession = await redis.get<CallSession>(`call:${resolvedCallId}:session`) ?? null;
+                if (resolvedSession) {
+                    logger.info(`🔗 Recovered session from Redis for call:end: ${resolvedCallId}`);
+                }
+            }
+            if (!resolvedSession) {
+                logger.warn(`call:end: no session for call ${resolvedCallId}, marking COMPLETED without summary`);
+                const endedAt = new Date();
+                await supabaseAdmin.from('calls').update({
+                    status: 'COMPLETED',
+                    ended_at: endedAt.toISOString(),
+                }).eq('id', resolvedCallId);
+                await redis.del(`call:${resolvedCallId}:session`);
+                await redis.del(`user:${userId}:current_call`);
+                return;
+            }
+
+            const currentCallIdForRest = resolvedCallId;
+            sessionData = resolvedSession;
 
             // 1. Fetch script details for analysis
             const { data: scriptData } = await supabaseAdmin
@@ -804,17 +841,17 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 ended_at: endedAt.toISOString(),
                 duration_seconds: durationSeconds || null,
                 transcript: sessionData.transcript, // Save full transcript
-            }).eq('id', currentCallId);
+            }).eq('id', currentCallIdForRest);
 
             // 6. Save Summary to specific table
             if (summary) {
                 await supabaseAdmin.from('call_summaries').insert({
-                    call_id: currentCallId,
+                    call_id: currentCallIdForRest,
                     ...summary
                 });
             }
             // 7. Clear Redis (permite ao disconnect saber que a call já foi finalizada)
-            await redis.del(`call:${currentCallId}:session`);
+            await redis.del(`call:${currentCallIdForRest}:session`);
             if (sessionData?.userId) await redis.del(`user:${sessionData.userId}:current_call`);
         }
 

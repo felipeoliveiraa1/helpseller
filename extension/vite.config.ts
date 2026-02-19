@@ -11,6 +11,11 @@ export default defineConfig({
     build: {
         sourcemap: false,
         minify: 'esbuild',
+        rollupOptions: {
+            input: {
+                offscreen: path.resolve(__dirname, 'offscreen/index.html'),
+            },
+        },
     },
     optimizeDeps: {
         exclude: ['lucide-react'],

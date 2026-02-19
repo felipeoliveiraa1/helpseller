@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Phone, Clock, Filter, Zap, ExternalLink } from 'lucide-react';
+import { CallRaioXPanel, type CallForRaioX, type ObjectionForRaioX } from '@/components/call-raio-x-panel';
+import { Phone, Clock, Filter } from 'lucide-react';
 
 const NEON_PINK = '#ff007a';
 const CARD_STYLE = { backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' };
@@ -39,9 +38,15 @@ interface TeamMember {
 }
 
 export default function CallsPage() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const [mounted, setMounted] = useState(false);
     const [calls, setCalls] = useState<Call[]>([]);
     const [selectedCall, setSelectedCall] = useState<Call | null>(null);
+    const [selectedCallDetail, setSelectedCallDetail] = useState<CallForRaioX | null>(null);
+    const [selectedCallObjections, setSelectedCallObjections] = useState<ObjectionForRaioX[]>([]);
+    const [selectedCallLoading, setSelectedCallLoading] = useState(false);
+    const [selectedCallError, setSelectedCallError] = useState<string | null>(null);
 
     // Filters
     const [userRole, setUserRole] = useState<string>('SELLER');
@@ -51,7 +56,6 @@ export default function CallsPage() {
     const [selectedSeller, setSelectedSeller] = useState<string>('all');
     const [callsLoadError, setCallsLoadError] = useState<boolean>(false);
 
-    const transcriptScrollRef = useRef<HTMLDivElement>(null);
     const supabase = createClient();
 
     // Fetch user role, org, team members
@@ -100,30 +104,102 @@ export default function CallsPage() {
     }, []);
 
     // Fetch calls whenever filter changes; poll more often when a live call is selected (transcript updates)
-    const selectedId = selectedCall?.id ?? '';
-    const selectedStatus = selectedCall?.status ?? '';
     useEffect(() => {
         if (!mounted) return;
         fetchCalls();
-        const ms = selectedStatus === 'ACTIVE' ? 2500 : 8000;
-        const interval = setInterval(fetchCalls, ms);
+        const interval = setInterval(fetchCalls, 8000);
         return () => clearInterval(interval);
-    }, [mounted, selectedSeller, currentUserId, orgId, userRole, selectedId, selectedStatus]);
+    }, [mounted, selectedSeller, currentUserId, orgId, userRole]);
 
-    // Keep selected call in sync with refetched data so transcript updates in real time
+    const callIdFromUrl = searchParams.get('callId');
     useEffect(() => {
-        if (!selectedCall?.id || calls.length === 0) return;
-        const updated = calls.find((c) => c.id === selectedCall.id);
-        if (updated) setSelectedCall(updated);
-    }, [calls]);
+        if (!callIdFromUrl || calls.length === 0) return;
+        const found = calls.find((c) => c.id === callIdFromUrl);
+        if (found) setSelectedCall(found);
+    }, [callIdFromUrl, calls]);
 
-    // Auto-scroll transcript to bottom when new entries arrive
-    const transcriptLength = Array.isArray(selectedCall?.transcript) ? selectedCall.transcript.length : 0;
+    const fetchCallDetail = useCallback(async (callId: string) => {
+        setSelectedCallLoading(true);
+        setSelectedCallError(null);
+        try {
+            const { data: callData, error: callError } = await supabase
+                .from('calls')
+                .select(`
+                    *,
+                    user:profiles!user_id(full_name),
+                    script:scripts!calls_script_relationship(name),
+                    summary:call_summaries(*)
+                `)
+                .eq('id', callId)
+                .single();
+
+            if (callError) throw callError;
+            if (!callData) throw new Error('Chamada não encontrada');
+
+            const row = callData as any;
+            if (!row.duration_seconds && row.started_at && row.ended_at) {
+                const start = new Date(row.started_at).getTime();
+                const end = new Date(row.ended_at).getTime();
+                row.duration_seconds = Math.round((end - start) / 1000);
+            }
+            const summary = Array.isArray(row.summary) ? row.summary[0] : row.summary;
+            setSelectedCallDetail({ ...row, summary });
+
+            try {
+                const { data: objData } = await supabase
+                    .from('objection_success_metrics')
+                    .select('id, objection_id, detected_at, objection:objections(trigger_phrase, coaching_tip)')
+                    .eq('call_id', callId)
+                    .order('detected_at', { ascending: true });
+
+                if (objData) {
+                    setSelectedCallObjections((objData as any[]).map((o) => ({
+                        id: o.id,
+                        trigger_phrase: o.objection?.trigger_phrase || 'Objeção',
+                        coaching_tip: o.objection?.coaching_tip || '',
+                        detected_at: o.detected_at,
+                    })));
+                } else {
+                    setSelectedCallObjections([]);
+                }
+            } catch {
+                setSelectedCallObjections([]);
+            }
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Não foi possível carregar o Raio X.';
+            setSelectedCallError(msg);
+            setSelectedCallDetail(null);
+            setSelectedCallObjections([]);
+        } finally {
+            setSelectedCallLoading(false);
+        }
+    }, [supabase]);
+
     useEffect(() => {
-        const el = transcriptScrollRef.current;
-        if (!el) return;
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    }, [transcriptLength]);
+        if (!selectedCall?.id) {
+            setSelectedCallDetail(null);
+            setSelectedCallObjections([]);
+            setSelectedCallError(null);
+            return;
+        }
+        fetchCallDetail(selectedCall.id);
+    }, [selectedCall?.id, fetchCallDetail]);
+
+    // Poll for summary when call is COMPLETED but summary not yet available (backend may still be generating)
+    useEffect(() => {
+        if (!selectedCall?.id || !selectedCallDetail) return;
+        const isProcessing = selectedCallDetail.status === 'COMPLETED' && !selectedCallDetail.summary;
+        if (!isProcessing) return;
+        const POLL_INTERVAL_MS = 5000;
+        const MAX_POLLS = 24; // ~2 minutes
+        let pollCount = 0;
+        const intervalId = setInterval(() => {
+            pollCount += 1;
+            if (pollCount > MAX_POLLS) return;
+            fetchCallDetail(selectedCall.id);
+        }, POLL_INTERVAL_MS);
+        return () => clearInterval(intervalId);
+    }, [selectedCall?.id, selectedCallDetail?.id, selectedCallDetail?.status, selectedCallDetail?.summary, fetchCallDetail]);
 
     const fetchCalls = async () => {
         if (!currentUserId) return;
@@ -258,11 +334,20 @@ export default function CallsPage() {
                             calls.map((call) => (
                                 <div
                                     key={call.id}
-                                    className={`rounded-xl border p-4 cursor-pointer transition-colors ${selectedCall?.id === call.id
-                                        ? 'ring-2 ring-neon-pink bg-neon-pink/10 border-neon-pink/50'
-                                        : 'border-white/10 hover:bg-white/5 bg-black/20'
-                                        }`}
-                                    onClick={() => setSelectedCall(call)}
+                                    className={`rounded-xl border p-4 cursor-pointer transition-colors ${selectedCall?.id === call.id ? 'ring-2 ring-neon-pink bg-neon-pink/10 border-neon-pink/50' : 'border-white/10 hover:bg-white/5 hover:border-neon-pink/30 bg-black/20'}`}
+                                    onClick={() => {
+                                        setSelectedCall(call);
+                                        router.replace(`/calls?callId=${call.id}`, { scroll: false });
+                                    }}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            setSelectedCall(call);
+                                            router.replace(`/calls?callId=${call.id}`, { scroll: false });
+                                        }
+                                    }}
                                 >
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -312,85 +397,14 @@ export default function CallsPage() {
                     </div>
                 </div>
 
-                {/* Detalhes da chamada selecionada (histórico; ao vivo fica em /live) */}
-                <div className="flex-1 flex flex-col min-h-[280px] sm:min-h-[400px] rounded-2xl sm:rounded-[24px] border overflow-hidden" style={CARD_STYLE}>
-                    {!selectedCall ? (
-                        <div className="flex items-center justify-center flex-1 text-gray-500 p-8">
-                            <div className="text-center">
-                                <Phone className="w-16 h-16 mx-auto mb-4 text-gray-600" />
-                                <p className="text-sm">Selecione uma chamada para ver detalhes</p>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col h-full p-3 sm:p-4 gap-3 sm:gap-4 min-h-0">
-                            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm text-gray-400 shrink-0">
-                                <span>{selectedCall.user?.full_name ?? 'Vendedor'}</span>
-                                <span>·</span>
-                                <span>{selectedCall.script?.name ?? 'Script'}</span>
-                                <span>·</span>
-                                <span>{formatDuration(selectedCall.started_at, selectedCall.ended_at)}</span>
-                                {selectedCall.summary?.lead_sentiment && (
-                                    <>
-                                        <span>·</span>
-                                        <span>{selectedCall.summary.lead_sentiment}</span>
-                                    </>
-                                )}
-                                {selectedCall.summary?.result && (
-                                    <>
-                                        <span>·</span>
-                                        <span>{selectedCall.summary.result}</span>
-                                    </>
-                                )}
-                            </div>
-                            <Link
-                                href={`/calls/${selectedCall.id}`}
-                                className="inline-flex items-center justify-center gap-2 w-full sm:w-auto py-3 px-5 rounded-xl text-sm font-bold border-2 transition-all hover:opacity-95 hover:shadow-lg shrink-0"
-                                style={{
-                                    color: NEON_PINK,
-                                    borderColor: NEON_PINK,
-                                    backgroundColor: 'rgba(255, 0, 122, 0.12)',
-                                    boxShadow: '0 0 20px rgba(255, 0, 122, 0.15)',
-                                }}
-                            >
-                                <Zap className="w-4 h-4" />
-                                Ver Raio X da Venda
-                                <ExternalLink className="w-4 h-4" />
-                            </Link>
-
-                            <Card className="flex flex-col rounded-xl sm:rounded-2xl border shadow-none flex-1 min-h-0" style={CARD_STYLE}>
-                                <CardHeader className="pb-2 px-4 sm:px-6 pt-4 sm:pt-6">
-                                    <CardTitle className="text-sm sm:text-base font-bold text-white">Transcrição</CardTitle>
-                                    <CardDescription className="text-gray-500 text-xs sm:text-sm">
-                                        Registro da conversa da chamada
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="flex-1 min-h-0 flex flex-col p-0">
-                                    <div
-                                        ref={transcriptScrollRef}
-                                        className="flex-1 overflow-y-auto min-h-[160px] sm:min-h-[240px] max-h-[40vh] sm:max-h-[480px] lg:max-h-[560px] px-4 sm:px-6 pb-4 sm:pb-6 pt-2 scroll-smooth scrollbar-dark"
-                                    >
-                                        {(!selectedCall.transcript || (Array.isArray(selectedCall.transcript) && selectedCall.transcript.length === 0)) ? (
-                                            <p className="text-gray-500 text-sm">Nenhuma transcrição registrada.</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {(Array.isArray(selectedCall.transcript) ? selectedCall.transcript : []).map((item: any, idx: number) => (
-                                                    <div
-                                                        key={idx}
-                                                        className={`p-3 rounded-xl text-sm ${(item.role === 'seller' || item.speaker === 'Vendedor') ? 'bg-neon-pink/10 border border-neon-pink/20' : 'bg-white/5 border border-white/10'}`}
-                                                    >
-                                                        <div className="text-xs font-semibold text-gray-400 mb-0.5">
-                                                            {item.speaker ?? (item.role === 'seller' ? 'Vendedor' : 'Lead')}
-                                                        </div>
-                                                        <div className="text-white">{item.text ?? ''}</div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    )}
+                {/* Painel Raio X ao lado da lista */}
+                <div className="flex-1 flex flex-col min-h-[280px] sm:min-h-[400px] rounded-2xl sm:rounded-[24px] border overflow-hidden min-w-0" style={CARD_STYLE}>
+                    <CallRaioXPanel
+                        call={selectedCall ? selectedCallDetail : null}
+                        objections={selectedCallObjections}
+                        loading={selectedCall != null && selectedCallLoading}
+                        error={selectedCallError}
+                    />
                 </div>
             </div>
         </div>

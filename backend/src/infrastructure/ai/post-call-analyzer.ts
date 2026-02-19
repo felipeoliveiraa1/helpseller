@@ -63,7 +63,12 @@ export class PostCallAnalyzer {
   "ai_notes": "resumo com recomendações para próxima interação: quais perguntas SPIN fazer, quais implicações desenvolver, quais necessidades explorar"
 }`;
 
-        const transcriptText = session.transcript.map((t: any) => `[${t.speaker.toUpperCase()}] ${t.text}`).join('\n');
+        const transcriptText = (session.transcript || [])
+            .map((t: any) => `[${(t.speaker || 'UNKNOWN').toUpperCase()}] ${t.text || ''}`)
+            .join('\n');
+        if (!transcriptText || transcriptText.trim().length < 50) {
+            return { result: 'UNKNOWN', lead_sentiment: 'NEUTRAL', ai_notes: 'Transcrição insuficiente para análise.' };
+        }
 
         const userPrompt = `Script: ${scriptName}
 Etapas: ${steps.join(' → ')}

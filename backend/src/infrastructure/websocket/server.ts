@@ -69,14 +69,19 @@ export interface CallSession {
     lastLeadTranscription?: string;
     lastSellerTranscription?: string;
     leadName?: string;
+    /** Display name for seller (from extension selfName or profile) */
+    sellerName?: string;
     recentTranscriptions?: Array<{ text: string; role: string; timestamp: number }>;
     webmHeader?: Buffer[];
 }
 
 export interface TranscriptChunk {
     text: string;
-    speaker: 'seller' | 'lead';
+    /** Display name (e.g. seller name, lead name) for identifying who is speaking */
+    speaker: string;
+    role?: 'seller' | 'lead';
     timestamp: number;
+    isFinal?: boolean;
 }
 
 // Hallucination Patterns (Whisper known issues)
@@ -211,6 +216,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         let callId: string | null = null;
         let sessionData: CallSession | null = null;
         let bufferedLeadName: string | null = null; // Buffer leadName if it arrives before session
+        let bufferedSellerName: string | null = null; // Buffer sellerName (selfName) if it arrives before session
         let audioBuffer: Buffer[] = [];
         let transcriptionTimer: NodeJS.Timeout | null = null;
         let commandHandler: ((message: any) => void) | null = null; // For manager whispers
@@ -692,7 +698,14 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 logger.info(`✅ Call created in DB. ID: ${callId}`);
                 logger.info(`[LIVE_DEBUG] call:start done callId=${callId} (seller can now send media:stream)`);
 
-                // 4. Initialize Session
+                // 4. Initialize Session (seller name from profile as fallback until call:participants sends selfName)
+                const { data: sellerProfile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('full_name')
+                    .eq('id', userId)
+                    .single();
+                const sellerNameFromProfile = (sellerProfile as { full_name?: string } | null)?.full_name?.trim() || undefined;
+
                 sessionData = {
                     callId: call.id ?? '',
                     userId: userId ?? '',
@@ -704,7 +717,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     chunksSinceLastCoach: 0,
                     lastCoachingAt: 0,
                     lastSummaryAt: 0,
-                    leadName: leadName || bufferedLeadName || undefined
+                    leadName: leadName || bufferedLeadName || undefined,
+                    sellerName: bufferedSellerName || sellerNameFromProfile
                 };
 
                 // 5. Cache Session + current call by user (para finalizar ao desconectar mesmo se closure perder callId)
@@ -766,7 +780,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             currentCallId: string | null,
             userId: string,
             ws: WebSocket,
-            payload?: { callId?: string }
+            payload?: { callId?: string; result?: string }
         ) {
             let resolvedCallId = currentCallId ?? (payload?.callId && payload.callId.trim() ? payload.callId.trim() : null);
             if (!resolvedCallId && userId) {
@@ -780,6 +794,9 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 logger.warn('call:end ignored: no callId (connection, payload, or Redis)');
                 return;
             }
+            const sellerResultFromPayload = payload?.result && ['CONVERTED', 'LOST', 'FOLLOW_UP', 'UNKNOWN'].includes(payload.result)
+                ? payload.result
+                : null;
             let resolvedSession = sessionData;
             if (!resolvedSession) {
                 resolvedSession = await redis.get<CallSession>(`call:${resolvedCallId}:session`) ?? null;
@@ -788,12 +805,18 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 }
             }
             if (!resolvedSession) {
-                logger.warn(`call:end: no session for call ${resolvedCallId}, marking COMPLETED without summary`);
+                logger.warn(`call:end: no session for call ${resolvedCallId}, marking COMPLETED and saving result only`);
                 const endedAt = new Date();
                 await supabaseAdmin.from('calls').update({
                     status: 'COMPLETED',
                     ended_at: endedAt.toISOString(),
                 }).eq('id', resolvedCallId);
+                if (sellerResultFromPayload) {
+                    await supabaseAdmin.from('call_summaries').upsert(
+                        { call_id: resolvedCallId, result: sellerResultFromPayload },
+                        { onConflict: 'call_id' }
+                    );
+                }
                 await redis.del(`call:${resolvedCallId}:session`);
                 await redis.del(`user:${userId}:current_call`);
                 return;
@@ -801,6 +824,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
             const currentCallIdForRest = resolvedCallId;
             sessionData = resolvedSession;
+            const sellerResult = sellerResultFromPayload ?? undefined;
 
             // 1. Fetch script details for analysis
             const { data: scriptData } = await supabaseAdmin
@@ -817,16 +841,27 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 .select('id, trigger_phrases, suggested_response, mental_trigger, coaching_tip')
                 .eq('script_id', sessionData.scriptId);
 
-            // 2. Generate Summary
-            const summary = await postCallAnalyzer.generate(sessionData, scriptName, ["Intro", "Discovery", "Close"]);
+            // 2. Generate Summary (AI may fail, timeout or return null; we still save seller result)
+            const POST_CALL_ANALYSIS_TIMEOUT_MS = 90_000;
+            let summary: any = null;
+            try {
+                summary = await Promise.race([
+                    postCallAnalyzer.generate(sessionData, scriptName, ["Intro", "Discovery", "Close"]),
+                    new Promise<null>((_, reject) =>
+                        setTimeout(() => reject(new Error('Post-call analysis timeout')), POST_CALL_ANALYSIS_TIMEOUT_MS)
+                    ),
+                ]);
+            } catch (err: any) {
+                logger.warn({ err: err?.message }, '⚠️ Post-call summary generation failed; saving seller result only');
+            }
 
-            // NOTE: Objection success tracking was removed (migrated to AI-context analysis).
-            // The CoachEngine now detects objections via LLM instead of keyword matching.
+            // Prefer seller-reported result for call_summaries.result
+            const resultForDb = sellerResult ?? summary?.result ?? null;
 
             // 4. Send Summary to Client
             ws.send(JSON.stringify({
                 type: 'call:summary',
-                payload: summary
+                payload: summary ? { ...summary, result: resultForDb ?? summary.result } : { result: resultForDb }
             }));
 
             // 5. Update DB — compute duration_seconds
@@ -843,13 +878,14 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 transcript: sessionData.transcript, // Save full transcript
             }).eq('id', currentCallIdForRest);
 
-            // 6. Save Summary to specific table
-            if (summary) {
-                await supabaseAdmin.from('call_summaries').insert({
-                    call_id: currentCallIdForRest,
-                    ...summary
-                });
-            }
+            // 6. Save Summary to specific table (always insert so manager sees result; use seller result or AI summary)
+            const summaryRow = summary
+                ? { ...summary, result: resultForDb ?? summary.result }
+                : { result: resultForDb };
+            await supabaseAdmin.from('call_summaries').upsert(
+                { call_id: currentCallIdForRest, ...summaryRow },
+                { onConflict: 'call_id' }
+            );
             // 7. Clear Redis (permite ao disconnect saber que a call já foi finalizada)
             await redis.del(`call:${currentCallIdForRest}:session`);
             if (sessionData?.userId) await redis.del(`user:${sessionData.userId}:current_call`);
@@ -900,27 +936,43 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         async function handleCallParticipants(event: any, currentCallId: string | null, session: CallSession | null) {
             logger.info(`📨 Handling call:participants event. Payload: ${JSON.stringify(event.payload)}`);
             const leadName = event.payload?.leadName;
+            const selfName = event.payload?.selfName && String(event.payload.selfName).trim() ? String(event.payload.selfName).trim() : null;
 
-            if (!leadName) {
-                logger.warn('⚠️ Received call:participants but leadName is missing or empty');
+            if (selfName) {
+                bufferedSellerName = selfName;
+                if (session) {
+                    session.sellerName = selfName;
+                    if (sessionData && sessionData.callId === session.callId) {
+                        sessionData.sellerName = selfName;
+                    }
+                    logger.info(`👤 Seller name set in session: ${selfName}`);
+                } else {
+                    logger.info(`👤 Buffering seller name (session not ready): ${selfName}`);
+                }
+            }
+
+            if (!leadName && !selfName) {
+                logger.warn('⚠️ Received call:participants but both leadName and selfName are missing or empty');
+                if (session && currentCallId) await redis.set(`call:${currentCallId}:session`, session, 3600 * 4);
                 return;
             }
 
-            // If session doesn't exist yet, buffer the leadName
-            if (!session || !currentCallId) {
-                bufferedLeadName = leadName;
-                logger.info(`👤 Buffering lead name (session not ready): ${leadName}`);
-                return;
+            if (leadName) {
+                if (!session || !currentCallId) {
+                    bufferedLeadName = leadName;
+                    logger.info(`👤 Buffering lead name (session not ready): ${leadName}`);
+                    return;
+                }
+                session.leadName = leadName;
+                if (sessionData && sessionData.callId === session.callId) {
+                    sessionData.leadName = leadName;
+                }
+                logger.info(`👤 Lead identified and set in session: ${leadName}`);
             }
 
-            session.leadName = leadName;
-            // Also update local variable reference if it matches
-            if (sessionData && sessionData.callId === session.callId) {
-                sessionData.leadName = leadName;
+            if (session && currentCallId) {
+                await redis.set(`call:${currentCallId}:session`, session, 3600 * 4);
             }
-
-            logger.info(`👤 Lead identified and set in session: ${leadName}`);
-            await redis.set(`call:${currentCallId}:session`, session, 3600 * 4);
         }
 
         async function handleAudioSegment(event: any, ws: WebSocket) {
@@ -952,10 +1004,11 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         return;
                     }
 
-                    // 1. Dynamic Speaker Label Resolution
+                    // 1. Dynamic Speaker Label Resolution: use stored names for seller and lead
                     const dynamicSpeaker = event.payload.speakerName;
                     const currentLeadName = dynamicSpeaker || sessionData?.leadName || bufferedLeadName || 'Cliente';
-                    const speakerLabel = role === 'seller' ? 'Você' : currentLeadName;
+                    const currentSellerName = sessionData?.sellerName || bufferedSellerName || 'Vendedor';
+                    const speakerLabel = role === 'seller' ? currentSellerName : currentLeadName;
 
                     logger.info(`✨ [${speakerLabel}]: "${text}"`);
                     debugLog(`[SUCCESS] Transcription: ${text}`);
@@ -1011,7 +1064,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         const buildFullContext = (): string => {
                             // No cutoff - send everything
                             return sessionData!.transcript
-                                .map(t => `${t.speaker === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
+                                .map((t: any) => `${t.role === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
                                 .join('\n');
                         };
 
@@ -1036,7 +1089,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                                 // 2. Build Full Context
                                 const fullContext = transcriptList
-                                    .map((t: any) => `${t.speaker === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
+                                    .map((t: any) => `${t.role === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
                                     .join('\n');
 
                                 logger.info(`🧠 SPIN Coach analyzing DB CONTEXT (${fullContext.length} chars) for call ${callId}`);

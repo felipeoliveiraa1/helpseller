@@ -20,6 +20,19 @@ const CHART_MARGIN_LEFT = -10
 const PLOT_WIDTH = CHART_WIDTH - CHART_MARGIN_LEFT
 const RECENT_CALLS_LIMIT = 3
 const CHART_MONTHS_COUNT = 8
+const CHART_WEEKS_COUNT = 8
+const CHART_DAYS_COUNT = 14
+
+type Period = 'daily' | 'weekly' | 'monthly'
+
+function getStartOfWeek(d: Date): Date {
+  const x = new Date(d)
+  const day = x.getDay()
+  const diff = day === 0 ? 6 : day - 1
+  x.setDate(x.getDate() - diff)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
 
 interface ProfileInfo {
   role: string | null
@@ -105,6 +118,7 @@ export default function DashboardPage() {
     x: number
     y: number
   } | null>(null)
+  const [period, setPeriod] = useState<Period>('monthly')
   const chartRef = useRef<SVGSVGElement>(null)
   const supabase = createClient()
 
@@ -145,34 +159,57 @@ export default function DashboardPage() {
     async function loadDashboardData() {
       setLoadingData(true)
       const now = new Date()
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      startOfDay.setHours(0, 0, 0, 0)
+      const startOfDayIso = startOfDay.toISOString()
       const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-      const startOfDay = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate()
-      ).toISOString()
+      const startOfWeek = getStartOfWeek(now)
+      const startOfWeekIso = startOfWeek.toISOString()
+
+      let rangeStart: string
+      let rangeEnd: string
+      let chartStart: Date
+      let chartBucketCount: number
+      if (period === 'monthly') {
+        rangeStart = firstOfMonth
+        rangeEnd = now.toISOString()
+        chartStart = new Date(now.getFullYear(), now.getMonth() - (CHART_MONTHS_COUNT - 1), 1)
+        chartBucketCount = CHART_MONTHS_COUNT
+      } else if (period === 'weekly') {
+        rangeStart = startOfWeekIso
+        rangeEnd = now.toISOString()
+        chartStart = new Date(startOfWeek)
+        chartStart.setDate(chartStart.getDate() - 7 * (CHART_WEEKS_COUNT - 1))
+        chartBucketCount = CHART_WEEKS_COUNT
+      } else {
+        rangeStart = startOfDayIso
+        rangeEnd = now.toISOString()
+        chartStart = new Date(startOfDay)
+        chartStart.setDate(chartStart.getDate() - (CHART_DAYS_COUNT - 1))
+        chartBucketCount = CHART_DAYS_COUNT
+      }
+      const chartStartIso = chartStart.toISOString()
 
       try {
-        const [resumoMonth, resumoToday, convertedRes, followUpRes, recentRes, chartCalls, topPerfData] =
+        const [resumoPeriod, resumoToday, callsInRangeRes, recentRes, chartCalls, topPerfData] =
           await Promise.all([
             supabase
               .from('calls')
               .select('*', { count: 'exact', head: true })
               .eq('status', 'COMPLETED')
-              .gte('started_at', firstOfMonth),
+              .gte('ended_at', rangeStart)
+              .lte('ended_at', rangeEnd),
             supabase
               .from('calls')
               .select('*', { count: 'exact', head: true })
               .eq('status', 'COMPLETED')
-              .gte('started_at', startOfDay),
+              .gte('started_at', startOfDayIso),
             supabase
-              .from('call_summaries')
-              .select('call_id', { count: 'exact', head: true })
-              .eq('result', 'CONVERTED'),
-            supabase
-              .from('call_summaries')
-              .select('call_id', { count: 'exact', head: true })
-              .eq('result', 'FOLLOW_UP'),
+              .from('calls')
+              .select('id')
+              .eq('status', 'COMPLETED')
+              .gte('ended_at', rangeStart)
+              .lte('ended_at', rangeEnd),
             supabase
               .from('calls')
               .select(`
@@ -184,14 +221,11 @@ export default function DashboardPage() {
               .eq('status', 'COMPLETED')
               .order('ended_at', { ascending: false })
               .limit(RECENT_CALLS_LIMIT),
-            (() => {
-              const start = new Date(now.getFullYear(), now.getMonth() - (CHART_MONTHS_COUNT - 1), 1)
-              return supabase
-                .from('calls')
-                .select('started_at')
-                .eq('status', 'COMPLETED')
-                .gte('started_at', start.toISOString())
-            })(),
+            supabase
+              .from('calls')
+              .select('started_at, ended_at')
+              .eq('status', 'COMPLETED')
+              .gte('ended_at', chartStartIso),
             profile?.role === 'MANAGER' && profile?.organizationId
               ? Promise.all([
                 supabase
@@ -200,8 +234,10 @@ export default function DashboardPage() {
                   .eq('organization_id', profile.organizationId),
                 supabase
                   .from('calls')
-                  .select('user_id')
-                  .eq('status', 'COMPLETED'),
+                  .select('user_id, ended_at')
+                  .eq('status', 'COMPLETED')
+                  .gte('ended_at', rangeStart)
+                  .lte('ended_at', rangeEnd),
                 supabase
                   .from('call_summaries')
                   .select('call_id, result, calls!call_id(user_id)')
@@ -210,10 +246,31 @@ export default function DashboardPage() {
               : Promise.resolve([null, null, null]),
           ])
 
-        setTotalMonth(resumoMonth.count ?? 0)
+        const periodTotal = resumoPeriod.count ?? 0
+        setTotalMonth(periodTotal)
         setTodayCompleted(resumoToday.count ?? 0)
-        setConvertedCount(convertedRes.count ?? 0)
-        setFollowUpCount(followUpRes.count ?? 0)
+
+        const callIdsInRange = (callsInRangeRes.data as { id: string }[] | null)?.map((c) => c.id) ?? []
+        let convertedCount = 0
+        let followUpCount = 0
+        if (callIdsInRange.length > 0) {
+          const [convRes, followRes] = await Promise.all([
+            supabase
+              .from('call_summaries')
+              .select('call_id', { count: 'exact', head: true })
+              .eq('result', 'CONVERTED')
+              .in('call_id', callIdsInRange),
+            supabase
+              .from('call_summaries')
+              .select('call_id', { count: 'exact', head: true })
+              .eq('result', 'FOLLOW_UP')
+              .in('call_id', callIdsInRange),
+          ])
+          convertedCount = convRes.count ?? 0
+          followUpCount = followRes.count ?? 0
+        }
+        setConvertedCount(convertedCount)
+        setFollowUpCount(followUpCount)
 
         if (recentRes.data) {
           const mapped: RecentCallRow[] = (recentRes.data as unknown[]).map((r: unknown) => {
@@ -232,43 +289,86 @@ export default function DashboardPage() {
           setRecentCalls([])
         }
 
-        if (chartCalls.data && chartCalls.data.length >= 0) {
+        const chartRows = (chartCalls.data as { started_at: string; ended_at: string | null }[] | null) ?? []
+        const labels: ChartMonth[] = []
+        if (period === 'monthly') {
           const byMonth: Record<string, number> = {}
-          const firstChart = new Date(now.getFullYear(), now.getMonth() - (CHART_MONTHS_COUNT - 1), 1)
           for (let i = 0; i < CHART_MONTHS_COUNT; i++) {
-            const d = new Date(firstChart.getFullYear(), firstChart.getMonth() + i, 1)
-            const key = `${d.getFullYear()}-${d.getMonth()}`
-            byMonth[key] = 0
+            const d = new Date(chartStart.getFullYear(), chartStart.getMonth() + i, 1)
+            byMonth[`${d.getFullYear()}-${d.getMonth()}`] = 0
           }
-          ; (chartCalls.data as { started_at: string }[]).forEach((c) => {
-            const d = new Date(c.started_at)
+          chartRows.forEach((c) => {
+            const endAt = c.ended_at ?? c.started_at
+            const d = new Date(endAt)
             const key = `${d.getFullYear()}-${d.getMonth()}`
             if (key in byMonth) byMonth[key] += 1
           })
-          const labels: ChartMonth[] = []
           for (let i = 0; i < CHART_MONTHS_COUNT; i++) {
-            const d = new Date(firstChart.getFullYear(), firstChart.getMonth() + i, 1)
+            const d = new Date(chartStart.getFullYear(), chartStart.getMonth() + i, 1)
             const key = `${d.getFullYear()}-${d.getMonth()}`
-            labels.push({
-              label: `${MONTH_LABELS_PT[d.getMonth()]}`,
-              count: byMonth[key] ?? 0,
-            })
+            labels.push({ label: MONTH_LABELS_PT[d.getMonth()], count: byMonth[key] ?? 0 })
+          }
+          setChartData(labels)
+        } else if (period === 'weekly') {
+          const toWeekKey = (d: Date) => {
+            const m = getStartOfWeek(d)
+            return `${m.getFullYear()}-${(m.getMonth() + 1).toString().padStart(2, '0')}-${m.getDate().toString().padStart(2, '0')}`
+          }
+          const byWeek: Record<string, number> = {}
+          for (let i = 0; i < CHART_WEEKS_COUNT; i++) {
+            const w = new Date(chartStart)
+            w.setDate(w.getDate() + i * 7)
+            const key = toWeekKey(w)
+            byWeek[key] = 0
+          }
+          chartRows.forEach((c) => {
+            const endAt = c.ended_at ?? c.started_at
+            const d = new Date(endAt)
+            const key = toWeekKey(d)
+            if (key in byWeek) byWeek[key] += 1
+          })
+          for (let i = 0; i < CHART_WEEKS_COUNT; i++) {
+            const w = new Date(chartStart)
+            w.setDate(w.getDate() + i * 7)
+            const weekStart = getStartOfWeek(w)
+            const key = toWeekKey(weekStart)
+            const label = `${weekStart.getDate().toString().padStart(2, '0')}/${(weekStart.getMonth() + 1).toString().padStart(2, '0')}`
+            labels.push({ label, count: byWeek[key] ?? 0 })
           }
           setChartData(labels)
         } else {
-          const firstChart = new Date(now.getFullYear(), now.getMonth() - (CHART_MONTHS_COUNT - 1), 1)
-          setChartData(
-            Array.from({ length: CHART_MONTHS_COUNT }, (_, i) => {
-              const d = new Date(firstChart.getFullYear(), firstChart.getMonth() + i, 1)
-              return { label: MONTH_LABELS_PT[d.getMonth()], count: 0 }
+          const toDayKey = (d: Date) =>
+            `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`
+          const byDay: Record<string, number> = {}
+          for (let i = 0; i < CHART_DAYS_COUNT; i++) {
+            const d = new Date(chartStart)
+            d.setDate(d.getDate() + i)
+            byDay[toDayKey(d)] = 0
+          }
+          chartRows.forEach((c) => {
+            const endAt = c.ended_at ?? c.started_at
+            const d = new Date(endAt)
+            const key = toDayKey(d)
+            if (key in byDay) byDay[key] += 1
+          })
+          const dayLabels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+          for (let i = 0; i < CHART_DAYS_COUNT; i++) {
+            const d = new Date(chartStart)
+            d.setDate(d.getDate() + i)
+            const key = toDayKey(d)
+            labels.push({
+              label: `${dayLabels[d.getDay()]} ${d.getDate().toString().padStart(2, '0')}`,
+              count: byDay[key] ?? 0,
             })
-          )
+          }
+          setChartData(labels)
         }
 
         if (profile?.role === 'MANAGER' && topPerfData[0]?.data && topPerfData[1]?.data && topPerfData[2]?.data) {
           const profilesList = topPerfData[0].data as { id: string; full_name: string; role: string }[]
           const callsList = topPerfData[1].data as { user_id: string }[]
           const summariesList = topPerfData[2].data as { call_id: string; calls: { user_id: string } | null }[]
+          const callIdsSet = new Set(callIdsInRange)
           const callsByUser: Record<string, number> = {}
           const convertedByUser: Record<string, number> = {}
           profilesList.forEach((p) => {
@@ -279,6 +379,7 @@ export default function DashboardPage() {
             if (callsByUser[c.user_id] !== undefined) callsByUser[c.user_id] += 1
           })
           summariesList.forEach((s) => {
+            if (!callIdsSet.has(s.call_id)) return
             const uid = s.calls?.user_id
             if (uid && convertedByUser[uid] !== undefined) convertedByUser[uid] += 1
           })
@@ -318,7 +419,7 @@ export default function DashboardPage() {
     }
 
     loadDashboardData()
-  }, [profile, loadingProfile, supabase])
+  }, [profile, loadingProfile, period, supabase])
 
   if (loadingProfile) {
     return (
@@ -335,8 +436,9 @@ export default function DashboardPage() {
     )
   }
 
+  const totalLabel = period === 'monthly' ? 'Total no mês' : period === 'weekly' ? 'Total na semana' : 'Total hoje'
   const metrics = [
-    { value: String(totalMonth), label: 'Total de Chamadas', color: NEON_PINK, path: METRIC_PATHS[0] },
+    { value: String(totalMonth), label: totalLabel, color: NEON_PINK, path: METRIC_PATHS[0] },
     { value: String(todayCompleted), label: 'Chamadas hoje', color: NEON_BLUE, path: METRIC_PATHS[1] },
     { value: String(convertedCount), label: 'Convertidas', color: NEON_GREEN, path: METRIC_PATHS[2] },
   ]
@@ -434,14 +536,18 @@ export default function DashboardPage() {
                 className="w-2 h-2 rounded-full shrink-0"
                 style={{ backgroundColor: NEON_BLUE }}
               />
-              <span className="text-xs text-gray-400">Chamadas por mês</span>
+              <span className="text-xs text-gray-400">
+                {period === 'monthly' ? 'Chamadas por mês' : period === 'weekly' ? 'Chamadas por semana' : 'Chamadas por dia'}
+              </span>
             </div>
             <select
               className="bg-black/20 border border-white/10 rounded-lg text-xs py-1.5 px-3 text-gray-400 focus:ring-0 focus:outline-none focus:border-white/20"
-              defaultValue="monthly"
+              value={period}
+              onChange={(e) => setPeriod((e.target.value as Period))}
             >
-              <option value="monthly">Mensal</option>
+              <option value="daily">Diário</option>
               <option value="weekly">Semanal</option>
+              <option value="monthly">Mensal</option>
             </select>
           </div>
         </div>

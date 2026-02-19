@@ -26,9 +26,6 @@ export default function SimpleSidebar() {
     // Auth state
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
 
     // Recording state
     const [transcripts, setTranscripts] = useState<any[]>([]);
@@ -46,15 +43,22 @@ export default function SimpleSidebar() {
     useEffect(() => {
         const host = getHost();
         if (!host) return;
-        chrome.storage.local.get(['sidebarPosition', 'sidebarMinimized'], (r: { sidebarPosition?: { left: number; top: number }; sidebarMinimized?: boolean }) => {
+        chrome.storage.local.get(['sidebarPosition', 'sidebarMinimized', 'sidebarOpen'], (r: { sidebarPosition?: { left: number; top: number }; sidebarMinimized?: boolean; sidebarOpen?: boolean }) => {
             const pos = r.sidebarPosition;
             const defaultLeft = Math.max(0, window.innerWidth - SIDEBAR_W - 16);
             host.style.left = (pos?.left ?? defaultLeft) + 'px';
             host.style.top = (pos?.top ?? 16) + 'px';
             const min = r.sidebarMinimized ?? false;
+            const open = r.sidebarOpen === true;
             setIsMinimized(min);
-            host.style.width = min ? MIN_W + 'px' : SIDEBAR_W + 'px';
-            host.style.height = min ? MIN_H + 'px' : SIDEBAR_H;
+            if (!open) {
+                host.style.width = '0';
+                host.style.height = '0';
+                host.style.visibility = 'hidden';
+                host.style.pointerEvents = 'none';
+                return;
+            }
+            // Do not set width/height here — content script sets them after GET_SESSION to avoid flash when not logged in
         });
     }, []);
 
@@ -65,6 +69,18 @@ export default function SimpleSidebar() {
         host.style.height = isMinimized ? MIN_H + 'px' : SIDEBAR_H;
         chrome.storage.local.set({ sidebarMinimized: isMinimized });
     }, [isMinimized]);
+
+    useEffect(() => {
+        if (loading || session) return;
+        chrome.storage.local.set({ sidebarOpen: false }).catch(() => {});
+        const host = getHost();
+        if (host) {
+            host.style.width = '0';
+            host.style.height = '0';
+            host.style.visibility = 'hidden';
+            host.style.pointerEvents = 'none';
+        }
+    }, [loading, session]);
 
     const handleDragStart = (e: React.MouseEvent) => {
         if ((e.target as HTMLElement).closest('button')) return;
@@ -120,20 +136,6 @@ export default function SimpleSidebar() {
         const sess = await authService.getSession();
         setSession(sess);
         setLoading(false);
-    };
-
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-        try {
-            await authService.login(email, password);
-            await checkSession();
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
     };
 
     const handleLogout = async () => {
@@ -261,22 +263,9 @@ export default function SimpleSidebar() {
 
     if (!session) {
         return (
-            <div style={{ ...baseContainer, height: '100%', padding: 24 }}>
-                <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 20, color: TEXT }}>Entrar</h2>
-                <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <div>
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 500, marginBottom: 6, color: TEXT_SECONDARY }}>Email</label>
-                        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: RADIUS, border: `1px solid ${INPUT_BORDER}`, background: INPUT_BG, color: TEXT, fontSize: 13 }} required />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 500, marginBottom: 6, color: TEXT_SECONDARY }}>Senha</label>
-                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: RADIUS, border: `1px solid ${INPUT_BORDER}`, background: INPUT_BG, color: TEXT, fontSize: 13 }} required />
-                    </div>
-                    {error && <p style={{ color: ACCENT_DANGER, fontSize: 12 }}>{error}</p>}
-                    <button type="submit" disabled={loading} style={{ width: '100%', padding: 10, borderRadius: RADIUS, border: 'none', background: ACCENT_ACTIVE, color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                        {loading ? 'Entrando...' : 'Entrar'}
-                    </button>
-                </form>
+            <div style={{ ...baseContainer, height: '100%', padding: 24, justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+                <p style={{ fontSize: 13, color: TEXT_SECONDARY, marginBottom: 8 }}>Este painel só funciona quando você está logado.</p>
+                <p style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>Faça login no ícone da extensão na barra de ferramentas do navegador.</p>
             </div>
         );
     }

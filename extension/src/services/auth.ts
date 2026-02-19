@@ -4,6 +4,15 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+function getSupabaseAuthStorageKey(): string {
+    try {
+        const hostname = new URL(SUPABASE_URL || 'https://default.supabase.co').hostname;
+        return `sb-${hostname.split('.')[0]}-auth-token`;
+    } catch {
+        return 'sb-default-auth-token';
+    }
+}
+
 console.log('Initializing Supabase with:', SUPABASE_URL ? 'URL Present' : 'URL Missing');
 
 let supabase: any;
@@ -11,13 +20,13 @@ let supabase: any;
 try {
     supabase = createClient(SUPABASE_URL || '', SUPABASE_ANON_KEY || '', {
         auth: {
-            persistSession: false,
-            autoRefreshToken: false,
+            persistSession: true,
+            autoRefreshToken: true,
             detectSessionInUrl: false,
             storage: {
-                getItem: (key) => new Promise((resolve) => chrome.storage.local.get([key], (result) => resolve((result[key] as string) || null))),
-                setItem: (key, value) => new Promise((resolve) => chrome.storage.local.set({ [key]: value }, resolve)),
-                removeItem: (key) => new Promise((resolve) => chrome.storage.local.remove([key], resolve)),
+                getItem: (key: string) => new Promise((resolve) => chrome.storage.local.get([key], (result) => resolve((result[key] as string) || null))),
+                setItem: (key: string, value: string) => new Promise((resolve) => chrome.storage.local.set({ [key]: value }, resolve)),
+                removeItem: (key: string) => new Promise((resolve) => chrome.storage.local.remove([key], resolve)),
             }
         }
     });
@@ -44,11 +53,14 @@ export const authService = {
     },
 
     async saveSession(session: any) {
-        await chrome.storage.local.set({
+        const authKey = getSupabaseAuthStorageKey();
+        const payload: Record<string, unknown> = {
             supabase_session: session,
             access_token: session.access_token,
-            refresh_token: session.refresh_token
-        });
+            refresh_token: session.refresh_token,
+            [authKey]: JSON.stringify(session),
+        };
+        await chrome.storage.local.set(payload);
     },
 
     async getSession(): Promise<any> {
@@ -56,9 +68,22 @@ export const authService = {
         return data.supabase_session;
     },
 
+    async restoreSessionInMemory(session: any): Promise<void> {
+        if (!session?.access_token || !session?.refresh_token) return;
+        try {
+            await supabase.auth.setSession({
+                access_token: session.access_token,
+                refresh_token: session.refresh_token,
+            });
+        } catch (e) {
+            console.warn('restoreSessionInMemory failed', e);
+        }
+    },
+
     async logout() {
+        const authKey = getSupabaseAuthStorageKey();
         await supabase.auth.signOut();
-        await chrome.storage.local.remove(['supabase_session', 'access_token', 'refresh_token']);
+        await chrome.storage.local.remove(['supabase_session', 'access_token', 'refresh_token', authKey]);
     },
 
     async getFreshToken(): Promise<string> {

@@ -81,8 +81,8 @@ Responda APENAS em JSON válido, sem markdown:
 }
 `;
 
-    const recentTranscript = session.transcript.slice(-50).map(t =>
-      `[${new Date(t.timestamp).toISOString().split('T')[1].split('.')[0]}] ${t.speaker === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`
+    const recentTranscript = session.transcript.slice(-50).map((t: { timestamp: number; text: string; role?: string }) =>
+      `[${new Date(t.timestamp).toISOString().split('T')[1].split('.')[0]}] ${t.role === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`
     ).join('\n');
 
     const user = `

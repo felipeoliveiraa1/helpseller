@@ -289,7 +289,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.type === 'START_CAPTURE') {
             startCapture(message.tabId || sender.tab?.id);
         } else if (message.type === 'STOP_CAPTURE') {
-            stopCapture();
+            const result = message.result as 'CONVERTED' | 'LOST' | 'FOLLOW_UP' | 'UNKNOWN' | undefined;
+            stopCapture(result);
         } else if (message.type === 'TRY_END_CALL') {
             send('call:end', { callId: lastLiveKitCallId ?? undefined });
         } else if (message.type === 'OFFSCREEN_READY') {
@@ -385,9 +386,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     clearTimeout(timeout);
                     safeSend({ speakerName: null });
                 }
-            } catch (err) {
+            } catch (err: unknown) {
                 clearTimeout(timeout);
-                console.warn('Failed to query active speaker from content script:', err);
+                const msg = err instanceof Error ? err.message : String(err);
+                if (!msg.includes('Receiving end does not exist') && !msg.includes('Could not establish connection')) {
+                    console.warn('Failed to query active speaker from content script:', err);
+                }
                 safeSend({ speakerName: null });
             }
         }
@@ -407,6 +411,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             try { sendResponse({ status: 'PROGRAMMED', recordingStartedAt: null }); } catch (_) { }
         });
         return true;
+    }
+
+    if (message.type === 'GET_SESSION') {
+        const reply = (session: any) => {
+            try { sendResponse({ session }); } catch (_) { /* channel may be closed */ }
+            chrome.runtime.sendMessage({ type: 'SESSION_RESULT', session }).catch(() => {});
+        };
+        authService.getSession().then(reply).catch(() => reply(null));
+        return true;
+    }
+
+    if (message.type === 'TOGGLE_SUGGESTIONS_PANEL') {
+        authService.getSession().then(session => {
+            if (!session) return;
+            chrome.tabs.query({ url: ['*://meet.google.com/*', '*://*.zoom.us/*'] }, (tabs) => {
+                if (tabs.length === 0) return;
+                const tab = tabs[0];
+                if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR_TRUSTED' }).catch(() => {});
+            });
+        }).catch(() => {});
+        return false;
     }
 
     // For all other messages, we just process them without keeping the channel open
@@ -636,7 +661,7 @@ async function startCapture(explicitTabId?: number) {
     }
 }
 
-async function stopCapture() {
+async function stopCapture(result?: 'CONVERTED' | 'LOST' | 'FOLLOW_UP' | 'UNKNOWN') {
     if (isProcessing) {
         console.warn('⚠️ stopCapture ignored: already processing');
         return;
@@ -649,7 +674,7 @@ async function stopCapture() {
     }
 
     isProcessing = true;
-    console.log('⏹️ Stopping capture...');
+    console.log('⏹️ Stopping capture...', result ? `result: ${result}` : '');
     try {
         chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }).catch(() => {
             console.log('Offscreen not reachable (already closed?)');
@@ -664,7 +689,7 @@ async function stopCapture() {
         const callIdToEnd = lastLiveKitCallId;
         lastLiveKitCallId = null;
         broadcastStatus('PROGRAMMED');
-        send('call:end', { callId: callIdToEnd ?? undefined });
+        send('call:end', { callId: callIdToEnd ?? undefined, result: result ?? undefined });
     } catch (err) {
         console.error('❌ stopCapture failed:', err);
     } finally {

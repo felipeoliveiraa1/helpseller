@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { authService } from '../services/auth';
 import { Loader2, Mic, Square, LogOut, Monitor, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { TEXT, TEXT_SECONDARY, TEXT_MUTED, INPUT_BG, INPUT_BORDER, ACCENT_ACTIVE, ACCENT_DANGER, NEON_PINK, NEON_PINK_LIGHT, RADIUS } from '../lib/theme';
@@ -26,6 +26,7 @@ function formatDuration(seconds: number): string {
 export default function Popup() {
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [sessionCheckDone, setSessionCheckDone] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -37,10 +38,48 @@ export default function Popup() {
     const [suggestionsPanelOpen, setSuggestionsPanelOpen] = useState(false);
     const [isMeetOrZoomTab, setIsMeetOrZoomTab] = useState(false);
     const [activeTabId, setActiveTabId] = useState<number | null>(null);
+    const [showResultModal, setShowResultModal] = useState(false);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+    const CALL_RESULTS = [
+        { value: 'CONVERTED' as const, label: 'Venda realizada' },
+        { value: 'LOST' as const, label: 'Venda perdida' },
+        { value: 'FOLLOW_UP' as const, label: 'Em negociação' },
+        { value: 'UNKNOWN' as const, label: 'A definir' },
+    ] as const;
+
     useEffect(() => {
+        let resolved = false;
+        const applySession = (sess: any) => {
+            if (resolved) return;
+            if (sess) {
+                resolved = true;
+                setSessionCheckDone(true);
+                setLoading(false);
+                setSession(sess);
+                authService.restoreSessionInMemory(sess).catch(() => {});
+            }
+        };
+        const setNoSession = () => {
+            if (resolved) return;
+            resolved = true;
+            setSessionCheckDone(true);
+            setSession(null);
+            setLoading(false);
+        };
+        const onSessionResult = (msg: { type?: string; session?: any }) => {
+            if (msg?.type === 'SESSION_RESULT') applySession(msg.session ?? null);
+        };
+        chrome.runtime.onMessage.addListener(onSessionResult);
         checkSession();
+        authService.getSession().then((sess) => {
+            if (sess) applySession(sess);
+        }).catch(() => {});
+        const fallbackId = setTimeout(setNoSession, 3000);
+        return () => {
+            clearTimeout(fallbackId);
+            chrome.runtime.onMessage.removeListener(onSessionResult);
+        };
     }, []);
 
     useEffect(() => {
@@ -74,7 +113,7 @@ export default function Popup() {
         });
     }, []);
 
-    useEffect(() => {
+    const refreshStatus = useCallback(() => {
         chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response: { status?: string; recordingStartedAt?: number | null } | undefined) => {
             if (response?.status === 'RECORDING' || response?.status === 'PROGRAMMED' || response?.status === 'PAUSED') {
                 setStatus(response.status);
@@ -86,6 +125,20 @@ export default function Popup() {
             }
         });
     }, []);
+
+    useEffect(() => {
+        refreshStatus();
+    }, [refreshStatus]);
+
+    useEffect(() => {
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                refreshStatus();
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    }, [refreshStatus]);
 
     useEffect(() => {
         if (status === 'RECORDING' && recordingStartedAt != null) {
@@ -127,10 +180,8 @@ export default function Popup() {
         });
     }, [session, status]);
 
-    const checkSession = async () => {
-        const sess = await authService.getSession();
-        setSession(sess);
-        setLoading(false);
+    const checkSession = () => {
+        chrome.runtime.sendMessage({ type: 'GET_SESSION' }).catch(() => {});
     };
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -139,7 +190,8 @@ export default function Popup() {
         setError('');
         try {
             await authService.login(email, password);
-            await checkSession();
+            const sess = await authService.getSession();
+            setSession(sess);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -152,27 +204,44 @@ export default function Popup() {
         setSession(null);
     };
 
-    const toggleCapture = async () => {
+    const toggleCapture = async (result?: 'CONVERTED' | 'LOST' | 'FOLLOW_UP' | 'UNKNOWN') => {
         const tabId = status === 'RECORDING' ? undefined : (selectedTabId ?? tabs[0]?.id ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id);
         if (status === 'RECORDING') {
+            if (result === undefined) {
+                setShowResultModal(true);
+                return;
+            }
+            setShowResultModal(false);
             setStatus('PROGRAMMED');
             setRecordingStartedAt(null);
+            chrome.runtime.sendMessage({ type: 'STOP_CAPTURE', result });
         } else {
             setStatus('RECORDING');
             setRecordingStartedAt(Date.now());
+            chrome.runtime.sendMessage({
+                type: 'START_CAPTURE',
+                tabId: tabId ?? undefined
+            });
         }
-        chrome.runtime.sendMessage({
-            type: status === 'RECORDING' ? 'STOP_CAPTURE' : 'START_CAPTURE',
-            tabId: tabId ?? undefined
-        });
+    };
+
+    const handleStopClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (status === 'RECORDING') {
+            setShowResultModal(true);
+        } else {
+            toggleCapture();
+        }
+    };
+
+    const confirmResultAndStop = (result: 'CONVERTED' | 'LOST' | 'FOLLOW_UP' | 'UNKNOWN') => {
+        toggleCapture(result);
     };
 
     const toggleSuggestionsPanel = () => {
-        if (activeTabId == null) return;
-        chrome.tabs.sendMessage(activeTabId, { type: 'TOGGLE_SIDEBAR' }).then(() => {
+        chrome.runtime.sendMessage({ type: 'TOGGLE_SUGGESTIONS_PANEL' }, () => {
             setSuggestionsPanelOpen((prev) => !prev);
-        }).catch(() => {
-            // Tab may not have content script (not Meet/Zoom)
         });
     };
 
@@ -195,16 +264,20 @@ export default function Popup() {
 
     const base: React.CSSProperties = {
         width: '100%',
-        minHeight: '380px',
+        height: '100%',
+        minHeight: 0,
         color: TEXT,
         fontFamily: 'system-ui, -apple-system, sans-serif',
         position: 'relative',
         zIndex: 1,
-        padding: '20px 16px',
+        padding: '12px 10px',
         boxSizing: 'border-box',
+        overflow: showResultModal ? 'visible' : 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
     };
 
-    if (loading) {
+    if (!sessionCheckDone || loading) {
         return (
             <div style={{ ...base, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
                 <Loader2 size={28} style={{ color: NEON_PINK }} className="animate-spin" />
@@ -254,51 +327,51 @@ export default function Popup() {
 
     return (
         <div style={base}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <img src={logoUrl} alt="HelpSeller" style={{ height: 24, width: 'auto' }} />
-                <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: TEXT_MUTED, cursor: 'pointer', padding: 4 }} aria-label="Sair">
-                    <LogOut size={16} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexShrink: 0 }}>
+                <img src={logoUrl} alt="HelpSeller" style={{ height: 20, width: 'auto' }} />
+                <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: TEXT_MUTED, cursor: 'pointer', padding: 2 }} aria-label="Sair">
+                    <LogOut size={14} />
                 </button>
             </div>
-            <p style={{ fontSize: 10, color: TEXT_SECONDARY, marginBottom: 16 }}>{session.user?.email}</p>
+            <p style={{ fontSize: 10, color: TEXT_SECONDARY, marginBottom: 10 }}>{session.user?.email}</p>
 
             {isMeetOrZoomTab && (
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 10 }}>
                     <button
                         type="button"
                         onClick={toggleSuggestionsPanel}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 8,
+                            gap: 6,
                             width: '100%',
-                            padding: '10px 12px',
+                            padding: '8px 10px',
                             borderRadius: RADIUS,
                             border: `1px solid ${BORDER_PINK}`,
                             background: BG_CARD,
                             color: TEXT,
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: 500,
                             cursor: 'pointer',
                         }}
                     >
-                        {suggestionsPanelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+                        {suggestionsPanelOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
                         {suggestionsPanelOpen ? 'Ocultar painel de sugestões' : 'Mostrar painel de sugestões'}
                     </button>
                 </div>
             )}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '8px 12px', borderRadius: 20, background: BG_CARD, border: `1px solid ${BORDER_PINK}`, width: 'fit-content' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, padding: '6px 10px', borderRadius: 16, background: BG_CARD, border: `1px solid ${BORDER_PINK}`, width: 'fit-content', flexShrink: 0 }}>
                 <div
                     style={{
-                        width: 8,
-                        height: 8,
+                        width: 6,
+                        height: 6,
                         borderRadius: '50%',
                         background: isRecording ? NEON_PINK : TEXT_MUTED,
                         animation: isRecording ? 'record-dot 1.2s ease-in-out infinite' : undefined,
                     }}
                 />
-                <span style={{ fontSize: 11, fontWeight: 600, color: isRecording ? NEON_PINK : TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: isRecording ? NEON_PINK : TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     {isRecording ? 'Gravando' : 'Parado'}
                 </span>
             </div>
@@ -306,17 +379,18 @@ export default function Popup() {
             <div
                 style={{
                     textAlign: 'center',
-                    marginBottom: 24,
-                    padding: '20px 16px',
-                    borderRadius: 16,
+                    marginBottom: 14,
+                    padding: '12px 10px',
+                    borderRadius: 12,
                     background: BG_CARD,
                     border: `1px solid ${BORDER_PINK}`,
+                    flexShrink: 0,
                 }}
             >
-                <div style={{ fontSize: 11, color: TEXT_MUTED, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Tempo de gravação</div>
+                <div style={{ fontSize: 10, color: TEXT_MUTED, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Tempo de gravação</div>
                 <div
                     style={{
-                        fontSize: 42,
+                        fontSize: 32,
                         fontWeight: 700,
                         fontVariantNumeric: 'tabular-nums',
                         color: isRecording ? '#fff' : TEXT_MUTED,
@@ -329,8 +403,8 @@ export default function Popup() {
             </div>
 
             {!isRecording && tabs.length > 0 && (
-                <div style={{ marginBottom: 20 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 500, marginBottom: 8, color: TEXT_SECONDARY }}>
+                <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 500, marginBottom: 4, color: TEXT_SECONDARY }}>
                         <Monitor size={12} />
                         Aba
                     </label>
@@ -339,12 +413,12 @@ export default function Popup() {
                         onChange={(e) => setSelectedTabId(Number(e.target.value) || null)}
                         style={{
                             width: '100%',
-                            padding: '10px 12px',
+                            padding: '8px 10px',
                             borderRadius: RADIUS,
                             border: `1px solid ${BORDER_PINK}`,
                             background: BG_CARD,
                             color: TEXT,
-                            fontSize: 12,
+                            fontSize: 11,
                             boxSizing: 'border-box',
                         }}
                     >
@@ -357,12 +431,13 @@ export default function Popup() {
                 </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
                 <button
-                    onClick={toggleCapture}
+                    type="button"
+                    onClick={isRecording ? handleStopClick : () => toggleCapture()}
                     style={{
-                        width: 80,
-                        height: 80,
+                        width: 64,
+                        height: 64,
                         borderRadius: '50%',
                         border: 'none',
                         display: 'flex',
@@ -383,12 +458,92 @@ export default function Popup() {
                     onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                     onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                 >
-                    {isRecording ? <Square size={28} fill="currentColor" /> : <Mic size={28} />}
+                    {isRecording ? <Square size={24} fill="currentColor" /> : <Mic size={24} />}
                 </button>
             </div>
-            <p style={{ textAlign: 'center', fontSize: 11, color: TEXT_MUTED, marginTop: 12 }}>
+            <p style={{ textAlign: 'center', fontSize: 10, color: TEXT_MUTED, marginTop: 8 }}>
                 {isRecording ? 'Clique para parar' : 'Clique para iniciar'}
             </p>
+
+            {showResultModal && (
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="result-modal-title"
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        minHeight: '100%',
+                        background: 'rgba(0,0,0,0.85)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 9999,
+                        padding: 16,
+                        boxSizing: 'border-box',
+                    }}
+                    onClick={() => setShowResultModal(false)}
+                >
+                    <div
+                        style={{
+                            background: 'rgba(30,30,30,0.98)',
+                            border: `1px solid ${BORDER_PINK}`,
+                            borderRadius: 16,
+                            padding: 20,
+                            width: '100%',
+                            maxWidth: 320,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <p id="result-modal-title" style={{ fontSize: 13, fontWeight: 600, color: TEXT, marginBottom: 16, textAlign: 'center' }}>
+                            Qual foi o resultado desta chamada?
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {CALL_RESULTS.map((opt) => (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => confirmResultAndStop(opt.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 14px',
+                                        borderRadius: RADIUS,
+                                        border: `1px solid ${INPUT_BORDER}`,
+                                        background: BG_CARD,
+                                        color: TEXT,
+                                        fontSize: 12,
+                                        fontWeight: 500,
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                    }}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowResultModal(false)}
+                            style={{
+                                marginTop: 12,
+                                width: '100%',
+                                padding: 10,
+                                borderRadius: RADIUS,
+                                border: 'none',
+                                background: 'transparent',
+                                color: TEXT_MUTED,
+                                fontSize: 11,
+                                cursor: 'pointer',
+                            }}
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

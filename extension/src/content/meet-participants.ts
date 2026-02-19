@@ -141,11 +141,11 @@ export function sendParticipantInfoNow(): void {
         .map(cleanName)
         .filter((n) => n.length > 1);
     const leadName = cleaned[0] || null;
-    if (leadName || cleaned.length > 0) {
+    if (selfName || leadName || cleaned.length > 0) {
         chrome.runtime.sendMessage({
             type: 'PARTICIPANT_INFO',
             leadName: leadName || 'Lead',
-            selfName,
+            selfName: selfName || '',
             allParticipants: cleaned,
         }).catch(() => { });
     }
@@ -154,20 +154,22 @@ export function sendParticipantInfoNow(): void {
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let observer: MutationObserver | null = null;
 
-function checkAndSend(lastLeadName: { value: string }) {
+function checkAndSend(lastSent: { leadName: string; selfName: string }) {
     const { selfName, otherNames } = getParticipantNames();
     const cleaned = otherNames
         .filter((n) => n !== selfName)
         .map(cleanName)
         .filter((n) => n.length > 1);
     const leadName = cleaned[0] || null;
-
-    if (leadName && leadName !== lastLeadName.value) {
-        lastLeadName.value = leadName;
+    const leadChanged = leadName && leadName !== lastSent.leadName;
+    const selfChanged = selfName && selfName !== lastSent.selfName;
+    if (leadChanged || selfChanged) {
+        if (leadChanged) lastSent.leadName = leadName || '';
+        if (selfChanged) lastSent.selfName = selfName || '';
         chrome.runtime.sendMessage({
             type: 'PARTICIPANT_INFO',
-            leadName,
-            selfName,
+            leadName: leadName || 'Lead',
+            selfName: selfName || '',
             allParticipants: cleaned,
         }).catch(() => { });
     }
@@ -176,16 +178,16 @@ function checkAndSend(lastLeadName: { value: string }) {
 export function startParticipantMonitoring(): void {
     if (intervalId) return;
 
-    const lastLeadName = { value: '' };
+    const lastSent = { leadName: '', selfName: '' };
 
     function run() {
-        checkAndSend(lastLeadName);
+        checkAndSend(lastSent);
     }
 
     run();
     intervalId = setInterval(run, 2000);
 
-    observer = new MutationObserver(() => checkAndSend(lastLeadName));
+    observer = new MutationObserver(() => checkAndSend(lastSent));
     observer.observe(document.body, {
         childList: true,
         subtree: true,

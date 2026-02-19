@@ -23,14 +23,50 @@ if (window.location.hostname === 'meet.google.com') {
 // Painel flutuante: posição (left/top) aplicada pelo SimpleSidebar
 const host = document.createElement('div');
 host.id = 'sales-copilot-root';
-host.style.cssText = 'position:fixed;width:0;height:80vh;z-index:2147483647;transition: width 0.2s ease, height 0.2s ease;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,0,122,0.1);';
+host.style.cssText = 'position:fixed;width:0;height:0;z-index:2147483647;transition: width 0.2s ease, height 0.2s ease;border-radius:12px;overflow:hidden;visibility:hidden;pointer-events:none;';
 document.body.appendChild(host);
 
-chrome.storage.local.get(['sidebarPosition'], (r: { sidebarPosition?: { left: number; top: number } }) => {
+function setHostClosed(): void {
+    host.style.width = '0';
+    host.style.height = '0';
+    host.style.visibility = 'hidden';
+    host.style.pointerEvents = 'none';
+    host.style.boxShadow = 'none';
+    host.style.border = 'none';
+}
+function setHostOpen(): void {
+    host.style.width = '360px';
+    host.style.height = '80vh';
+    host.style.visibility = 'visible';
+    host.style.pointerEvents = 'auto';
+    host.style.boxShadow = '0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,0,122,0.1)';
+}
+
+chrome.storage.local.get(['sidebarPosition', 'sidebarOpen'], (r: { sidebarPosition?: { left: number; top: number }; sidebarOpen?: boolean }) => {
     const pos = r.sidebarPosition;
     const defaultLeft = Math.max(0, window.innerWidth - 360 - 16);
     host.style.left = (pos?.left ?? defaultLeft) + 'px';
     host.style.top = (pos?.top ?? 16) + 'px';
+    const open = r.sidebarOpen === true;
+    if (!open) {
+        setHostClosed();
+        return;
+    }
+    chrome.runtime.sendMessage({ type: 'GET_SESSION' }, (response: { session?: any } | undefined) => {
+        if (!response?.session) {
+            chrome.storage.local.set({ sidebarOpen: false }).catch(() => {});
+            setHostClosed();
+            return;
+        }
+        isOpen = true;
+        setHostOpen();
+    });
+});
+chrome.storage.onChanged.addListener((changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+    if (areaName === 'local' && changes.sidebarOpen?.newValue === false) {
+        isOpen = false;
+        setHostClosed();
+    }
 });
 
 const shadow = host.attachShadow({ mode: 'open' });
@@ -191,21 +227,38 @@ function persistSidebarOpen(open: boolean): void {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     console.log('Content script received message:', msg.type);
 
-    if (msg.type === 'TOGGLE_SIDEBAR') {
+    if (msg.type === 'TOGGLE_SIDEBAR_TRUSTED') {
         isOpen = !isOpen;
-        host.style.width = isOpen ? '360px' : '0';
-        host.style.height = isOpen ? '80vh' : '80vh';
+        if (isOpen) setHostOpen();
+        else setHostClosed();
         persistSidebarOpen(isOpen);
-        console.log('Sidebar toggled:', isOpen ? 'OPEN' : 'CLOSED');
+        console.log('Sidebar toggled (trusted):', isOpen ? 'OPEN' : 'CLOSED');
+    } else if (msg.type === 'TOGGLE_SIDEBAR') {
+        if (!isOpen) {
+            chrome.runtime.sendMessage({ type: 'GET_SESSION' }, (response: { session?: any } | undefined) => {
+                if (!response?.session) return;
+                isOpen = true;
+                setHostOpen();
+                persistSidebarOpen(true);
+                console.log('Sidebar toggled: OPEN');
+            });
+        } else {
+            isOpen = false;
+            setHostClosed();
+            persistSidebarOpen(false);
+            console.log('Sidebar toggled: CLOSED');
+        }
     } else if (msg.type === 'OPEN_SIDEBAR') {
-        isOpen = true;
-        host.style.width = '360px';
-        host.style.height = '80vh';
-        persistSidebarOpen(true);
-        console.log('Sidebar opened');
+        chrome.runtime.sendMessage({ type: 'GET_SESSION' }, (response: { session?: any } | undefined) => {
+            if (!response?.session) return;
+            isOpen = true;
+            setHostOpen();
+            persistSidebarOpen(true);
+            console.log('Sidebar opened');
+        });
     } else if (msg.type === 'CLOSE_SIDEBAR') {
         isOpen = false;
-        host.style.width = '0';
+        setHostClosed();
         persistSidebarOpen(false);
         console.log('Sidebar closed');
     } else if (msg.type === 'GET_SIDEBAR_OPEN') {

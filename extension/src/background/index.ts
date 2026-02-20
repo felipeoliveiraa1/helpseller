@@ -425,10 +425,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'TOGGLE_SUGGESTIONS_PANEL') {
         authService.getSession().then(session => {
             if (!session) return;
-            chrome.tabs.query({ url: ['*://meet.google.com/*', '*://*.zoom.us/*'] }, (tabs) => {
-                if (tabs.length === 0) return;
-                const tab = tabs[0];
-                if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR_TRUSTED' }).catch(() => {});
+            const meetZoomPatterns = ['*://meet.google.com/*', 'https://*.zoom.us/*', 'https://app.zoom.us/*'];
+            chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
+                const url = activeTab?.url ?? '';
+                const isMeetOrZoom = url.includes('meet.google.com') || url.includes('zoom.us');
+                if (activeTab?.id && isMeetOrZoom) {
+                    chrome.tabs.sendMessage(activeTab.id, { type: 'TOGGLE_SIDEBAR_TRUSTED' }).catch(() => {});
+                    return;
+                }
+                chrome.tabs.query({ url: meetZoomPatterns }, (tabs) => {
+                    if (tabs.length === 0) return;
+                    const tab = tabs.find(t => t.id === activeTab?.id) ?? tabs[0];
+                    if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR_TRUSTED' }).catch(() => {});
+                });
             });
         }).catch(() => {});
         return false;

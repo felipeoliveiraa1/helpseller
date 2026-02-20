@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { api } from '@/lib/api';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { CallRaioXPanel, type CallForRaioX, type ObjectionForRaioX } from '@/components/call-raio-x-panel';
 import { Phone, Clock, Filter } from 'lucide-react';
@@ -47,6 +48,7 @@ export default function CallsPage() {
     const [selectedCallObjections, setSelectedCallObjections] = useState<ObjectionForRaioX[]>([]);
     const [selectedCallLoading, setSelectedCallLoading] = useState(false);
     const [selectedCallError, setSelectedCallError] = useState<string | null>(null);
+    const reprocessTriggeredForCallId = useRef<string | null>(null);
 
     // Filters
     const [userRole, setUserRole] = useState<string>('SELLER');
@@ -145,26 +147,15 @@ export default function CallsPage() {
             const summary = Array.isArray(row.summary) ? row.summary[0] : row.summary;
             setSelectedCallDetail({ ...row, summary });
 
-            try {
-                const { data: objData } = await supabase
-                    .from('objection_success_metrics')
-                    .select('id, objection_id, detected_at, objection:objections(trigger_phrase, coaching_tip)')
-                    .eq('call_id', callId)
-                    .order('detected_at', { ascending: true });
-
-                if (objData) {
-                    setSelectedCallObjections((objData as any[]).map((o) => ({
-                        id: o.id,
-                        trigger_phrase: o.objection?.trigger_phrase || 'Objeção',
-                        coaching_tip: o.objection?.coaching_tip || '',
-                        detected_at: o.detected_at,
-                    })));
-                } else {
-                    setSelectedCallObjections([]);
-                }
-            } catch {
-                setSelectedCallObjections([]);
-            }
+            const objectionsFaced = (summary?.objections_faced as any[] | undefined) ?? [];
+            setSelectedCallObjections(
+                objectionsFaced.map((o: any, i: number) => ({
+                    id: o.id ?? `obj-${i}`,
+                    trigger_phrase: typeof o.objection === 'string' ? o.objection : (o.objection?.objection ?? o.trigger_phrase ?? 'Objeção'),
+                    coaching_tip: o.recommended_response ?? o.coaching_tip ?? '',
+                    detected_at: o.detected_at,
+                }))
+            );
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Não foi possível carregar o Raio X.';
             setSelectedCallError(msg);
@@ -180,10 +171,20 @@ export default function CallsPage() {
             setSelectedCallDetail(null);
             setSelectedCallObjections([]);
             setSelectedCallError(null);
+            reprocessTriggeredForCallId.current = null;
             return;
         }
         fetchCallDetail(selectedCall.id);
     }, [selectedCall?.id, fetchCallDetail]);
+
+    // Trigger reprocess once when COMPLETED and no summary (backend job also catches these)
+    useEffect(() => {
+        if (!selectedCall?.id || !selectedCallDetail) return;
+        const needsReprocess = selectedCallDetail.status === 'COMPLETED' && !selectedCallDetail.summary;
+        if (!needsReprocess || reprocessTriggeredForCallId.current === selectedCall.id) return;
+        reprocessTriggeredForCallId.current = selectedCall.id;
+        api.post(`/api/calls/${selectedCall.id}/reprocess-summary`, {}).catch(() => {});
+    }, [selectedCall?.id, selectedCallDetail?.status, selectedCallDetail?.summary]);
 
     // Poll for summary when call is COMPLETED but summary not yet available (backend may still be generating)
     useEffect(() => {

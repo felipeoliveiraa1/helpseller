@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ShoppingCart, Zap, Lightbulb, AlertTriangle, Sparkles, X, MessageSquare, Target } from 'lucide-react';
+import { ShoppingCart, Zap, Lightbulb, AlertTriangle, Sparkles, X, MessageSquare, Target, MessageCircle } from 'lucide-react';
 import { type CoachCard, useCoachingStore } from '../stores/coaching-store';
 import { BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED, ACCENT_DANGER, INPUT_BG } from '../lib/theme';
 
@@ -81,6 +81,24 @@ export function CardItem({ card, onDismiss }: { card: CoachCard; onDismiss?: (id
                 <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: TEXT_SECONDARY, background: INPUT_BG, borderRadius: 4, padding: '4px 8px', border: `1px solid ${BORDER}` }}>
                     <Target size={10} style={{ flexShrink: 0 }} />
                     <span style={{ fontWeight: 500, color: TEXT_MUTED }}>Objeção:</span> {String(card.metadata.objection)}
+                </div>
+            )}
+            {card.metadata?.suggested_response && (
+                <div style={{ marginTop: 8, fontSize: 11, background: 'rgba(34,197,94,0.08)', borderRadius: 4, padding: '6px 8px', border: '1px solid rgba(34,197,94,0.25)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, fontWeight: 600, color: 'rgb(34,197,94)' }}>
+                        <MessageCircle size={10} style={{ flexShrink: 0 }} />
+                        Resposta ao cliente
+                    </div>
+                    <p style={{ margin: 0, color: TEXT, lineHeight: 1.4 }}>{String(card.metadata.suggested_response)}</p>
+                </div>
+            )}
+            {card.metadata?.suggested_question && (
+                <div style={{ marginTop: 8, fontSize: 11, background: INPUT_BG, borderRadius: 4, padding: '6px 8px', border: `1px solid ${BORDER}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, fontWeight: 600, color: TEXT_MUTED }}>
+                        <Lightbulb size={10} style={{ flexShrink: 0 }} />
+                        Pergunta sugerida
+                    </div>
+                    <p style={{ margin: 0, color: TEXT, lineHeight: 1.4, fontWeight: 500 }}>{String(card.metadata.suggested_question)}</p>
                 </div>
             )}
         </div>

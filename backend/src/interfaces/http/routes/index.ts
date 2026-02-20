@@ -37,6 +37,30 @@ export async function routes(fastify: FastifyInstance) {
             return { message: 'Call ended processing started' };
         });
 
+        // POST /api/calls/:id/reprocess-summary — reprocessa análise da chamada (para chamadas COMPLETED sem resumo)
+        protectedRoutes.post('/calls/:id/reprocess-summary', async (request: any, reply) => {
+            const { id: callId } = request.params as { id: string };
+            const { organization_id } = request.user;
+
+            const { data: call } = await supabaseAdmin
+                .from('calls')
+                .select('organization_id')
+                .eq('id', callId)
+                .single();
+
+            if (!call || (call as any).organization_id !== organization_id) {
+                return reply.code(404).send({ error: 'Chamada não encontrada' });
+            }
+
+            const { reprocessCallSummary } = await import('../../../application/reprocess-call-summary.js');
+            const result = await reprocessCallSummary(callId);
+
+            if (!result.ok) {
+                return reply.code(400).send({ error: result.error ?? 'Falha ao reprocessar' });
+            }
+            return { success: true };
+        });
+
         // POST /api/calls/:id/outcome
         protectedRoutes.post('/calls/:id/outcome', async (request: any, reply) => {
             const { id } = request.params as { id: string };

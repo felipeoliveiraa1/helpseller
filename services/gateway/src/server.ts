@@ -43,6 +43,35 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const subscriber = redis.duplicate();
 
 const CORE_API_URL = process.env.CORE_API_URL || 'http://localhost:3004';
+const BACKEND_HTTP_URL = process.env.BACKEND_HTTP_URL || 'http://localhost:3002';
+
+// ==========================================
+// PROXY /api/* TO BACKEND (dashboard reprocess-summary and other HTTP API)
+// ==========================================
+
+server.all('/api/*', async (request, reply) => {
+    const path = request.url.split('?')[0];
+    const query = request.url.includes('?') ? '?' + request.url.split('?')[1] : '';
+    const targetUrl = `${BACKEND_HTTP_URL}${path}${query}`;
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(request.headers)) {
+        if (k.toLowerCase() === 'host') continue;
+        if (v !== undefined) headers[k] = Array.isArray(v) ? v.join(', ') : String(v);
+    }
+    try {
+        const res = await fetch(targetUrl, {
+            method: request.method,
+            headers,
+        });
+        const text = await res.text();
+        const contentType = res.headers.get('Content-Type');
+        if (contentType) reply.header('Content-Type', contentType);
+        return reply.status(res.status).send(text);
+    } catch (err: any) {
+        request.log.warn({ err: err?.message, targetUrl }, 'Proxy to backend failed');
+        return reply.code(502).send({ error: 'Backend unavailable' });
+    }
+});
 
 // ==========================================
 // SELLER WEBSOCKET ROUTE

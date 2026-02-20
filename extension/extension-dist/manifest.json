@@ -24,7 +24,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/index.tsx-loader-CeKxlhzr.js"
+        "assets/index.tsx-loader-DSeCGs2W.js"
       ],
       "matches": [
         "https://meet.google.com/*",
@@ -53,9 +53,9 @@
         "https://meet.google.com/*"
       ],
       "resources": [
-        "assets/theme-BzcN32Us.js",
-        "assets/auth-kta0Vm9R.js",
-        "assets/index.tsx-BLFGYHl3.js"
+        "assets/theme-BJTjYQlA.js",
+        "assets/auth-DmuFIzIA.js",
+        "assets/index.tsx-BOvejOGP.js"
       ],
       "use_dynamic_url": false
     }

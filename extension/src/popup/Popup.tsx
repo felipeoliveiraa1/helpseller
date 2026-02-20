@@ -105,6 +105,7 @@ export default function Popup() {
             setIsMeetOrZoomTab(isMeetZoom);
             if (isMeetZoom) {
                 chrome.tabs.sendMessage(tab.id, { type: 'GET_SIDEBAR_OPEN' }, (response: { open?: boolean } | undefined) => {
+                    if (chrome.runtime.lastError) return;
                     if (response && typeof response.open === 'boolean') {
                         setSuggestionsPanelOpen(response.open);
                     }
@@ -241,6 +242,7 @@ export default function Popup() {
 
     const toggleSuggestionsPanel = () => {
         chrome.runtime.sendMessage({ type: 'TOGGLE_SUGGESTIONS_PANEL' }, () => {
+            if (chrome.runtime.lastError) return;
             setSuggestionsPanelOpen((prev) => !prev);
         });
     };
@@ -287,9 +289,13 @@ export default function Popup() {
 
     if (!session) {
         return (
-            <div style={{ ...base, padding: 24 }}>
-                <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20, color: TEXT, letterSpacing: '-0.02em' }}>Entrar</h2>
-                <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ ...base, padding: 24, alignItems: 'center', justifyContent: 'flex-start' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+                    <img src={logoUrl} alt="HelpSeller" style={{ height: 48, width: 'auto' }} />
+                </div>
+                <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 6, color: TEXT, letterSpacing: '-0.02em', textAlign: 'center' }}>Bem-vindo ao HelpSeller</h2>
+                <p style={{ fontSize: 12, color: TEXT_SECONDARY, marginBottom: 20, textAlign: 'center', lineHeight: 1.4 }}>Faça login para usar o coach de vendas em tempo real nas suas reuniões.</p>
+                <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
                     <div>
                         <label style={{ display: 'block', fontSize: 11, fontWeight: 500, marginBottom: 4, color: TEXT_SECONDARY }}>Email</label>
                         <input

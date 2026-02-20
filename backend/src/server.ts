@@ -90,6 +90,8 @@ const start = async () => {
     try {
         await server.listen({ port: env.PORT, host: '0.0.0.0' });
         logger.info(`🚀 Server running on port ${env.PORT}`);
+        const { startReprocessJob } = await import('./application/reprocess-call-summary.js');
+        startReprocessJob();
         console.log('🔄 SERVER RESTARTED - CHECKING WATCHER');
     } catch (err) {
         logger.error(err);

@@ -73,6 +73,8 @@ export interface CallSession {
     sellerName?: string;
     recentTranscriptions?: Array<{ text: string; role: string; timestamp: number }>;
     webmHeader?: Buffer[];
+    /** Perguntas já enviadas ao vendedor (para o agente não repetir) */
+    sentQuestions?: string[];
 }
 
 export interface TranscriptChunk {
@@ -499,6 +501,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                                 transcript: dbTranscript,
                                 currentStep: 0,
                                 chunksSinceLastCoach: 0,
+                                sentQuestions: [],
                                 startedAt: Date.now(),
                                 startupTime: Date.now(),
                                 leadName: leadName || 'Cliente'
@@ -570,6 +573,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                                 transcript: Array.isArray(dbTranscript) ? dbTranscript : [],
                                 currentStep: 0,
                                 chunksSinceLastCoach: 0,
+                                sentQuestions: [],
                                 startupTime: Date.now(),
                                 leadName: leadName || 'Cliente'
                             };
@@ -715,6 +719,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     transcript: [],
                     currentStep: 1,
                     chunksSinceLastCoach: 0,
+                    sentQuestions: [],
                     lastCoachingAt: 0,
                     lastSummaryAt: 0,
                     leadName: leadName || bufferedLeadName || undefined,
@@ -878,14 +883,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 transcript: sessionData.transcript, // Save full transcript
             }).eq('id', currentCallIdForRest);
 
-            // 6. Save Summary to specific table (always insert so manager sees result; use seller result or AI summary)
+            // 6. Save Summary to specific table (only columns that exist in call_summaries)
+            const { pickSummaryRowForDb } = await import('../../shared/call-summary-db.js');
             const summaryRow = summary
-                ? { ...summary, result: resultForDb ?? summary.result }
-                : { result: resultForDb };
-            await supabaseAdmin.from('call_summaries').upsert(
-                { call_id: currentCallIdForRest, ...summaryRow },
-                { onConflict: 'call_id' }
-            );
+                ? pickSummaryRowForDb(summary as Record<string, unknown>, currentCallIdForRest, resultForDb ?? undefined)
+                : { call_id: currentCallIdForRest, result: resultForDb };
+            await supabaseAdmin.from('call_summaries').upsert(summaryRow, { onConflict: 'call_id' });
             // 7. Clear Redis (permite ao disconnect saber que a call já foi finalizada)
             await redis.del(`call:${currentCallIdForRest}:session`);
             if (sessionData?.userId) await redis.del(`user:${sessionData.userId}:current_call`);
@@ -1047,12 +1050,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         }
 
                         // ============================================
-                        // AI LOGIC: SPIN Coach (10s) + Live Summary (20s)
+                        // AI LOGIC: SPIN Coach (1 min) + Live Summary (30s)
                         // Uses 60s sliding window for context
                         // ============================================
 
                         const now = Date.now();
-                        const COACH_INTERVAL = 15000;   // 15s
+                        const COACH_INTERVAL = 60000;   // 1 minuto
                         const SUMMARY_INTERVAL = 30000; // 30s
                         const CONTEXT_WINDOW = 60000;   // 60s sliding window
 
@@ -1068,7 +1071,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                                 .join('\n');
                         };
 
-                        // A. SPIN Coach (Every 15s) → coach:tip + objection:detected
+                        // A. SPIN Coach (Every 1 min) → coach:tip + objection:detected
                         if (!sessionData.lastCoachingAt || (now - sessionData.lastCoachingAt) >= COACH_INTERVAL) {
                             sessionData.chunksSinceLastCoach = 0;
                             sessionData.lastCoachingAt = now;
@@ -1092,10 +1095,15 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                                     .map((t: any) => `${t.role === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
                                     .join('\n');
 
-                                logger.info(`🧠 SPIN Coach analyzing DB CONTEXT (${fullContext.length} chars) for call ${callId}`);
-                                const spinResult = await coachEngine.analyzeTranscription(fullContext);
+                                const sentQuestions = sessionData.sentQuestions ?? [];
+                                logger.info(`🧠 SPIN Coach analyzing DB CONTEXT (${fullContext.length} chars, ${sentQuestions.length} perguntas já enviadas) for call ${callId}`);
+                                const spinResult = await coachEngine.analyzeTranscription(fullContext, { sentQuestions });
 
                                 if (spinResult && ws.readyState === WebSocket.OPEN) {
+                                    if (spinResult.suggested_question) {
+                                        sessionData.sentQuestions = [...sentQuestions, spinResult.suggested_question];
+                                        await redis.set(`call:${callId}:session`, sessionData, 3600 * 4);
+                                    }
                                     // Always send the coaching tip
                                     ws.send(JSON.stringify({
                                         type: 'COACHING_MESSAGE',
@@ -1105,7 +1113,9 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                                             urgency: spinResult.objection ? 'high' : 'medium',
                                             metadata: {
                                                 phase: spinResult.phase,
-                                                objection: spinResult.objection
+                                                objection: spinResult.objection,
+                                                suggested_question: spinResult.suggested_question ?? undefined,
+                                                suggested_response: spinResult.suggested_response ?? undefined
                                             }
                                         }
                                     }));

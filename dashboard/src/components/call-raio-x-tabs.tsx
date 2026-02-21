@@ -185,8 +185,6 @@ function HeaderSection({ d }: { d: FlatAnalysis }) {
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {d.resultado && <Badge value={d.resultado} />}
-                    {d.sentimento && d.sentimento !== 'NEUTRAL' && <Badge value={d.sentimento} />}
-                    {d.termometro_classificacao && d.termometro_classificacao !== 'MORNO' && <Badge value={d.termometro_classificacao} />}
                 </div>
             </div>
 

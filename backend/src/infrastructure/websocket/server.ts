@@ -1132,6 +1132,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     }
                 }
             }
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'transcript:chunk',
+                    payload: { text, isFinal: true, speaker: speakerLabel, role }
+                }));
+            }
             if (callId) {
                 await redis.publish(`call:${callId}:stream`, {
                     text,

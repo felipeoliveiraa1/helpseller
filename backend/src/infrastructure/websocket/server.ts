@@ -222,6 +222,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         let audioBuffer: Buffer[] = [];
         let transcriptionTimer: NodeJS.Timeout | null = null;
         let commandHandler: ((message: any) => void) | null = null; // For manager whispers
+        let pendingTranscriptions = 0;
         let isAlive = true;
 
         // HEARTBEAT
@@ -831,6 +832,26 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             sessionData = resolvedSession;
             const sellerResult = sellerResultFromPayload ?? undefined;
 
+            // Wait for pending transcriptions to finish (race condition fix)
+            if (pendingTranscriptions > 0) {
+                logger.info(`⏳ Waiting for ${pendingTranscriptions} pending transcriptions to finish before Raio X...`);
+                let waitMs = 0;
+                while (pendingTranscriptions > 0 && waitMs < 15000) {
+                    await new Promise(r => setTimeout(r, 500));
+                    waitMs += 500;
+                }
+                if (pendingTranscriptions > 0) {
+                    logger.warn(`⚠️ Timeout waiting for transcriptions. Proceeding with pending=${pendingTranscriptions}`);
+                } else {
+                    logger.info(`✅ All transcriptions finished. Proceeding with Raio X.`);
+                }
+                // Re-fetch session data from Redis to ensure we have the absolute latest transcript edits
+                const refreshedSession = await redis.get<CallSession>(`call:${resolvedCallId}:session`);
+                if (refreshedSession) {
+                    sessionData = refreshedSession;
+                }
+            }
+
             // 1. Fetch script details for analysis
             const { data: scriptData } = await supabaseAdmin
                 .from('scripts')
@@ -994,9 +1015,15 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     ? (sessionData?.lastLeadTranscription || "Transcreva o áudio.")
                     : (sessionData?.lastSellerTranscription || "Transcreva o áudio.");
 
-                debugLog(`[WHISPER START] Transcribing ${audioBuffer.length} bytes...`);
-                const text = await whisperClient.transcribe(audioBuffer, previousText);
-                debugLog(`[WHISPER END] Result: '${text}'`);
+                pendingTranscriptions++;
+                let text = '';
+                try {
+                    debugLog(`[WHISPER START] Transcribing ${audioBuffer.length} bytes...`);
+                    text = await whisperClient.transcribe(audioBuffer, previousText);
+                    debugLog(`[WHISPER END] Result: '${text}'`);
+                } finally {
+                    pendingTranscriptions--;
+                }
 
                 if (text && text.trim().length > 0) {
                     if (isHallucination(text)) {

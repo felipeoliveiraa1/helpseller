@@ -1,0 +1,17 @@
+[
+  {
+    "call_id": "65b1c56e-439a-4e9d-a5f5-2654cce6d239",
+    "created_at": "2026-02-20T03:48:10.612959+00:00",
+    "ai_notes": "Transcrição insuficiente para análise."
+  },
+  {
+    "call_id": "f43f1c4f-c49e-46aa-8226-260ba054e680",
+    "created_at": "2026-02-20T01:54:12.996974+00:00",
+    "ai_notes": "Na próxima interação, concentre-se em entender melhor o contexto do cliente com perguntas de situação. Explore as implicações dos problemas identificados para criar um senso de urgência. Pergunte sobre como a solução pode beneficiar o cliente para conectar suas necessidades à oferta."
+  },
+  {
+    "call_id": "4d8de3d4-249b-4cee-a985-94a21af8a343",
+    "created_at": "2026-02-20T00:36:19.22532+00:00",
+    "ai_notes": "Para a próxima interação, comece com perguntas de situação para entender o contexto do cliente. Em seguida, explore problemas específicos e suas implicações. Finalmente, conecte a solução às necessidades identificadas."
+  }
+]

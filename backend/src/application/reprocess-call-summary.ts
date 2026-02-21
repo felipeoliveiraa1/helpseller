@@ -18,7 +18,7 @@ function normalizeTranscript(rows: any[]): Array<{ text: string; speaker: string
     if (!Array.isArray(rows)) return [];
     return rows.map((t: any) => ({
         text: String(t.text ?? t.content ?? t.message ?? '').trim(),
-        speaker: t.speaker ?? (t.role === 'seller' ? 'Vendedor' : t.role === 'lead' ? 'Cliente' : 'UNKNOWN') ?? 'UNKNOWN',
+        speaker: t.speaker ?? (t.role === 'seller' ? 'Vendedor' : t.role === 'lead' ? 'Cliente' : 'UNKNOWN'),
         timestamp: typeof t.timestamp === 'number' ? t.timestamp : Date.now(),
     }));
 }

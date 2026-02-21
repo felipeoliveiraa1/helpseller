@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { api } from '@/lib/api';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { CallRaioXPanel, type CallForRaioX, type ObjectionForRaioX } from '@/components/call-raio-x-panel';
-import { Phone, Clock, Filter } from 'lucide-react';
+import { Phone, Clock, Filter, Maximize2, X } from 'lucide-react';
 
 const NEON_PINK = '#ff007a';
 const CARD_STYLE = { backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' };
@@ -49,6 +49,14 @@ export default function CallsPage() {
     const [selectedCallLoading, setSelectedCallLoading] = useState(false);
     const [selectedCallError, setSelectedCallError] = useState<string | null>(null);
     const reprocessTriggeredForCallId = useRef<string | null>(null);
+    const [isRaioXExpanded, setIsRaioXExpanded] = useState(false);
+
+    // Close expanded modal on Escape key
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsRaioXExpanded(false); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
 
     // Filters
     const [userRole, setUserRole] = useState<string>('SELLER');
@@ -183,7 +191,7 @@ export default function CallsPage() {
         const needsReprocess = selectedCallDetail.status === 'COMPLETED' && !selectedCallDetail.summary;
         if (!needsReprocess || reprocessTriggeredForCallId.current === selectedCall.id) return;
         reprocessTriggeredForCallId.current = selectedCall.id;
-        api.post(`/api/calls/${selectedCall.id}/reprocess-summary`, {}).catch(() => {});
+        api.post(`/api/calls/${selectedCall.id}/reprocess-summary`, {}).catch(() => { });
     }, [selectedCall?.id, selectedCallDetail?.status, selectedCallDetail?.summary]);
 
     // Poll for summary when call is COMPLETED but summary not yet available (backend may still be generating)
@@ -369,9 +377,6 @@ export default function CallsPage() {
                                                 <div className="font-medium text-white truncate">
                                                     {call.user?.full_name ?? 'Vendedor'}
                                                 </div>
-                                                <div className="text-xs text-gray-500 truncate">
-                                                    {call.script?.name || 'Script Geral'}
-                                                </div>
                                             </div>
                                         </div>
                                         {call.status === 'ACTIVE' ? (
@@ -399,7 +404,17 @@ export default function CallsPage() {
                 </div>
 
                 {/* Painel Raio X ao lado da lista */}
-                <div className="flex-1 flex flex-col min-h-[280px] sm:min-h-[400px] rounded-2xl sm:rounded-[24px] border overflow-hidden min-w-0" style={CARD_STYLE}>
+                <div className="relative flex-1 flex flex-col min-h-[280px] sm:min-h-[400px] rounded-2xl sm:rounded-[24px] border overflow-y-auto min-w-0 max-h-[75vh] scrollbar-dark" style={CARD_STYLE}>
+                    {/* Expand button */}
+                    {selectedCallDetail && (
+                        <button
+                            onClick={() => setIsRaioXExpanded(true)}
+                            title="Expandir Raio X"
+                            className="absolute top-3 right-3 z-10 p-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600 text-slate-400 hover:text-white transition-colors"
+                        >
+                            <Maximize2 className="w-4 h-4" />
+                        </button>
+                    )}
                     <CallRaioXPanel
                         call={selectedCall ? selectedCallDetail : null}
                         objections={selectedCallObjections}
@@ -407,6 +422,37 @@ export default function CallsPage() {
                         error={selectedCallError}
                     />
                 </div>
+
+                {/* Expanded modal overlay */}
+                {isRaioXExpanded && (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                        style={{ backdropFilter: 'blur(12px)', backgroundColor: 'rgba(0,0,0,0.7)' }}
+                        onClick={() => setIsRaioXExpanded(false)}
+                    >
+                        <div
+                            className="relative w-full max-w-4xl max-h-[90vh] rounded-2xl border overflow-hidden flex flex-col shadow-2xl"
+                            style={{ backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.1)' }}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            {/* Close button */}
+                            <button
+                                onClick={() => setIsRaioXExpanded(false)}
+                                className="absolute top-4 right-4 z-10 p-1.5 rounded-lg bg-slate-700/70 hover:bg-slate-600 text-slate-400 hover:text-white transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                            <div className="overflow-y-auto flex-1 scrollbar-dark">
+                                <CallRaioXPanel
+                                    call={selectedCall ? selectedCallDetail : null}
+                                    objections={selectedCallObjections}
+                                    loading={selectedCall != null && selectedCallLoading}
+                                    error={selectedCallError}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

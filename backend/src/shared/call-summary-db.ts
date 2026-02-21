@@ -11,13 +11,14 @@ export const CALL_SUMMARY_DB_COLUMNS = [
     'lead_sentiment',
     'result',
     'ai_notes',
+    'raw_analysis',
 ] as const;
 
 const RESULT_VALUES = new Set<string>(['CONVERTED', 'FOLLOW_UP', 'LOST', 'UNKNOWN']);
 const SENTIMENT_VALUES = new Set<string>(['POSITIVE', 'NEUTRAL', 'NEGATIVE', 'MIXED']);
 const RESULT_ALIASES: Record<string, string> = { CONVERTED: 'CONVERTED', FOLLOW_UP: 'FOLLOW_UP', FOLLOWUP: 'FOLLOW_UP', LOST: 'LOST', UNKNOWN: 'UNKNOWN', SEGUIMENTO: 'FOLLOW_UP', PERDIDA: 'LOST' };
 const SENTIMENT_ALIASES: Record<string, string> = { POSITIVE: 'POSITIVE', NEUTRAL: 'NEUTRAL', NEGATIVE: 'NEGATIVE', MIXED: 'MIXED', POSITIVO: 'POSITIVE', NEUTRO: 'NEUTRAL', NEGATIVO: 'NEGATIVE', MISTO: 'MIXED' };
-const JSONB_KEYS = new Set<string>(['strengths', 'improvements', 'objections_faced', 'buying_signals']);
+const JSONB_KEYS = new Set<string>(['strengths', 'improvements', 'objections_faced', 'buying_signals', 'raw_analysis']);
 
 function normalizeResult(value: unknown): string | undefined {
     if (value == null) return undefined;
@@ -68,7 +69,6 @@ export function pickSummaryRowForDb(summary: Record<string, unknown>, callId: st
     for (const key of CALL_SUMMARY_DB_COLUMNS) {
         if (key === 'call_id' || key === 'result') continue;
         const value = summary[key];
-        if (value === undefined && key === 'result') continue;
         const sanitized = sanitizeValue(key, value);
         if (sanitized !== undefined && sanitized !== null) {
             row[key] = sanitized;

@@ -12,28 +12,28 @@ export interface SpinAnalysis {
     suggested_response: string | null;
 }
 
-// ─── SPIN Selling System Prompt ───────────────────────────────
-
 const SPIN_SYSTEM_PROMPT = `
-Você é um Coach de Vendas SPIN em tempo real. Duas funções principais:
+Você é um Coach de Vendas SPIN em tempo real auxiliando o VENDEDOR. Duas funções principais:
 1) Sugerir PERGUNTAS que o vendedor deve fazer ao lead (SPIN).
-2) Sugerir a RESPOSTA exata que o vendedor deve dar quando o lead pergunta, objeta ou levanta dúvida — preciso e rápido.
+2) Sugerir a RESPOSTA exata que o vendedor deve dar quando o lead pergunta, objeta ou levanta dúvida.
 
-## RESPOSTA AO CLIENTE (suggested_response) — PRIORIDADE ALTA
+## IDENTIFICAÇÃO DE PAPÉIS (CRÍTICO)
+Na transcrição fornecida, as falas estão estritamente marcadas com o nome de quem falou:
+- Falas marcadas como **"VENDEDOR: "** (ou o nome do vendedor) são do coachee (você está ajudando esta pessoa).
+- Falas marcadas como **"LEAD: "** (ou o nome do cliente) são do cliente/prospect.
+NUNCA confunda quem disse o quê. Leia as etiquetas antes de cada frase com máxima atenção.
+
+## RESPOSTA AO CLIENTE (suggested_response)
 Sempre que o LEAD fizer uma pergunta, levantar objeção (preço, tempo, "me manda material", desconfiança) ou dúvida, preencha "suggested_response" com a frase PRONTA que o vendedor deve dizer ao cliente — 1 ou 2 frases curtas. Exemplos:
 - "Quanto custa?" → suggested_response com enquadramento (valor, investimento, próximo passo).
 - "Preciso pensar." / "Vou falar com meu sócio." → suggested_response que mantém compromisso sem pressionar.
-- "Me manda um e-mail." → suggested_response que pede 1 coisa concreta antes (ex: "Te mando em 2 min. Só confirma: o problema hoje é X ou Y?").
+- "Me manda um e-mail." → suggested_response que pede 1 coisa concreta antes.
 - "Não tenho tempo." → suggested_response com 1 minuto ou agendamento.
 - Qualquer pergunta objetiva do lead → suggested_response clara que vira para a dor/necessidade.
-Se o lead NÃO perguntou e NÃO objetou, use suggested_response: null.
+Se o lead NÃO perguntou e NÃO objetou repito, use suggested_response: null.
 
 ## PERGUNTA SUGERIDA (suggested_question)
 Pergunta que o vendedor deve FAZER ao lead (próximo passo SPIN). NÃO repita as "Perguntas já enviadas". Se não houver pergunta nova útil, use null.
-
-## IDENTIFICAÇÃO
-- "VENDEDOR" ou "Você" = coachee. Analise performance, corrija.
-- "LEAD" = cliente. Quando ELE pergunta ou objeta → suggested_response obrigatório.
 
 ## ESTILO
 - CURTO. Máximo 4 linhas no tip. suggested_response: 1–2 frases.
@@ -46,11 +46,11 @@ S (Situação) → P (Problema/dor) → I (Implicação) → N (Necessidade). Le
 {
   "phase": "S" | "P" | "I" | "N",
   "objection": "tipo da objeção (ex: Preço, Tempo) ou null",
-  "tip": "feedback curto do coach (correção + estratégia). Perguntas em **negrito**. Use \\n para quebra.",
+  "tip": "feedback curto do coach direcionado ao VENDEDOR. Perguntas em **negrito**. Use \\n para quebra.",
   "suggested_question": "pergunta nova para o vendedor fazer ao lead" | null,
-  "suggested_response": "resposta pronta para o vendedor DIZER ao cliente (quando lead perguntou/objeta)" | null
+  "suggested_response": "resposta pronta para o vendedor DIZER ao cliente (não o que o cliente disse)" | null
 }
-Regras: suggested_response quando lead perguntou ou objetou; senão null. suggested_question não repetir as já enviadas. Português brasileiro.
+Regras finais: Só gere "suggested_response" para responder a falas que vieram EXPLICITAMENTE do LEAD. Português brasileiro.
 `;
 
 // ─── Coach Engine ─────────────────────────────────────────────
@@ -73,7 +73,7 @@ export class CoachEngine {
         const sentBlock =
             sentQuestions.length > 0
                 ? `
-## PERGUNTAS JÁ ENVIADAS AO VENDEDOR (NÃO REPITA NENHUMA DESTAS)
+## PERGUNTAS JÁ ENVIADAS AO VENDEDOR(NÃO REPITA NENHUMA DESTAS)
 ${sentQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 `
                 : '';
@@ -83,7 +83,7 @@ Transcrição completa da conversa até agora:
 ${fullTranscript}
 ${sentBlock}
 
-Analise e retorne o JSON. Se o lead fez pergunta ou objeção, preencha suggested_response (resposta pronta para o vendedor dizer). Sugira uma pergunta NOVA em suggested_question (não repita as listadas).
+Analise e retorne o JSON.Se o lead fez pergunta ou objeção, preencha suggested_response(resposta pronta para o vendedor dizer).Sugira uma pergunta NOVA em suggested_question(não repita as listadas).
 `;
 
         try {

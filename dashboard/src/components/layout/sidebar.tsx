@@ -85,21 +85,21 @@ export function Sidebar() {
       <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto scrollbar-hide" suppressHydrationWarning={true}>
         {!mounted ? (
           /* SKELETON STATE — identical on server & client initial render */
-          <div className="space-y-6 pt-2">
+          <div className="space-y-6 pt-2" suppressHydrationWarning>
             {navSections.map((section) => (
-              <div key={section.label}>
-                <div className="pb-2 px-4 text-[10px] font-bold text-gray-700 uppercase tracking-widest">
+              <div key={section.label} suppressHydrationWarning>
+                <div className="pb-2 px-4 text-[10px] font-bold text-gray-700 uppercase tracking-widest" suppressHydrationWarning>
                   {section.label}
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-1" suppressHydrationWarning>
                   {section.items.map((item) => (
                     <div
                       key={item.name}
                       suppressHydrationWarning={true}
                       className="flex items-center gap-3 px-4 py-3 rounded-xl"
                     >
-                      <div className="w-5 h-5 rounded bg-white/5 animate-pulse" />
-                      <div className="h-4 w-20 rounded bg-white/5 animate-pulse" />
+                      <div className="w-5 h-5 rounded bg-white/5 animate-pulse" suppressHydrationWarning />
+                      <div className="h-4 w-20 rounded bg-white/5 animate-pulse" suppressHydrationWarning />
                     </div>
                   ))}
                 </div>
@@ -160,22 +160,22 @@ export function Sidebar() {
           suppressHydrationWarning={true}
           className="flex items-center gap-3 rounded-xl p-2 -m-2 hover:bg-white/5 transition-colors group"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+          <div className="flex items-center gap-3" suppressHydrationWarning>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }} suppressHydrationWarning>
               {profile?.avatar_url ? (
-                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" suppressHydrationWarning />
               ) : (
-                <span className="text-sm font-bold text-white">
+                <span className="text-sm font-bold text-white" suppressHydrationWarning>
                   {displayName.charAt(0).toUpperCase()}
                 </span>
               )}
-              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-black" style={{ backgroundColor: '#ff007a' }} />
+              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-black" style={{ backgroundColor: '#ff007a' }} suppressHydrationWarning />
             </div>
-            <div className="hidden md:block overflow-hidden">
-              <p className="text-sm font-bold text-white truncate max-w-[140px]">
+            <div className="hidden md:block overflow-hidden" suppressHydrationWarning>
+              <p className="text-sm font-bold text-white truncate max-w-[140px]" suppressHydrationWarning>
                 {displayName.toUpperCase()}
               </p>
-              <p className="text-[10px] text-gray-500 truncate">{displayRole}</p>
+              <p className="text-[10px] text-gray-500 truncate" suppressHydrationWarning>{displayRole}</p>
             </div>
           </div>
           <span className="material-icons-outlined text-gray-500 text-[16px] group-hover:text-neon-pink transition-colors shrink-0">

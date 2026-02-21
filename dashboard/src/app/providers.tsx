@@ -8,7 +8,10 @@ import { ThemeProvider } from '@/components/theme-provider'
 if (typeof window !== 'undefined') {
     const originalError = console.error
     console.error = (...args) => {
-        if (typeof args[0] === 'string' && args[0].includes('bis_skin_checked')) {
+        if (typeof args[0] === 'string' && (
+            args[0].includes('bis_skin_checked') ||
+            args[0].includes('Tried to add a track for a participant')
+        )) {
             return
         }
         originalError(...args)

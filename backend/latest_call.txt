@@ -1,0 +1,33 @@
+﻿[dotenv@17.2.4] injecting env (13) from .env -- tip: ­ƒøá´©Å  run anywhere with `dotenvx run -- yourcommand`
+Call ID: 65b1c56e-439a-4e9d-a5f5-2654cce6d239
+Chunks: 39
+Text Length: 3248
+AI Notes Length: undefined
+--- AI NOTES START ---
+undefined
+--- AI NOTES END ---
+--- TRANSCRIPT START ---
+[Lucas] Eita, erro 422, amanh├ú j├í...
+[Meet: ymq-awck-drm] A mensagem do chat ├® ├║til.  Como ├® que eu resolvo?
+[Gabriel Ferreira] Obrigado.  Tchau.
+[Gabriel Ferreira] Eu vou conversar com ele aqui.
+[Gabriel Ferreira] Fiquei com a menina ontem e ela n├úo t├í reagindo.
+[Gabriel Ferreira] Pequeno, pequeno.
+[Gabriel Ferreira] O rapaz ├® todo desempregado.
+[Gabriel Ferreira] Procurando oportunidade.
+[Gabriel Ferreira] O que ├® que voc├¬ tem pra me ajudar, hein?
+[Gabriel Ferreira] Sistema.
+[Gabriel Ferreira] ├ë muito juros, ├® muito...
+[Gabriel Ferreira] Infla├º├úo.
+[Gabriel Ferreira] Sistema.
+[Gabriel Ferreira] O Legacy.
+[Gabriel Ferreira] ├ë isso a├¡, gente.
+[Gabriel Ferreira] Nem caldo de cana.
+[Gabriel Ferreira] Obrigado.
+[Gabriel Ferreira] Abriu muito espa├ºo pra entender a d├║vida.
+[Gabriel Ferreira] Bom, eu tento assistir v├¡deo.
+[Gabriel Ferreira] de Bitcoin pra tentar fugir correndo da moeda.
+[Gabriel Ferreira] Tem um nome espec├¡fico pra moeda.
+[Gabriel Ferreira] Se eu esquecer as Fiat, eu...
+[Gabr
+--- TRANSCRIPT END ---

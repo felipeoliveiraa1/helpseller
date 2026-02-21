@@ -159,19 +159,24 @@ export class DeepgramRealtimeClient {
         return this.ws?.readyState ?? WebSocket.CLOSED;
     }
 
+    private dgMessageCount = 0;
+
     private handleMessage(data: WebSocket.Data): void {
         try {
             const message = JSON.parse(data.toString());
-
+            this.dgMessageCount++;
+            if (this.dgMessageCount <= 3 || this.dgMessageCount % 100 === 0) {
+                logger.info(`[DG MSG #${this.dgMessageCount}] [${this.role}] type=${message.type}`);
+            }
             if (message.type === 'Results') {
                 this.handleTranscriptResult(message as DeepgramTranscriptResponse);
             } else if (message.type === 'UtteranceEnd') {
                 logger.info(`[DG UTTERANCE_END] [${this.role}]`);
                 this.onUtteranceEnd();
             } else if (message.type === 'SpeechStarted') {
-                // VAD detected speech start — no action needed
+                logger.info(`[DG SPEECH_STARTED] [${this.role}]`);
             } else if (message.type === 'Metadata') {
-                logger.debug({ metadata: message }, `🎙️ Deepgram [${this.role}] metadata`);
+                logger.info(`[DG METADATA] [${this.role}] request_id=${message.request_id}`);
             } else if (message.type === 'Error') {
                 logger.error({ message }, `🎙️ Deepgram [${this.role}] server error`);
                 this.onError(new Error(message.description || 'Deepgram server error'));
@@ -181,10 +186,15 @@ export class DeepgramRealtimeClient {
         }
     }
 
-    private handleTranscriptResult(result: DeepgramTranscriptResponse): void {
-        const transcript = result.channel?.alternatives?.[0]?.transcript || '';
-        if (!transcript.trim()) return;
+    private dgResultCount = 0;
 
+    private handleTranscriptResult(result: DeepgramTranscriptResponse): void {
+        this.dgResultCount++;
+        const transcript = result.channel?.alternatives?.[0]?.transcript || '';
+        if (this.dgResultCount <= 5 || this.dgResultCount % 50 === 0) {
+            logger.info(`[DG RESULT #${this.dgResultCount}] [${this.role}] is_final=${result.is_final} speech_final=${result.speech_final} text="${transcript.slice(0, 60)}" dur=${result.duration?.toFixed(1)}`);
+        }
+        if (!transcript.trim()) return;
         if (result.is_final) {
             logger.info(`[DG FINAL] [${this.role}] "${transcript.slice(0, 80)}"`);
             this.onFinal(transcript);

@@ -844,8 +844,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             const sellerResult = sellerResultFromPayload ?? undefined;
 
             // Flush remaining Deepgram audio and close streams
-            if (dgLeadClient) dgLeadClient.finish();
-            if (dgSellerClient) dgSellerClient.finish();
+            if (dgLeadClient) dgLeadClient.close();
+            if (dgSellerClient) dgSellerClient.close();
 
             // Wait for pending transcriptions to finish (race condition fix)
             if (pendingTranscriptions > 0) {
@@ -1180,16 +1180,23 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             if (dgSellerClient) { dgSellerClient.close(); dgSellerClient = null; }
         }
 
+        let dgAudioChunkCount = 0;
+
         async function handleAudioSegment(event: any, ws: WebSocket) {
             const audioBuf = Buffer.from(event.payload.audio, 'base64');
             const rawRole = event.payload.role || event.payload.speaker || 'lead';
             const role: 'seller' | 'lead' = rawRole === 'seller' ? 'seller' : 'lead';
-            debugLog(`[AUDIO] Received ${audioBuf.length} bytes for role: ${role}`);
             if (useDeepgram) {
+                dgAudioChunkCount++;
                 const client = role === 'seller' ? dgSellerClient : dgLeadClient;
                 if (!client) {
                     logger.warn(`⚠️ Deepgram [${role}] client not initialized; dropping audio chunk`);
                     return;
+                }
+                if (dgAudioChunkCount <= 3 || dgAudioChunkCount % 40 === 0) {
+                    const headerHex = audioBuf.length >= 4 ? audioBuf.slice(0, 4).toString('hex') : 'short';
+                    const wsState = client.getReadyState();
+                    logger.info(`🔊 [DG] audio:segment #${dgAudioChunkCount} role=${role} bytes=${audioBuf.length} header=${headerHex} wsState=${wsState}`);
                 }
                 client.sendAudio(audioBuf);
                 return;

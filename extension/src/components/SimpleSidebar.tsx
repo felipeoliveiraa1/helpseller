@@ -203,7 +203,7 @@ export default function SimpleSidebar() {
 
     useEffect(() => {
         transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [transcripts, coaching]);
+    }, [transcripts, coachFeed]);
 
     useEffect(() => {
         const listener = (msg: any) => {

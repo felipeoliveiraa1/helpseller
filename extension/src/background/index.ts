@@ -136,20 +136,19 @@ onWsMessage(async (data: any) => {
         }
     }
 
-    if (data.type === 'transcript:chunk') {
+    if (data.type === 'transcript:chunk' || data.type === 'transcript:interim') {
         const payload = data.payload || {};
         const text = payload.text || '';
         const speaker = payload.speaker || payload.role;
+        const isFinal = data.type === 'transcript:chunk' ? (payload.isFinal ?? true) : false;
 
-        console.log('📝 Received transcript:', text.substring(0, 50), 'speaker:', speaker);
+        console.log(`📝 Received ${data.type}:`, text.substring(0, 50), 'speaker:', speaker, 'isFinal:', isFinal);
 
-        // NEW: Try edge processing first for lead objections
-        if ((speaker === 'lead' || speaker === 'Cliente') && cachedObjections.length > 0) {
+        if (isFinal && (speaker === 'lead' || speaker === 'Cliente') && cachedObjections.length > 0) {
             try {
                 const localResult = await edgeCoach.processTranscript(text, speaker, cachedObjections);
 
                 if (localResult) {
-                    // Local match successful! Send card directly to sidebar
                     const state = await getState();
                     if (state.currentTabId) {
                         chrome.tabs.sendMessage(state.currentTabId, {
@@ -169,14 +168,13 @@ onWsMessage(async (data: any) => {
             }
         }
 
-        // Forward transcript to sidebar (for display)
         const state = await getState();
         if (state.currentTabId) {
             chrome.tabs.sendMessage(state.currentTabId, {
                 type: 'TRANSCRIPT_RESULT',
                 data: {
                     text,
-                    isFinal: payload.isFinal ?? true,
+                    isFinal,
                     timestamp: Date.now(),
                     speaker: payload.speaker ?? (payload.role === 'seller' ? 'Você' : 'Cliente'),
                     role: payload.role

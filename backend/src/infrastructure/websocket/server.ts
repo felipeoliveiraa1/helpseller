@@ -1056,7 +1056,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     logger.error({ updateError, callId }, '❌ DB UPDATE ERROR: Failed to save transcript');
                 }
                 const now = Date.now();
-                const COACH_INTERVAL = 60000;
+                const COACH_INTERVAL = 15000;
                 const SUMMARY_INTERVAL = 30000;
                 const CONTEXT_WINDOW = 60000;
                 if (!sessionData.chunksSinceLastCoach) sessionData.chunksSinceLastCoach = 0;

@@ -8,7 +8,8 @@
     "tabCapture",
     "offscreen",
     "storage",
-    "tabs"
+    "tabs",
+    "audioCapture"
   ],
   "host_permissions": [
     "https://meet.google.com/*",

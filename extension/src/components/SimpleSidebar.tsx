@@ -341,56 +341,52 @@ export default function SimpleSidebar() {
                 </div>
             )}
 
-            {/* Coach Feed — all recent tips visible */}
+            {/* Coach Feed — prominent coaching cards */}
             {coachFeed.length > 0 && (
-                <div style={{ flexShrink: 0, maxHeight: '45%', overflowY: 'auto', borderBottom: `1px solid ${BORDER}` }}>
+                <div style={{ flexShrink: 0, maxHeight: '50%', overflowY: 'auto', borderBottom: `1px solid ${BORDER}` }}>
                     {coachFeed.map((item, idx) => {
                         const isLatest = idx === 0;
-                        const opacity = isLatest ? 1 : 0.55;
+                        const opacity = isLatest ? 1 : 0.45;
                         return (
-                            <div key={`cf-${item.timestamp}-${idx}`} style={{ opacity, borderBottom: idx < coachFeed.length - 1 ? `1px solid ${BORDER}` : 'none', animation: isLatest ? 'slideIn 0.3s ease' : 'none' }}>
-                                {/* Objection banner */}
+                            <div key={`cf-${item.timestamp}-${idx}`} style={{ opacity, borderBottom: idx < coachFeed.length - 1 ? `1px solid ${BORDER}` : 'none', animation: isLatest ? 'coachPop 0.4s ease' : 'none' }}>
                                 {item.objection && (
-                                    <div style={{ padding: '6px 12px', background: 'rgba(239,68,68,0.08)', borderBottom: '1px solid rgba(239,68,68,0.3)' }}>
+                                    <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.12)', borderBottom: '1px solid rgba(239,68,68,0.3)' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <AlertTriangle size={11} style={{ color: '#ef4444' }} />
-                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#ef4444', textTransform: 'uppercase' }}>
+                                            <AlertTriangle size={12} style={{ color: '#ef4444' }} />
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', textTransform: 'uppercase' }}>
                                                 Objeção: {item.objection}
                                             </span>
                                         </div>
                                     </div>
                                 )}
-                                {/* Suggested response */}
                                 {item.suggestedResponse && (
-                                    <div style={{ padding: '8px 12px', background: isLatest ? 'rgba(34,197,94,0.06)' : 'transparent' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                    <div style={{ padding: '10px 12px', background: isLatest ? 'rgba(34,197,94,0.10)' : 'transparent', borderLeft: isLatest ? `3px solid ${ACCENT_GREEN}` : 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                <MessageCircle size={11} style={{ color: ACCENT_GREEN }} />
-                                                <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT_GREEN, textTransform: 'uppercase' }}>Diga Agora</span>
+                                                <MessageCircle size={13} style={{ color: ACCENT_GREEN, animation: isLatest ? 'pulse 1.5s ease-in-out 3' : 'none' }} />
+                                                <span style={{ fontSize: 11, fontWeight: 800, color: ACCENT_GREEN, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Diga Agora</span>
                                             </div>
                                             {isLatest && <CopyButton text={item.suggestedResponse} />}
                                         </div>
-                                        <div style={{ fontSize: isLatest ? 13 : 11, fontWeight: 500, lineHeight: 1.5, color: TEXT }}>
+                                        <div style={{ fontSize: isLatest ? 14 : 11, fontWeight: 600, lineHeight: 1.5, color: TEXT }}>
                                             "{item.suggestedResponse}"
                                         </div>
                                     </div>
                                 )}
-                                {/* Suggested question */}
                                 {item.suggestedQuestion && (
-                                    <div style={{ padding: '6px 12px', background: isLatest ? 'rgba(59,130,246,0.06)' : 'transparent' }}>
+                                    <div style={{ padding: '8px 12px', background: isLatest ? 'rgba(59,130,246,0.08)' : 'transparent', borderLeft: isLatest ? `3px solid ${ACCENT_BLUE}` : 'none' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                <HelpCircle size={11} style={{ color: ACCENT_BLUE }} />
+                                                <HelpCircle size={12} style={{ color: ACCENT_BLUE }} />
                                                 <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT_BLUE, textTransform: 'uppercase' }}>Pergunte</span>
                                             </div>
                                             {isLatest && <CopyButton text={item.suggestedQuestion} />}
                                         </div>
-                                        <div style={{ fontSize: isLatest ? 12 : 11, fontWeight: 500, lineHeight: 1.4, color: TEXT }}>
+                                        <div style={{ fontSize: isLatest ? 13 : 11, fontWeight: 500, lineHeight: 1.4, color: TEXT }}>
                                             "{item.suggestedQuestion}"
                                         </div>
                                     </div>
                                 )}
-                                {/* Tip only (no response/question) */}
                                 {!item.suggestedResponse && !item.suggestedQuestion && !item.objection && (
                                     <div style={{ padding: '6px 12px', background: isLatest ? BG_ELEVATED : 'transparent' }}>
                                         <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 3, color: NEON_PINK, textTransform: 'uppercase' }}>Dica</div>
@@ -409,11 +405,15 @@ export default function SimpleSidebar() {
                 </div>
             )}
 
-            {/* Realtime Transcripts */}
-            <div style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 3, backgroundColor: BG }}>
-                <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4, color: TEXT_MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>Transcrição</div>
+            {/* Realtime Transcripts — Chat Bubble Layout */}
+            <div style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, backgroundColor: BG }}>
+                <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 2, color: TEXT_MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0, display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: ACCENT_BLUE }}>Cliente</span>
+                    <span>Transcrição</span>
+                    <span style={{ color: NEON_PINK }}>Você</span>
+                </div>
                 {transcripts.length === 0 ? (
-                    <div style={{ fontSize: 12, color: TEXT_MUTED, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 12, color: TEXT_MUTED, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flex: 1 }}>
                         <span>Aguardando áudio</span>
                         <span style={{ display: 'inline-flex', gap: 3 }}>
                             <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: TEXT_MUTED, animation: 'aiPulse 1.4s infinite 0s' }} />
@@ -424,17 +424,29 @@ export default function SimpleSidebar() {
                 ) : (
                     transcripts.map((t, i) => {
                         const isLast = i === transcripts.length - 1;
-                        const shouldAnimate = !t.isFinal && isLast;
+                        const shouldAnimate = isLast;
                         const isLead = t.role === 'lead';
-                        const speakerColor = isLead ? TEXT_SECONDARY : ACCENT_ACTIVE;
+                        const bubbleBg = isLead ? 'rgba(59,130,246,0.12)' : 'rgba(255,0,122,0.10)';
+                        const bubbleBorder = isLead ? 'rgba(59,130,246,0.25)' : 'rgba(255,0,122,0.25)';
+                        const labelColor = isLead ? ACCENT_BLUE : NEON_PINK;
                         return (
-                            <div key={`${t.timestamp}-${i}`} style={{ fontSize: 11, lineHeight: 1.4, padding: '2px 0', opacity: t.isFinal ? 1 : 0.65, transition: 'opacity 0.3s ease' }}>
-                                <span style={{ fontWeight: 600, color: speakerColor, fontSize: 9, marginRight: 4 }}>
-                                    {isLead ? 'CLIENTE' : 'VOCÊ'}:
-                                </span>
-                                <span style={{ color: TEXT }}>
-                                    <TypingText text={t.text} animate={shouldAnimate} cursorColor={speakerColor} />
-                                </span>
+                            <div key={`${t.timestamp}-${i}`} style={{ display: 'flex', justifyContent: isLead ? 'flex-start' : 'flex-end', animation: isLast && t.isFinal ? 'slideIn 0.2s ease' : 'none' }}>
+                                <div style={{
+                                    maxWidth: '85%',
+                                    padding: '5px 10px',
+                                    borderRadius: isLead ? '10px 10px 10px 2px' : '10px 10px 2px 10px',
+                                    backgroundColor: bubbleBg,
+                                    border: `1px solid ${bubbleBorder}`,
+                                    opacity: t.isFinal ? 1 : 0.7,
+                                    transition: 'opacity 0.2s ease',
+                                }}>
+                                    <div style={{ fontSize: 8, fontWeight: 700, color: labelColor, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 1 }}>
+                                        {isLead ? 'CLIENTE' : 'VOCÊ'}
+                                    </div>
+                                    <div style={{ fontSize: 11, lineHeight: 1.45, color: TEXT }}>
+                                        <TypingText text={t.text} animate={shouldAnimate} cursorColor={labelColor} />
+                                    </div>
+                                </div>
                             </div>
                         );
                     })
@@ -464,6 +476,15 @@ export default function SimpleSidebar() {
                 @keyframes slideIn {
                     from { opacity: 0; transform: translateY(-4px); }
                     to { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes coachPop {
+                    0% { opacity: 0; transform: translateY(-8px) scale(0.97); }
+                    60% { transform: translateY(1px) scale(1.01); }
+                    100% { opacity: 1; transform: translateY(0) scale(1); }
+                }
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.25); }
                 }
                 @keyframes spin {
                     from { transform: rotate(0deg); }

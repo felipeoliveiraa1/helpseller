@@ -46,6 +46,29 @@ export class OpenAIClient {
         return response.choices[0]?.message?.content || '{}';
     }
 
+    /** Yields individual tokens from a streaming LLM coaching response. */
+    async *streamCoachingTokens(
+        systemPrompt: string,
+        userPrompt: string
+    ): AsyncGenerator<string> {
+        const stream = await this.client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+            ],
+            max_tokens: 500,
+            temperature: 0.3,
+            stream: true,
+            response_format: { type: 'json_object' }
+        });
+
+        for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content || '';
+            if (delta) yield delta;
+        }
+    }
+
     async completeJson<T>(systemPrompt: string, userPrompt: string): Promise<T | null> {
         try {
             const response = await this.client.chat.completions.create({

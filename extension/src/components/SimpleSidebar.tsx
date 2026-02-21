@@ -1,9 +1,77 @@
 import { useEffect, useState, useRef } from 'react';
 import { authService } from '../services/auth';
-import { CardItem } from './CardItem';
-import { type CoachCard } from '../stores/coaching-store';
-import { GripVertical, Mic, Minus, LogOut, AlertCircle, X, Cpu } from 'lucide-react';
-import { BG, BG_ELEVATED, BORDER, BORDER_SUBTLE, TEXT, TEXT_SECONDARY, TEXT_MUTED, INPUT_BG, INPUT_BORDER, ACCENT_ACTIVE, ACCENT_DANGER, RADIUS } from '../lib/theme';
+import { GripVertical, Mic, Minus, X, Cpu, MessageCircle, HelpCircle, AlertTriangle, Copy, Check } from 'lucide-react';
+import { BG, BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED, INPUT_BG, ACCENT_ACTIVE, ACCENT_DANGER, NEON_PINK, RADIUS } from '../lib/theme';
+
+interface TranscriptEntry {
+    text: string;
+    speaker: string;
+    role: string;
+    isFinal: boolean;
+    timestamp: number;
+}
+
+interface CoachingData {
+    phase: string;
+    tip: string;
+    objection: string | null;
+    suggestedResponse: string | null;
+    suggestedQuestion: string | null;
+    urgency: string;
+    timestamp: number;
+}
+
+const MAX_VISIBLE_COACHING = 4;
+
+const TYPING_SPEED_MS = 18;
+const ACCENT_GREEN = '#22c55e';
+const ACCENT_BLUE = '#3b82f6';
+
+function TypingText({ text, animate, cursorColor }: { text: string; animate: boolean; cursorColor: string }) {
+    const [displayLen, setDisplayLen] = useState(animate ? 0 : text.length);
+    const prevTextRef = useRef(text);
+    useEffect(() => {
+        if (!animate) { setDisplayLen(text.length); return; }
+        const prevText = prevTextRef.current;
+        prevTextRef.current = text;
+        if (text.startsWith(prevText)) {
+            setDisplayLen(prev => Math.min(prev, prevText.length));
+        } else {
+            setDisplayLen(0);
+        }
+    }, [text, animate]);
+    useEffect(() => {
+        if (!animate || displayLen >= text.length) return;
+        const timer = setTimeout(() => setDisplayLen(prev => prev + 1), TYPING_SPEED_MS);
+        return () => clearTimeout(timer);
+    }, [displayLen, text, animate]);
+    const isTyping = animate && displayLen < text.length;
+    return (
+        <>
+            <span>{text.slice(0, displayLen)}</span>
+            {isTyping && (
+                <span style={{ display: 'inline-block', width: 2, height: 13, backgroundColor: cursorColor, marginLeft: 1, verticalAlign: 'text-bottom', animation: 'cursorBlink 0.6s step-end infinite' }} />
+            )}
+        </>
+    );
+}
+
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = () => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }).catch(() => {});
+    };
+    return (
+        <button onClick={handleCopy} title="Copiar" style={{ padding: 4, background: 'transparent', border: 'none', color: copied ? ACCENT_GREEN : TEXT_MUTED, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, flexShrink: 0 }}>
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? 'Copiado' : 'Copiar'}
+        </button>
+    );
+}
 
 const logoUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('logo.svg') : '';
 const SIDEBAR_W = 360;
@@ -11,7 +79,6 @@ const SIDEBAR_H = '80vh';
 const MIN_W = 48;
 const MIN_H = 56;
 
-/** Pega o elemento host do painel (dentro do Shadow DOM usa rootNode.host) */
 function getHostFromEvent(e: React.MouseEvent): HTMLDivElement | null {
     const root = (e.target as HTMLElement).getRootNode();
     if (root && 'host' in root) return (root as ShadowRoot).host as HTMLDivElement;
@@ -23,22 +90,17 @@ function getHost(): HTMLDivElement | null {
 }
 
 export default function SimpleSidebar() {
-    // Auth state
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-
-    // Recording state
-    const [transcripts, setTranscripts] = useState<any[]>([]);
-    // Use Cards instead of single suggestion string
-    const [cards, setCards] = useState<CoachCard[]>([]);
+    const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
+    const [coachFeed, setCoachFeed] = useState<CoachingData[]>([]);
+    const [isThinking, setIsThinking] = useState(false);
     const [managerWhisper, setManagerWhisper] = useState<{ content: string; urgency: string; timestamp: number } | null>(null);
-    const [leadTemp, setLeadTemp] = useState<'hot' | 'warm' | 'cold'>('warm');
     const [isRecording, setIsRecording] = useState(false);
     const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
-
-    // Janela: minimizada + arrastar
     const [isMinimized, setIsMinimized] = useState(false);
     const dragRef = useRef({ startX: 0, startY: 0, startLeft: 0, startTop: 0, panelW: SIDEBAR_W, panelH: 300 });
+    const transcriptEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const host = getHost();
@@ -56,9 +118,7 @@ export default function SimpleSidebar() {
                 host.style.height = '0';
                 host.style.visibility = 'hidden';
                 host.style.pointerEvents = 'none';
-                return;
             }
-            // Do not set width/height here — content script sets them after GET_SESSION to avoid flash when not logged in
         });
     }, []);
 
@@ -127,10 +187,7 @@ export default function SimpleSidebar() {
 
     const toggleMinimize = () => setIsMinimized((p) => !p);
 
-    // Check session on mount
-    useEffect(() => {
-        checkSession();
-    }, []);
+    useEffect(() => { checkSession(); }, []);
 
     const checkSession = async () => {
         const sess = await authService.getSession();
@@ -144,105 +201,71 @@ export default function SimpleSidebar() {
         setIsRecording(false);
     };
 
-    // Listen for messages
+    useEffect(() => {
+        transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [transcripts, coaching]);
+
     useEffect(() => {
         const listener = (msg: any) => {
             if (msg.type === 'TRANSCRIPT_RESULT') {
-                console.log('Sidebar received transcript:', msg.data);
-                const newTranscript = {
-                    text: msg.data.text,
-                    isFinal: msg.data.isFinal,
-                    timestamp: msg.data.timestamp,
-                    speaker: msg.data.speaker || 'unknown' // Add speaker property
-                };
-                setTranscripts(prev => [...prev, newTranscript]);
-
-                // Mock: Update coach suggestion based on transcript
-                if (msg.data.text.toLowerCase().includes('preço')) {
-                    const newCard: CoachCard = {
-                        id: Math.random().toString(36),
-                        type: 'objection',
-                        title: 'Objeção de Preço',
-                        description: 'Foque no valor, não no preço. Destaque os benefícios.',
-                        timestamp: Date.now(),
-                        isDismissed: false
-                    };
-                    setCards(prev => [newCard, ...prev]);
-                    setLeadTemp('warm');
-                } else if (msg.data.text.toLowerCase().includes('interessante')) {
-                    const newCard: CoachCard = {
-                        id: Math.random().toString(36),
-                        type: 'signal',
-                        title: 'Sinal de Compra',
-                        description: 'Lead engajado! Pergunte sobre o timeline de decisão.',
-                        timestamp: Date.now(),
-                        isDismissed: false
-                    };
-                    setCards(prev => [newCard, ...prev]);
-                    setLeadTemp('hot');
-                } else if (msg.data.text.toLowerCase().includes('não')) {
-                    const newCard: CoachCard = {
-                        id: Math.random().toString(36),
-                        type: 'alert',
-                        title: 'Possível Objeção',
-                        description: 'Faça perguntas abertas para entender.',
-                        timestamp: Date.now(),
-                        isDismissed: false
-                    };
-                    setCards(prev => [newCard, ...prev]);
-                    setLeadTemp('cold');
-                }
+                const { text, isFinal, timestamp, speaker, role } = msg.data || {};
+                if (!text) return;
+                const entry: TranscriptEntry = { text, speaker: speaker || 'unknown', role: role || 'unknown', isFinal: isFinal ?? true, timestamp: timestamp || Date.now() };
+                setTranscripts(prev => {
+                    if (!isFinal) {
+                        const lastIdx = prev.length - 1;
+                        const last = lastIdx >= 0 ? prev[lastIdx] : null;
+                        if (last && !last.isFinal && last.role === entry.role) {
+                            const updated = [...prev];
+                            updated[lastIdx] = entry;
+                            return updated;
+                        }
+                        return [...prev, entry];
+                    }
+                    const lastIdx = prev.length - 1;
+                    const last = lastIdx >= 0 ? prev[lastIdx] : null;
+                    if (last && !last.isFinal && last.role === entry.role) {
+                        const updated = [...prev];
+                        updated[lastIdx] = entry;
+                        return updated;
+                    }
+                    return [...prev, entry];
+                });
             } else if (msg.type === 'STATUS_UPDATE') {
                 setIsRecording(msg.status === 'RECORDING');
                 if (msg.status === 'RECORDING' && typeof msg.micAvailable === 'boolean') {
                     setMicAvailable(msg.micAvailable);
                 }
                 if (msg.status !== 'RECORDING') setMicAvailable(null);
-
                 if (msg.status === 'PERMISSION_REQUIRED') {
                     alert('Permissão necessária. Clique no ícone da extensão na barra do navegador para autorizar a captura da aba.');
                 }
             } else if (msg.type === 'MANAGER_WHISPER') {
-                // Handle new whisper
-                setManagerWhisper({
-                    content: msg.data.content,
-                    urgency: msg.data.urgency,
-                    timestamp: msg.data.timestamp
-                });
+                setManagerWhisper({ content: msg.data.content, urgency: msg.data.urgency, timestamp: msg.data.timestamp });
+            } else if (msg.type === 'COACH_THINKING') {
+                setIsThinking(true);
+            } else if (msg.type === 'COACH_IDLE') {
+                setIsThinking(false);
             } else if (msg.type === 'COACHING_MESSAGE') {
-                // Handle AI coaching from backend → Create a Card
+                setIsThinking(false);
                 const payload = msg.data;
-                const isObjection = payload.type === 'objection' && payload.metadata?.objection;
-                const phase = payload.metadata?.phase || null;
-
-                const phaseLabels: Record<string, string> = {
-                    S: 'Situação', P: 'Problema', I: 'Implicação', N: 'Necessidade'
-                };
-
-                const newCard: CoachCard = {
-                    id: Math.random().toString(36).substring(7),
-                    type: isObjection ? 'objection' : 'tip',
-                    title: isObjection
-                        ? 'Objeção Detectada'
-                        : `${phase ? phaseLabels[phase] || 'SPIN' : 'Dica'} — Próximo Passo`,
-                    description: payload.content,
+                const newCoaching: CoachingData = {
+                    phase: payload.metadata?.phase || 'S',
+                    tip: payload.content || '',
+                    objection: payload.metadata?.objection || null,
+                    suggestedResponse: payload.metadata?.suggested_response || null,
+                    suggestedQuestion: payload.metadata?.suggested_question || null,
+                    urgency: payload.urgency || 'medium',
                     timestamp: Date.now(),
-                    isDismissed: false,
-                    metadata: {
-                        ...payload.metadata,
-                        urgency: payload.urgency
-                    }
                 };
-
-                setCards(prev => [newCard, ...prev].slice(0, 10));
-                if (isObjection || payload.urgency === 'high') setLeadTemp('hot');
+                setCoachFeed(prev => [newCoaching, ...prev].slice(0, MAX_VISIBLE_COACHING));
             }
         };
         chrome.runtime.onMessage.addListener(listener);
         return () => chrome.runtime.onMessage.removeListener(listener);
     }, []);
 
-    const baseContainer = {
+    const baseContainer: React.CSSProperties = {
         width: '100%',
         minHeight: 0,
         flex: 1,
@@ -272,21 +295,7 @@ export default function SimpleSidebar() {
 
     if (isMinimized) {
         return (
-            <div
-                onMouseDown={handleDragStart}
-                style={{
-                    width: '100%',
-                    height: '100%',
-                    backgroundColor: BG,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontFamily: 'system-ui, -apple-system, sans-serif',
-                    borderRight: `1px solid ${BORDER}`,
-                    cursor: 'move',
-                    userSelect: 'none',
-                }}
-            >
+            <div onMouseDown={handleDragStart} style={{ width: '100%', height: '100%', backgroundColor: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, -apple-system, sans-serif', borderRight: `1px solid ${BORDER}`, cursor: 'move', userSelect: 'none' }}>
                 <button onClick={toggleMinimize} title="Expandir" style={{ width: 32, height: 32, borderRadius: RADIUS, border: `1px solid ${BORDER}`, background: BG_ELEVATED, color: TEXT_SECONDARY, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <GripVertical size={16} style={{ transform: 'rotate(-90deg)' }} />
                 </button>
@@ -296,57 +305,171 @@ export default function SimpleSidebar() {
 
     return (
         <div style={{ ...baseContainer, height: '100%' }}>
-            <div
-                onMouseDown={handleDragStart}
-                style={{ padding: 12, borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'move', userSelect: 'none', flexShrink: 0 }}
-            >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Header */}
+            <div onMouseDown={handleDragStart} style={{ padding: '8px 12px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'move', userSelect: 'none', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <GripVertical size={14} style={{ color: TEXT_MUTED }} />
-                    {logoUrl ? <img src={logoUrl} alt="HelpSeller" style={{ height: 20, width: 'auto' }} /> : <Mic size={16} style={{ color: isRecording ? ACCENT_DANGER : TEXT_MUTED }} />}
-                    <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY }}>HelpSeller · {isRecording ? 'Gravando' : 'Parado'}</div>
-                        <div style={{ fontSize: 10, color: TEXT_MUTED }}>{session.user?.email}</div>
+                    {logoUrl ? <img src={logoUrl} alt="HelpSeller" style={{ height: 18, width: 'auto' }} /> : <Mic size={14} style={{ color: isRecording ? ACCENT_DANGER : TEXT_MUTED }} />}
+                    <div style={{ fontSize: 10, fontWeight: 600, color: TEXT_SECONDARY }}>
+                        {isRecording ? 'Ao Vivo' : 'Parado'}
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                    <button onClick={toggleMinimize} title="Minimizar" style={{ padding: 6, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: RADIUS, color: TEXT_SECONDARY, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Minus size={14} />
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <button onClick={toggleMinimize} title="Minimizar" style={{ padding: 4, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: RADIUS, color: TEXT_SECONDARY, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Minus size={12} />
                     </button>
-                    <button onClick={handleLogout} style={{ padding: 6, fontSize: 11, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: RADIUS, color: TEXT_SECONDARY, cursor: 'pointer' }}>Sair</button>
+                    <button onClick={handleLogout} style={{ padding: 4, fontSize: 10, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: RADIUS, color: TEXT_SECONDARY, cursor: 'pointer' }}>Sair</button>
                 </div>
             </div>
 
+            {/* Manager Whisper */}
             {managerWhisper && (
-                <div style={{ padding: 12, background: BG_ELEVATED, borderBottom: `1px solid ${BORDER}`, flexShrink: 0 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 6, color: TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span>Gestor</span>
-                        <button onClick={() => setManagerWhisper(null)} style={{ background: 'none', border: 'none', color: TEXT_MUTED, cursor: 'pointer', padding: 0, display: 'flex' }}>
-                            <X size={14} />
-                        </button>
+                <div style={{ padding: '8px 12px', background: '#1a1a2e', borderBottom: `1px solid ${BORDER}`, flexShrink: 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4, color: ACCENT_BLUE, textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span>Gestor diz:</span>
+                        <button onClick={() => setManagerWhisper(null)} style={{ background: 'none', border: 'none', color: TEXT_MUTED, cursor: 'pointer', padding: 0, display: 'flex' }}><X size={12} /></button>
                     </div>
-                    <div style={{ fontSize: 13, lineHeight: 1.5, color: TEXT }}>{managerWhisper.content}</div>
+                    <div style={{ fontSize: 12, lineHeight: 1.5, color: TEXT }}>{managerWhisper.content}</div>
                 </div>
             )}
 
-            <div style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '12px 12px 0', borderBottom: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', gap: 8, backgroundColor: BG }}>
-                <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4, color: TEXT_MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>Insights</div>
-                {cards.length === 0 ? (
-                    <div style={{ fontSize: 12, color: TEXT_MUTED, paddingBottom: 12 }}>Aguardando análise...</div>
+            {/* Thinking indicator */}
+            {isThinking && (
+                <div style={{ padding: '6px 12px', borderBottom: `1px solid ${BORDER}`, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Cpu size={12} style={{ color: NEON_PINK, animation: 'spin 1.5s linear infinite' }} />
+                    <span style={{ fontSize: 11, color: TEXT_MUTED }}>Analisando conversa...</span>
+                </div>
+            )}
+
+            {/* Coach Feed — all recent tips visible */}
+            {coachFeed.length > 0 && (
+                <div style={{ flexShrink: 0, maxHeight: '45%', overflowY: 'auto', borderBottom: `1px solid ${BORDER}` }}>
+                    {coachFeed.map((item, idx) => {
+                        const isLatest = idx === 0;
+                        const opacity = isLatest ? 1 : 0.55;
+                        return (
+                            <div key={`cf-${item.timestamp}-${idx}`} style={{ opacity, borderBottom: idx < coachFeed.length - 1 ? `1px solid ${BORDER}` : 'none', animation: isLatest ? 'slideIn 0.3s ease' : 'none' }}>
+                                {/* Objection banner */}
+                                {item.objection && (
+                                    <div style={{ padding: '6px 12px', background: 'rgba(239,68,68,0.08)', borderBottom: '1px solid rgba(239,68,68,0.3)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <AlertTriangle size={11} style={{ color: '#ef4444' }} />
+                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#ef4444', textTransform: 'uppercase' }}>
+                                                Objeção: {item.objection}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Suggested response */}
+                                {item.suggestedResponse && (
+                                    <div style={{ padding: '8px 12px', background: isLatest ? 'rgba(34,197,94,0.06)' : 'transparent' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <MessageCircle size={11} style={{ color: ACCENT_GREEN }} />
+                                                <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT_GREEN, textTransform: 'uppercase' }}>Diga Agora</span>
+                                            </div>
+                                            {isLatest && <CopyButton text={item.suggestedResponse} />}
+                                        </div>
+                                        <div style={{ fontSize: isLatest ? 13 : 11, fontWeight: 500, lineHeight: 1.5, color: TEXT }}>
+                                            "{item.suggestedResponse}"
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Suggested question */}
+                                {item.suggestedQuestion && (
+                                    <div style={{ padding: '6px 12px', background: isLatest ? 'rgba(59,130,246,0.06)' : 'transparent' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <HelpCircle size={11} style={{ color: ACCENT_BLUE }} />
+                                                <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT_BLUE, textTransform: 'uppercase' }}>Pergunte</span>
+                                            </div>
+                                            {isLatest && <CopyButton text={item.suggestedQuestion} />}
+                                        </div>
+                                        <div style={{ fontSize: isLatest ? 12 : 11, fontWeight: 500, lineHeight: 1.4, color: TEXT }}>
+                                            "{item.suggestedQuestion}"
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Tip only (no response/question) */}
+                                {!item.suggestedResponse && !item.suggestedQuestion && !item.objection && (
+                                    <div style={{ padding: '6px 12px', background: isLatest ? BG_ELEVATED : 'transparent' }}>
+                                        <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 3, color: NEON_PINK, textTransform: 'uppercase' }}>Dica</div>
+                                        <div style={{ fontSize: 11, lineHeight: 1.4, color: TEXT_SECONDARY }}>
+                                            {item.tip.split(/(\*\*.*?\*\*)/).map((part, pi) =>
+                                                part.startsWith('**') && part.endsWith('**') ? (
+                                                    <strong key={pi} style={{ color: TEXT, fontWeight: 600 }}>{part.slice(2, -2)}</strong>
+                                                ) : part
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Realtime Transcripts */}
+            <div style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 3, backgroundColor: BG }}>
+                <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4, color: TEXT_MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>Transcrição</div>
+                {transcripts.length === 0 ? (
+                    <div style={{ fontSize: 12, color: TEXT_MUTED, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>Aguardando áudio</span>
+                        <span style={{ display: 'inline-flex', gap: 3 }}>
+                            <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: TEXT_MUTED, animation: 'aiPulse 1.4s infinite 0s' }} />
+                            <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: TEXT_MUTED, animation: 'aiPulse 1.4s infinite 0.3s' }} />
+                            <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: TEXT_MUTED, animation: 'aiPulse 1.4s infinite 0.6s' }} />
+                        </span>
+                    </div>
                 ) : (
-                    cards.map((card) => (
-                        <div key={card.id} style={{ flexShrink: 0 }}>
-                            <CardItem card={card} onDismiss={(id) => setCards((prev) => prev.filter((c) => c.id !== id))} />
-                        </div>
-                    ))
+                    transcripts.map((t, i) => {
+                        const isLast = i === transcripts.length - 1;
+                        const shouldAnimate = !t.isFinal && isLast;
+                        const isLead = t.role === 'lead';
+                        const speakerColor = isLead ? TEXT_SECONDARY : ACCENT_ACTIVE;
+                        return (
+                            <div key={`${t.timestamp}-${i}`} style={{ fontSize: 11, lineHeight: 1.4, padding: '2px 0', opacity: t.isFinal ? 1 : 0.65, transition: 'opacity 0.3s ease' }}>
+                                <span style={{ fontWeight: 600, color: speakerColor, fontSize: 9, marginRight: 4 }}>
+                                    {isLead ? 'CLIENTE' : 'VOCÊ'}:
+                                </span>
+                                <span style={{ color: TEXT }}>
+                                    <TypingText text={t.text} animate={shouldAnimate} cursorColor={speakerColor} />
+                                </span>
+                            </div>
+                        );
+                    })
                 )}
+                <div ref={transcriptEndRef} />
             </div>
 
-            <div style={{ padding: '10px 12px', borderTop: `1px solid ${BORDER}`, flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', backgroundColor: BG_ELEVATED, border: `1px solid ${BORDER}`, borderRadius: RADIUS, fontSize: 11, color: TEXT_SECONDARY }}>
-                    <Cpu size={12} />
-                    Analisando em tempo real
+            {/* Status Bar */}
+            <div style={{ padding: '6px 12px', borderTop: `1px solid ${BORDER}`, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', backgroundColor: BG_ELEVATED, border: `1px solid ${BORDER}`, borderRadius: RADIUS, fontSize: 10, color: TEXT_MUTED }}>
+                    <Cpu size={10} style={isRecording ? { animation: 'spin 2s linear infinite', color: NEON_PINK } : {}} />
+                    {isRecording
+                        ? isThinking ? 'Analisando...' : 'Escutando ao vivo'
+                        : 'Aguardando gravação'}
                 </div>
             </div>
+
+            <style>{`
+                @keyframes cursorBlink {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0; }
+                }
+                @keyframes aiPulse {
+                    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+                    50% { opacity: 1; transform: scale(1); }
+                }
+                @keyframes slideIn {
+                    from { opacity: 0; transform: translateY(-4px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
         </div>
     );
 }

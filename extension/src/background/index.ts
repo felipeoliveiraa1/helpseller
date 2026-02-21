@@ -217,6 +217,47 @@ onWsMessage(async (data: any) => {
         }
     }
 
+    // Handle streaming coach tokens from backend
+    if (data.type === 'coach:token') {
+        const state = await getState();
+        if (state.currentTabId) {
+            chrome.tabs.sendMessage(state.currentTabId, {
+                type: 'COACH_TOKEN',
+                data: { token: data.payload?.token, timestamp: data.payload?.timestamp }
+            }).catch(() => { });
+        }
+    }
+
+    if (data.type === 'coach:done') {
+        const state = await getState();
+        if (state.currentTabId) {
+            chrome.tabs.sendMessage(state.currentTabId, {
+                type: 'COACH_DONE',
+                data: { timestamp: data.payload?.timestamp }
+            }).catch(() => { });
+        }
+    }
+
+    if (data.type === 'coach:thinking') {
+        const state = await getState();
+        if (state.currentTabId) {
+            chrome.tabs.sendMessage(state.currentTabId, {
+                type: 'COACH_THINKING',
+                data: { timestamp: data.payload?.timestamp }
+            }).catch(() => { });
+        }
+    }
+
+    if (data.type === 'coach:idle') {
+        const state = await getState();
+        if (state.currentTabId) {
+            chrome.tabs.sendMessage(state.currentTabId, {
+                type: 'COACH_IDLE',
+                data: { timestamp: data.payload?.timestamp }
+            }).catch(() => { });
+        }
+    }
+
     // Handle objection:detected from backend SPIN coach
     if (data.type === 'objection:detected') {
         console.log('⚡ OBJECTION DETECTED:', data.payload?.objection?.substring(0, 50));

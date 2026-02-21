@@ -22,6 +22,11 @@ const envSchema = z.object({
     // OpenAI
     OPENAI_API_KEY: z.string().default(''),
 
+    // Deepgram
+    DEEPGRAM_API_KEY: z.string().default(''),
+    TRANSCRIPTION_PROVIDER: z.enum(['deepgram', 'whisper']).default('deepgram'),
+    TRANSCRIPT_NORMALIZER_ENABLED: z.coerce.boolean().default(false),
+
     // Stripe
     STRIPE_SECRET_KEY: z.string().default(''),
     STRIPE_WEBHOOK_SECRET: z.string().default(''),

@@ -375,95 +375,61 @@ function stopLiveKitPublish(): void {
     }
 }
 
+const STREAM_CHUNK_MS = 250;
+
 function startRecordingCycle(
     stream: MediaStream,
     mimeType: string,
     role: 'lead' | 'seller',
     analyser: AnalyserNode | null
 ) {
-    function recordSegment() {
-        if (!isRecording) return;
+    if (!isRecording) return;
 
-        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-        const chunks: Blob[] = [];
-        let maxAudioLevel = 0;
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+    let chunkCount = 0;
 
-        const volumeChecker = setInterval(() => {
-            const level = getAudioLevel(analyser);
-            if (level > maxAudioLevel) maxAudioLevel = level;
-        }, 100);
+    recorder.ondataavailable = (event) => {
+        if (!event.data || event.data.size === 0) return;
+        if (role === 'seller' && sellerPaused) return;
 
-        recorder.ondataavailable = (event) => {
-            if (event.data.size > 0) chunks.push(event.data);
+        chunkCount++;
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const dataUrl = reader.result as string;
+            const base64Index = dataUrl.indexOf(';base64,');
+            const base64 = base64Index >= 0 ? dataUrl.slice(base64Index + 8) : dataUrl.split(',')[1];
+            if (!base64) return;
+            chrome.runtime.sendMessage({
+                type: 'AUDIO_SEGMENT',
+                data: base64,
+                size: event.data.size,
+                role: role,
+                isStreamChunk: true
+            }).catch(err => log(`❌ [${role}] send error:`, (err as Error).message));
         };
+        reader.readAsDataURL(event.data);
 
-        recorder.onstop = () => {
-            clearInterval(volumeChecker);
+        if (chunkCount % 40 === 0) {
+            log(`🔊 [${role}] Streaming: ${chunkCount} chunks sent`);
+        }
+    };
 
-            if (role === 'seller' && sellerPaused) {
-                log('⏭️ [seller] Skipped — mic muted in Meet');
-                if (isRecording) recordSegment();
-                return;
-            }
+    recorder.onerror = (event: any) => {
+        log(`❌ [${role}] Recorder error:`, event.error?.message);
+        if (isRecording) {
+            setTimeout(() => startRecordingCycle(stream, mimeType, role, analyser), 500);
+        }
+    };
 
-            const threshold = role === 'seller' ? SILENCE_THRESHOLD_SELLER : SILENCE_THRESHOLD_LEAD;
+    recorder.onstop = () => {
+        log(`🛑 [${role}] Recorder stopped after ${chunkCount} chunks`);
+    };
 
-            // 🔍 DEBUG: SEMPRE logar o nível de áudio
-            log(`🔊 [${role}] Audio level: ${maxAudioLevel.toFixed(1)} (threshold: ${threshold}, chunks: ${chunks.length})`);
+    recorder.start(STREAM_CHUNK_MS);
+    if (role === 'lead') tabRecorder = recorder as MediaRecorder;
+    else micRecorder = recorder as MediaRecorder;
 
-            if (chunks.length === 0 || maxAudioLevel < threshold) {
-                log(`⏭️ [${role}] Silent/echo segment skipped (level: ${maxAudioLevel.toFixed(1)}, threshold: ${threshold})`);
-                if (isRecording) recordSegment();
-                return;
-            }
-
-            const completeBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-            log(`📦 [${role}] Segment: ${completeBlob.size} bytes, level: ${maxAudioLevel.toFixed(1)}`);
-
-            const reader = new FileReader();
-            reader.onloadend = async () => { // Make onloadend async
-                const dataUrl = reader.result as string;
-                const base64Index = dataUrl.indexOf(';base64,');
-                const base64 = base64Index >= 0 ? dataUrl.slice(base64Index + 8) : dataUrl.split(',')[1];
-
-                // Query active speaker from content script via background
-                let activeSpeaker: string | null = null;
-                try {
-                    const speakerResponse = await chrome.runtime.sendMessage({ type: 'QUERY_ACTIVE_SPEAKER' }).catch(() => null);
-                    activeSpeaker = speakerResponse?.speakerName || null;
-                } catch (e: any) {
-                    log('❌ Error querying active speaker:', e.message);
-                }
-
-                chrome.runtime.sendMessage({
-                    type: 'AUDIO_SEGMENT',
-                    data: base64,
-                    size: completeBlob.size,
-                    role: role,
-                    speakerName: activeSpeaker // Inject dynamic speaker name
-                }).catch(err => log('❌ Error:', (err as Error).message));
-            };
-            reader.readAsDataURL(completeBlob);
-
-            if (isRecording) recordSegment();
-        };
-
-        recorder.onerror = (event: any) => {
-            log(`❌ [${role}] Recorder error:`, event.error?.message);
-            if (isRecording) setTimeout(() => recordSegment(), 500);
-        };
-
-        recorder.start();
-        if (role === 'lead') tabRecorder = recorder as MediaRecorder;
-        else micRecorder = recorder as MediaRecorder;
-
-        setTimeout(() => {
-            if (recorder.state === 'recording') recorder.stop();
-        }, RECORDING_INTERVAL_MS);
-    }
-
-    recordSegment();
-    log(`🚀 [${role}] Recording cycle started`);
+    log(`🚀 [${role}] Continuous streaming started (${STREAM_CHUNK_MS}ms chunks)`);
 }
 
 function stopTranscription() {

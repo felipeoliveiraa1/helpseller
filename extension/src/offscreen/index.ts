@@ -375,7 +375,7 @@ function stopLiveKitPublish(): void {
     }
 }
 
-const STREAM_CHUNK_MS = 250;
+
 
 function startRecordingCycle(
     stream: MediaStream,
@@ -385,14 +385,14 @@ function startRecordingCycle(
 ) {
     if (!isRecording) return;
 
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-    let chunkCount = 0;
+    // Use a robust audio bitrate
+    const options = mimeType ? { mimeType, audioBitsPerSecond: 64000 } : { audioBitsPerSecond: 64000 };
+    const recorder = new MediaRecorder(stream, options);
 
     recorder.ondataavailable = (event) => {
         if (!event.data || event.data.size === 0) return;
         if (role === 'seller' && sellerPaused) return;
 
-        chunkCount++;
         const reader = new FileReader();
         reader.onloadend = () => {
             const dataUrl = reader.result as string;
@@ -408,10 +408,6 @@ function startRecordingCycle(
             }).catch(err => log(`❌ [${role}] send error:`, (err as Error).message));
         };
         reader.readAsDataURL(event.data);
-
-        if (chunkCount % 40 === 0) {
-            log(`🔊 [${role}] Streaming: ${chunkCount} chunks sent`);
-        }
     };
 
     recorder.onerror = (event: any) => {
@@ -422,14 +418,23 @@ function startRecordingCycle(
     };
 
     recorder.onstop = () => {
-        log(`🛑 [${role}] Recorder stopped after ${chunkCount} chunks`);
+        // Restart cycle ONLY AFTER current one has properly stopped
+        if (isRecording) {
+            startRecordingCycle(stream, mimeType, role, analyser);
+        }
     };
 
-    recorder.start(STREAM_CHUNK_MS);
+    recorder.start(); // Start without timeslice
+
+    // Stop after the interval to trigger ondataavailable with a complete file, then onstop
+    setTimeout(() => {
+        if (recorder.state !== 'inactive') {
+            recorder.stop();
+        }
+    }, RECORDING_INTERVAL_MS);
+
     if (role === 'lead') tabRecorder = recorder as MediaRecorder;
     else micRecorder = recorder as MediaRecorder;
-
-    log(`🚀 [${role}] Continuous streaming started (${STREAM_CHUNK_MS}ms chunks)`);
 }
 
 function stopTranscription() {

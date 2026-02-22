@@ -11,6 +11,7 @@ import {
 interface UsageLog {
     id: string
     call_id: string
+    user_id: string | null
     service: string
     method: string
     model: string | null
@@ -49,6 +50,7 @@ export default function AdminPage() {
     const supabase = createClient()
     const [logs, setLogs] = useState<UsageLog[]>([])
     const [calls, setCalls] = useState<CallInfo[]>([])
+    const [profileById, setProfileById] = useState<Record<string, { full_name: string | null }>>({})
     const [loading, setLoading] = useState(true)
     const [period, setPeriod] = useState<'7d' | '30d' | 'all'>('30d')
 
@@ -102,20 +104,51 @@ export default function AdminPage() {
                 logsQuery = logsQuery.gte('created_at', dateFilter)
             }
             const { data: logsData } = await logsQuery
-            setLogs((logsData as UsageLog[]) ?? [])
+            const logsList = (logsData as UsageLog[]) ?? []
+            setLogs(logsList)
 
             let callsQuery = supabase
                 .from('calls')
-                .select('id, started_at, duration_seconds, user:profiles!calls_user_id_fkey(full_name)')
+                .select('id, started_at, duration_seconds, user:profiles!user_id(full_name)')
                 .order('started_at', { ascending: false })
             if (dateFilter) {
                 callsQuery = callsQuery.gte('started_at', dateFilter)
             }
             const { data: callsData } = await callsQuery
-            setCalls((callsData as any[])?.map(c => ({
+            const callsFromPeriod = (callsData as any[])?.map((c: any) => ({
                 ...c,
                 user: Array.isArray(c.user) ? c.user[0] : c.user
-            })) ?? [])
+            })) ?? []
+            const callIdsWeHave = new Set(callsFromPeriod.map((c: { id: string }) => c.id))
+            const callIdsInLogs = [...new Set(logsList.map(l => l.call_id).filter(Boolean))] as string[]
+            const missingCallIds = callIdsInLogs.filter(id => !callIdsWeHave.has(id))
+            let mergedCalls = callsFromPeriod
+            if (missingCallIds.length > 0) {
+                const { data: extraCalls } = await supabase
+                    .from('calls')
+                    .select('id, started_at, duration_seconds, user:profiles!user_id(full_name)')
+                    .in('id', missingCallIds)
+                const normalized = (extraCalls as any[])?.map((c: any) => ({
+                    ...c,
+                    user: Array.isArray(c.user) ? c.user[0] : c.user
+                })) ?? []
+                mergedCalls = [...callsFromPeriod, ...normalized]
+            }
+            setCalls(mergedCalls)
+            const userIdsFromLogs = [...new Set(logsList.map(l => l.user_id).filter(Boolean))] as string[]
+            if (userIdsFromLogs.length > 0) {
+                const { data: profilesData } = await supabase
+                    .from('profiles')
+                    .select('id, full_name')
+                    .in('id', userIdsFromLogs)
+                const map: Record<string, { full_name: string | null }> = {}
+                ;(profilesData ?? []).forEach((p: { id: string; full_name: string | null }) => {
+                    map[p.id] = { full_name: p.full_name }
+                })
+                setProfileById(map)
+            } else {
+                setProfileById({})
+            }
 
             setLoading(false)
         }
@@ -161,16 +194,47 @@ export default function AdminPage() {
             }))
     }, [logs])
 
-    const uniqueCallsWithCost = useMemo(() => {
-        return calls
-            .filter(c => costByCall[c.id])
-            .map(c => ({
-                ...c,
-                costs: costByCall[c.id]
-            }))
-    }, [calls, costByCall])
+    const callById = useMemo(() => {
+        const map: Record<string, CallInfo> = {}
+        for (const c of calls) {
+            map[c.id] = c
+        }
+        return map
+    }, [calls])
 
-    const totalCalls = uniqueCallsWithCost.length
+    const callIdToFirstDate = useMemo(() => {
+        const map: Record<string, string> = {}
+        for (const l of logs) {
+            if (!l.call_id) continue
+            if (!map[l.call_id] || l.created_at < map[l.call_id]) {
+                map[l.call_id] = l.created_at
+            }
+        }
+        return map
+    }, [logs])
+
+    const callIdToUserId = useMemo(() => {
+        const map: Record<string, string> = {}
+        for (const l of logs) {
+            if (l.call_id && l.user_id && !map[l.call_id]) {
+                map[l.call_id] = l.user_id
+            }
+        }
+        return map
+    }, [logs])
+
+    const summaryRowsByCall = useMemo(() => {
+        return Object.entries(costByCall)
+            .filter(([callId]) => callId && callId !== 'null' && callId !== 'undefined')
+            .map(([callId, costs]) => {
+                const call = callById[callId]
+                const date = call?.started_at ?? callIdToFirstDate[callId] ?? ''
+                return { callId, costs, call, date }
+            })
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    }, [costByCall, callById, callIdToFirstDate])
+
+    const totalCalls = summaryRowsByCall.length
     const avgCostPerCall = totalCalls > 0 ? totalCostUsd / totalCalls : 0
     const avgDuration = useMemo(() => {
         const durations = calls.filter(c => c.duration_seconds && c.duration_seconds > 0).map(c => c.duration_seconds!)
@@ -414,10 +478,11 @@ export default function AdminPage() {
                         </ResponsiveContainer>
                     </div>
 
-                    {/* Detail Table */}
+                    {/* Detail: summary by call + individual usage records */}
                     <div className="rounded-2xl border overflow-hidden" style={{ backgroundColor: '#1a1a1a', borderColor: 'rgba(255,255,255,0.06)' }}>
                         <div className="px-6 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
                             <h3 className="text-sm font-semibold text-gray-300">📋 Detalhamento por Chamada</h3>
+                            <p className="text-xs text-gray-500 mt-1">Resumo por chamada de voz e custo individual de cada uso (registro)</p>
                         </div>
                         <div className="overflow-x-auto scrollbar-dark">
                             <table className="w-full text-sm">
@@ -433,27 +498,77 @@ export default function AdminPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {uniqueCallsWithCost.length === 0 ? (
+                                    {summaryRowsByCall.length === 0 ? (
                                         <tr>
                                             <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                                                 Nenhuma chamada com dados de custo encontrada neste período
                                             </td>
                                         </tr>
                                     ) : (
-                                        uniqueCallsWithCost.map((call) => (
-                                            <tr key={call.id} className="border-t hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-                                                <td className="px-6 py-3 text-gray-300">{fmtDate(call.started_at)}</td>
-                                                <td className="px-6 py-3 text-white font-medium">{call.user?.full_name || '—'}</td>
-                                                <td className="px-6 py-3 text-gray-400">{call.duration_seconds ? fmtDuration(call.duration_seconds) : '—'}</td>
-                                                <td className="px-6 py-3 text-right font-mono text-gray-300">{fmtUsd(call.costs.openai)}</td>
-                                                <td className="px-6 py-3 text-right font-mono text-gray-300">{fmtUsd(call.costs.deepgram)}</td>
-                                                <td className="px-6 py-3 text-right font-mono text-gray-300">{fmtUsd(call.costs.livekit)}</td>
-                                                <td className="px-6 py-3 text-right font-mono font-semibold" style={{ color: NEON_PINK }}>{fmtUsd(call.costs.total)}</td>
+                                        summaryRowsByCall.map((row) => {
+                                            const sellerName = row.call?.user?.full_name ?? profileById[callIdToUserId[row.callId]]?.full_name ?? '—'
+                                            return (
+                                            <tr key={row.callId} className="border-t hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                                                <td className="px-6 py-3 text-gray-300">{row.date ? fmtDate(row.date) : '—'}</td>
+                                                <td className="px-6 py-3 text-white font-medium">{sellerName}</td>
+                                                <td className="px-6 py-3 text-gray-400">{row.call?.duration_seconds != null ? fmtDuration(row.call.duration_seconds) : '—'}</td>
+                                                <td className="px-6 py-3 text-right font-mono text-gray-300">{fmtUsd(row.costs.openai)}</td>
+                                                <td className="px-6 py-3 text-right font-mono text-gray-300">{fmtUsd(row.costs.deepgram)}</td>
+                                                <td className="px-6 py-3 text-right font-mono text-gray-300">{fmtUsd(row.costs.livekit)}</td>
+                                                <td className="px-6 py-3 text-right font-mono font-semibold" style={{ color: NEON_PINK }}>{fmtUsd(row.costs.total)}</td>
                                             </tr>
-                                        ))
+                                            )
+                                        })
                                     )}
                                 </tbody>
                             </table>
+                        </div>
+                        {/* Individual usage records — cost per API call / usage */}
+                        <div className="border-t px-6 py-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                            <h4 className="text-xs font-semibold text-gray-400 mb-3">Custo individual por registro de uso</h4>
+                            <div className="overflow-x-auto scrollbar-dark">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-gray-500 text-left text-xs uppercase" style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                                            <th className="px-4 py-2 font-medium">Data/Hora</th>
+                                            <th className="px-4 py-2 font-medium">Chamada (vendedor)</th>
+                                            <th className="px-4 py-2 font-medium">Serviço</th>
+                                            <th className="px-4 py-2 font-medium">Método</th>
+                                            <th className="px-4 py-2 font-medium">Modelo / Detalhe</th>
+                                            <th className="px-4 py-2 font-medium text-right">Custo (USD)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {logs.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                                                    Nenhum registro de uso neste período
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            logs.map((log) => {
+                                                const call = log.call_id ? callById[log.call_id] : null
+                                                const detail = log.service === 'openai'
+                                                    ? `${fmtTokens(log.prompt_tokens)} in / ${fmtTokens(log.completion_tokens)} out`
+                                                    : log.duration_seconds != null
+                                                        ? fmtDuration(log.duration_seconds)
+                                                        : '—'
+                                                const modelOrDetail = log.model ? `${log.model} • ${detail}` : detail
+                                                return (
+                                                    <tr key={log.id} className="border-t hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                                                        <td className="px-4 py-2 text-gray-300 whitespace-nowrap">{fmtDate(log.created_at)}</td>
+                                                        <td className="px-4 py-2 text-white font-medium">{call?.user?.full_name ?? profileById[log.user_id ?? '']?.full_name ?? (log.call_id ? log.call_id.slice(0, 8) + '…' : '—')}</td>
+                                                        <td className="px-4 py-2" style={{ color: (COLORS as Record<string, string>)[log.service] ?? '#888' }}>{log.service}</td>
+                                                        <td className="px-4 py-2 text-gray-400">{log.method || '—'}</td>
+                                                        <td className="px-4 py-2 text-gray-400">{modelOrDetail}</td>
+                                                        <td className="px-4 py-2 text-right font-mono font-semibold" style={{ color: NEON_PINK }}>{fmtUsd(Number(log.cost_usd))}</td>
+                                                    </tr>
+                                                )
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </>

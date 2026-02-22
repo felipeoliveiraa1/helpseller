@@ -58,25 +58,22 @@ export interface CallSession {
     scriptId: string;
     transcript: TranscriptChunk[];
     currentStep: number;
-    /** Timestamp (ms) when call started; used for duration_seconds */
     startedAt?: number;
     platform?: string;
-    // AI State
     chunksSinceLastCoach: number;
     lastCoachingAt?: number;
-    lastSummaryAt?: number; // NEW: Timer for summary
+    lastSummaryAt?: number;
+    lastPersistedAt?: number;
     leadProfile?: any;
     lastCoaching?: string;
     startupTime?: number;
-    lastTranscription?: string; // legacy; prefer lastLeadTranscription / lastSellerTranscription
+    lastTranscription?: string;
     lastLeadTranscription?: string;
     lastSellerTranscription?: string;
     leadName?: string;
-    /** Display name for seller (from extension selfName or profile) */
     sellerName?: string;
     recentTranscriptions?: Array<{ text: string; role: string; timestamp: number }>;
     webmHeader?: Buffer[];
-    /** Perguntas já enviadas ao vendedor (para o agente não repetir) */
     sentQuestions?: string[];
 }
 
@@ -1036,6 +1033,10 @@ export async function websocketRoutes(fastify: FastifyInstance) {
          * Shared post-transcription logic: filter, persist, coach, publish.
          * Called by both Whisper (sync) and Deepgram (streaming callback).
          */
+        const PERSIST_BATCH_INTERVAL = env.PERSIST_BATCH_INTERVAL_MS;
+        const MIN_COACH_GAP = 4000;
+        let isCoaching = false;
+
         async function processTranscriptionResult(text: string, role: 'seller' | 'lead', ws: WebSocket): Promise<void> {
             if (!text || !text.trim()) return;
             if (isHallucination(text)) {
@@ -1047,7 +1048,6 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             const currentSellerName = sessionData?.sellerName || bufferedSellerName || 'Vendedor';
             const speakerLabel = role === 'seller' ? currentSellerName : currentLeadName;
             logger.info(`✨ [${speakerLabel}]: "${text}"`);
-            debugLog(`[SUCCESS] Transcription: ${text}`);
             if (sessionData) {
                 if (role === 'lead') {
                     sessionData.lastLeadTranscription = text.slice(-200);
@@ -1066,78 +1066,15 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 if (callId) {
                     await redis.set(`call:${callId}:session`, sessionData, 3600);
                 }
-                const { error: updateError } = await supabaseAdmin.from('calls').update({
-                    transcript: sessionData.transcript
-                }).eq('id', callId);
-                if (updateError) {
-                    logger.error({ updateError, callId }, '❌ DB UPDATE ERROR: Failed to save transcript');
-                }
                 const now = Date.now();
-                const COACH_INTERVAL = 15000;
-                const SUMMARY_INTERVAL = 30000;
-                const CONTEXT_WINDOW = 60000;
-                if (!sessionData.chunksSinceLastCoach) sessionData.chunksSinceLastCoach = 0;
-                sessionData.chunksSinceLastCoach++;
-                if (!sessionData.lastCoachingAt || (now - sessionData.lastCoachingAt) >= COACH_INTERVAL) {
-                    sessionData.chunksSinceLastCoach = 0;
-                    sessionData.lastCoachingAt = now;
-                    try {
-                        const { data: dbCall, error: dbError } = await supabaseAdmin
-                            .from('calls')
-                            .select('transcript')
-                            .eq('id', callId)
-                            .single();
-                        let transcriptList = sessionData.transcript;
-                        if (!dbError && dbCall?.transcript && Array.isArray(dbCall.transcript)) {
-                            transcriptList = dbCall.transcript;
-                        } else {
-                            logger.warn({ dbError }, `⚠️ Failed to fetch transcript from DB for Coach, using memory. Call ${callId}`);
-                        }
-                        const TWO_MINUTES_AGO = Date.now() - 120_000;
-                        const fullContext = transcriptList
-                            .filter((t: any) => t.timestamp > TWO_MINUTES_AGO)
-                            .map((t: any) => `${t.role === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
-                            .join('\n');
-                        const sentQuestions = sessionData.sentQuestions ?? [];
-                        logger.info(`🧠 Coach analyzing (${fullContext.length} chars, ${sentQuestions.length} sent questions) for call ${callId}`);
-                        const spinResult = await coachEngine.analyzeTranscription(fullContext, { sentQuestions, callId: callId ?? undefined });
-                        if (spinResult && ws.readyState === WebSocket.OPEN) {
-                            if (spinResult.suggested_question) {
-                                sessionData.sentQuestions = [...sentQuestions, spinResult.suggested_question];
-                                await redis.set(`call:${callId}:session`, sessionData, 3600 * 4);
-                            }
-                            ws.send(JSON.stringify({
-                                type: 'COACHING_MESSAGE',
-                                payload: {
-                                    type: spinResult.objection ? 'objection' : 'tip',
-                                    content: spinResult.tip,
-                                    urgency: spinResult.objection ? 'high' : 'medium',
-                                    metadata: {
-                                        phase: spinResult.phase,
-                                        objection: spinResult.objection,
-                                        suggested_question: spinResult.suggested_question ?? undefined,
-                                        suggested_response: spinResult.suggested_response ?? undefined
-                                    }
-                                }
-                            }));
-                            if (spinResult.objection) {
-                                ws.send(JSON.stringify({
-                                    type: 'objection:detected',
-                                    payload: {
-                                        objection: spinResult.objection,
-                                        phase: spinResult.phase,
-                                        tip: spinResult.tip
-                                    }
-                                }));
-                                logger.info(`⚡ Objection detected: ${spinResult.objection}`);
-                            }
-                        }
-                    } catch (coachError: any) {
-                        logger.error({ message: coachError?.message, stack: coachError?.stack }, '❌ SPIN Coach failed (non-fatal)');
-                    }
+                if (!sessionData.lastPersistedAt || (now - sessionData.lastPersistedAt) >= PERSIST_BATCH_INTERVAL) {
+                    sessionData.lastPersistedAt = now;
+                    supabaseAdmin.from('calls').update({
+                        transcript: sessionData.transcript
+                    }).eq('id', callId).then(({ error }) => {
+                        if (error) logger.error({ error, callId }, '❌ DB batch persist failed');
+                    });
                 }
-                // Summary agent disabled to reduce OpenAI costs
-                // if (!sessionData.lastSummaryAt || (now - sessionData.lastSummaryAt) >= SUMMARY_INTERVAL) { ... }
             }
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -1155,7 +1092,73 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             }
         }
 
-        /** Create and connect Deepgram streaming clients for lead + seller. */
+        async function triggerStreamingCoach(ws: WebSocket): Promise<void> {
+            if (!callId || !sessionData || isCoaching) return;
+            const now = Date.now();
+            if (sessionData.lastCoachingAt && (now - sessionData.lastCoachingAt) < MIN_COACH_GAP) return;
+            isCoaching = true;
+            sessionData.lastCoachingAt = now;
+            try {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'coach:thinking', payload: { timestamp: now } }));
+                }
+                const recentTranscript = sessionData.transcript.slice(-30);
+                const fullContext = recentTranscript
+                    .map((t: any) => `${t.role === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
+                    .join('\n');
+                if (fullContext.trim().length < 10) { isCoaching = false; return; }
+                const sentQuestions = sessionData.sentQuestions ?? [];
+                const sentBlock = sentQuestions.length > 0
+                    ? `\n## PERGUNTAS JÁ ENVIADAS AO VENDEDOR(NÃO REPITA NENHUMA DESTAS)\n${sentQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}\n`
+                    : '';
+                const userPrompt = `Transcrição completa da conversa até agora:\n${fullContext}${sentBlock}\nAnalise e retorne o JSON.Se o lead fez pergunta ou objeção, preencha suggested_response(resposta pronta para o vendedor dizer).Sugira uma pergunta NOVA em suggested_question(não repita as listadas).`;
+                logger.info(`🧠 Coach streaming (${fullContext.length} chars) for call ${callId}`);
+                let fullJson = '';
+                for await (const token of openaiClient.streamCoachingTokens(coachEngine.getSystemPrompt(), userPrompt, callId ?? undefined)) {
+                    fullJson += token;
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'coach:token', payload: { token, timestamp: Date.now() } }));
+                    }
+                }
+                const parsed = JSON.parse(fullJson);
+                if (parsed && parsed.phase && parsed.tip && ws.readyState === WebSocket.OPEN) {
+                    if (parsed.suggested_question) {
+                        sessionData.sentQuestions = [...sentQuestions, parsed.suggested_question];
+                        await redis.set(`call:${callId}:session`, sessionData, 3600 * 4);
+                    }
+                    ws.send(JSON.stringify({
+                        type: 'COACHING_MESSAGE',
+                        payload: {
+                            type: parsed.objection ? 'objection' : 'tip',
+                            content: parsed.tip,
+                            urgency: parsed.objection ? 'high' : 'medium',
+                            metadata: {
+                                phase: parsed.phase,
+                                objection: parsed.objection || null,
+                                suggested_question: parsed.suggested_question ?? undefined,
+                                suggested_response: parsed.suggested_response ?? undefined
+                            }
+                        }
+                    }));
+                    if (parsed.objection) {
+                        ws.send(JSON.stringify({
+                            type: 'objection:detected',
+                            payload: { objection: parsed.objection, phase: parsed.phase, tip: parsed.tip }
+                        }));
+                        logger.info(`⚡ Objection detected: ${parsed.objection}`);
+                    }
+                    ws.send(JSON.stringify({ type: 'coach:done', payload: { timestamp: Date.now() } }));
+                }
+            } catch (coachError: any) {
+                logger.error({ message: coachError?.message, stack: coachError?.stack }, '❌ Streaming Coach failed (non-fatal)');
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'coach:idle', payload: { timestamp: Date.now() } }));
+                }
+            } finally {
+                isCoaching = false;
+            }
+        }
+
         function initDeepgramClients(ws: WebSocket): void {
             dgLeadClient = new DeepgramRealtimeClient('lead');
             dgSellerClient = new DeepgramRealtimeClient('seller');
@@ -1182,6 +1185,16 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             };
             setupCallbacks(dgLeadClient, 'lead');
             setupCallbacks(dgSellerClient, 'seller');
+            dgLeadClient.onUtteranceEnd = () => {
+                logger.info(`🎯 Lead utterance end — triggering coach`);
+                triggerStreamingCoach(ws).catch(err =>
+                    logger.error({ err }, '❌ triggerStreamingCoach failed')
+                );
+            };
+            if (sessionData?.webmHeader) {
+                if (sessionData.webmHeader[0]) dgLeadClient.setWebmHeader(sessionData.webmHeader[0]);
+                if (sessionData.webmHeader[1]) dgSellerClient.setWebmHeader(sessionData.webmHeader[1]);
+            }
             dgLeadClient.connect().catch(err => logger.error({ err }, '❌ Deepgram [lead] connect failed'));
             dgSellerClient.connect().catch(err => logger.error({ err }, '❌ Deepgram [seller] connect failed'));
             logger.info(`🔌 Deepgram clients initialized for call ${callId}`);
@@ -1199,6 +1212,13 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             const audioBuf = Buffer.from(event.payload.audio, 'base64');
             const rawRole = event.payload.role || event.payload.speaker || 'lead';
             const role: 'seller' | 'lead' = rawRole === 'seller' ? 'seller' : 'lead';
+            const isHeader = !!event.payload.isHeader;
+            if (isHeader && sessionData) {
+                if (!sessionData.webmHeader) sessionData.webmHeader = [];
+                const idx = role === 'lead' ? 0 : 1;
+                sessionData.webmHeader[idx] = audioBuf;
+                logger.info(`📦 Cached WebM header for ${role} (${audioBuf.length} bytes)`);
+            }
             if (useDeepgram) {
                 dgAudioChunkCount++;
                 const client = role === 'seller' ? dgSellerClient : dgLeadClient;
@@ -1206,10 +1226,13 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     logger.warn(`⚠️ Deepgram [${role}] client not initialized; dropping audio chunk`);
                     return;
                 }
-                if (dgAudioChunkCount <= 3 || dgAudioChunkCount % 40 === 0) {
+                if (isHeader) {
+                    client.setWebmHeader(audioBuf);
+                }
+                if (dgAudioChunkCount <= 3 || dgAudioChunkCount % 100 === 0) {
                     const headerHex = audioBuf.length >= 4 ? audioBuf.slice(0, 4).toString('hex') : 'short';
                     const wsState = client.getReadyState();
-                    logger.info(`🔊 [DG] audio:segment #${dgAudioChunkCount} role=${role} bytes=${audioBuf.length} header=${headerHex} wsState=${wsState}`);
+                    logger.info(`🔊 [DG] audio:segment #${dgAudioChunkCount} role=${role} bytes=${audioBuf.length} header=${headerHex} wsState=${wsState} isHeader=${isHeader}`);
                 }
                 client.sendAudio(audioBuf);
                 return;

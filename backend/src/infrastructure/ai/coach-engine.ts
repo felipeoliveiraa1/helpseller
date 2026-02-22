@@ -58,6 +58,11 @@ Regras finais: Só gere "suggested_response" para responder a falas que vieram E
 export class CoachEngine {
     constructor(private openaiClient: OpenAIClient) { }
 
+    /** Expose the system prompt for streaming coaching in the WS server. */
+    getSystemPrompt(): string {
+        return SPIN_SYSTEM_PROMPT;
+    }
+
     /**
      * Analisa todo o histórico de transcrição e retorna fase SPIN + objeção + dica.
      * @param fullTranscript Texto com todo o histórico da conversa formatada.

@@ -26,6 +26,16 @@ const envSchema = z.object({
     DEEPGRAM_API_KEY: z.string().default(''),
     TRANSCRIPTION_PROVIDER: z.enum(['deepgram', 'whisper']).default('deepgram'),
     TRANSCRIPT_NORMALIZER_ENABLED: z.coerce.boolean().default(false),
+    DG_SILENCE_CLOSE_MS: z.coerce.number().default(10000),
+    SELLER_TRANSCRIPTION: z.enum(['on', 'off']).default('on'),
+
+    // Coaching
+    COACH_TRIGGER: z.enum(['utterance_end', 'timer']).default('utterance_end'),
+    PERSIST_BATCH_INTERVAL_MS: z.coerce.number().default(30000),
+
+    // Debug flags
+    DG_DEBUG: z.coerce.boolean().default(false),
+    COACH_DEBUG: z.coerce.boolean().default(false),
 
     // Stripe
     STRIPE_SECRET_KEY: z.string().default(''),

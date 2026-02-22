@@ -7,16 +7,19 @@ const DEEPGRAM_WS_URL = 'wss://api.deepgram.com/v1/listen';
 const DEEPGRAM_QUERY_PARAMS: Record<string, string> = {
     model: 'nova-2',
     language: 'pt-BR',
+    encoding: 'opus',
     punctuate: 'true',
     smart_format: 'true',
     interim_results: 'true',
-    endpointing: '1000',
-    utterance_end_ms: '1500',
+    endpointing: '700',
+    utterance_end_ms: '1200',
     vad_events: 'true',
 };
 
 const KEEPALIVE_INTERVAL_MS = 3_000;
 const RECONNECT_DELAY_MS = 1_000;
+const DG_SILENCE_CLOSE_MS = parseInt(process.env.DG_SILENCE_CLOSE_MS || '10000', 10);
+const DG_DEBUG = process.env.DG_DEBUG === 'true';
 
 interface DeepgramTranscriptResponse {
     type: string;
@@ -47,6 +50,7 @@ interface DeepgramUtteranceEndResponse {
 
 export type DeepgramCallback = (text: string) => void;
 export type DeepgramUtteranceEndCallback = () => void;
+export type DeepgramSpeechFinalCallback = (text: string) => void;
 export type DeepgramErrorCallback = (error: Error) => void;
 
 /**
@@ -56,13 +60,18 @@ export type DeepgramErrorCallback = (error: Error) => void;
 export class DeepgramRealtimeClient {
     private ws: WebSocket | null = null;
     private keepAliveTimer: NodeJS.Timeout | null = null;
+    private silenceTimer: NodeJS.Timeout | null = null;
     private hasReconnected = false;
     private isClosed = false;
+    private isSilenceClosed = false;
     private role: string;
     private pendingAudio: Buffer[] = [];
+    private lastSpeechAt: number = Date.now();
+    private webmHeader: Buffer | null = null;
 
     onInterim: DeepgramCallback = () => {};
     onFinal: DeepgramCallback = () => {};
+    onSpeechFinal: DeepgramSpeechFinalCallback = () => {};
     onUtteranceEnd: DeepgramUtteranceEndCallback = () => {};
     onError: DeepgramErrorCallback = () => {};
 
@@ -81,6 +90,9 @@ export class DeepgramRealtimeClient {
         const queryString = new URLSearchParams(DEEPGRAM_QUERY_PARAMS).toString();
         const url = `${DEEPGRAM_WS_URL}?${queryString}`;
 
+        this.isSilenceClosed = false;
+        this.lastSpeechAt = Date.now();
+
         return new Promise<void>((resolve, reject) => {
             this.ws = new WebSocket(url, {
                 headers: { Authorization: `Token ${apiKey}` },
@@ -88,9 +100,15 @@ export class DeepgramRealtimeClient {
 
             this.ws.on('open', () => {
                 logger.info(`🎙️ Deepgram [${this.role}] connected`);
+                this.hasReconnected = false;
                 this.startKeepAlive();
+                this.startSilenceWatcher();
+                if (this.webmHeader) {
+                    this.ws!.send(this.webmHeader);
+                    logger.info(`[DG] [${this.role}] Sent cached WebM header on connect`);
+                }
                 if (this.pendingAudio.length > 0) {
-                    console.log(`[DG] [${this.role}] Flushing ${this.pendingAudio.length} buffered chunks (includes WebM header)`);
+                    logger.info(`[DG] [${this.role}] Flushing ${this.pendingAudio.length} buffered chunks`);
                     for (const buf of this.pendingAudio) {
                         this.ws!.send(buf);
                     }
@@ -106,7 +124,10 @@ export class DeepgramRealtimeClient {
             this.ws.on('close', (code: number, reason: Buffer) => {
                 logger.info({ code, reason: reason.toString() }, `🎙️ Deepgram [${this.role}] closed`);
                 this.stopKeepAlive();
-                this.attemptReconnect();
+                this.stopSilenceWatcher();
+                if (!this.isSilenceClosed) {
+                    this.attemptReconnect();
+                }
             });
 
             this.ws.on('error', (err: Error) => {
@@ -117,7 +138,23 @@ export class DeepgramRealtimeClient {
         });
     }
 
+    /** Cache the WebM init segment so it can be resent on reconnect. */
+    setWebmHeader(header: Buffer): void {
+        this.webmHeader = header;
+    }
+
     sendAudio(buffer: Buffer): void {
+        if (this.isClosed) return;
+
+        if (this.isSilenceClosed) {
+            logger.info(`🎙️ Deepgram [${this.role}] reopening after silence close`);
+            this.pendingAudio.push(buffer);
+            this.connect().catch(err =>
+                logger.error({ err }, `🎙️ Deepgram [${this.role}] reopen failed`)
+            );
+            return;
+        }
+
         if (!this.ws || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
             return;
         }
@@ -138,6 +175,7 @@ export class DeepgramRealtimeClient {
         this.isClosed = true;
         this.pendingAudio = [];
         this.stopKeepAlive();
+        this.stopSilenceWatcher();
         if (this.ws) {
             const state = this.ws.readyState;
             if (state === WebSocket.OPEN) {
@@ -195,9 +233,13 @@ export class DeepgramRealtimeClient {
             logger.info(`[DG RESULT #${this.dgResultCount}] [${this.role}] is_final=${result.is_final} speech_final=${result.speech_final} text="${transcript.slice(0, 60)}" dur=${result.duration?.toFixed(1)}`);
         }
         if (!transcript.trim()) return;
+        this.lastSpeechAt = Date.now();
         if (result.is_final) {
             logger.info(`[DG FINAL] [${this.role}] "${transcript.slice(0, 80)}"`);
             this.onFinal(transcript);
+            if (result.speech_final) {
+                this.onSpeechFinal(transcript);
+            }
         } else {
             logger.info(`[DG INTERIM] [${this.role}] "${transcript.slice(0, 80)}"`);
             this.onInterim(transcript);
@@ -217,6 +259,33 @@ export class DeepgramRealtimeClient {
         if (this.keepAliveTimer) {
             clearInterval(this.keepAliveTimer);
             this.keepAliveTimer = null;
+        }
+    }
+
+    private startSilenceWatcher(): void {
+        this.stopSilenceWatcher();
+        this.silenceTimer = setInterval(() => {
+            if (this.isClosed || this.isSilenceClosed) return;
+            const silenceMs = Date.now() - this.lastSpeechAt;
+            if (silenceMs > DG_SILENCE_CLOSE_MS) {
+                logger.info(`🔇 Deepgram [${this.role}] closing after ${(silenceMs / 1000).toFixed(0)}s silence`);
+                this.isSilenceClosed = true;
+                this.stopKeepAlive();
+                this.stopSilenceWatcher();
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({ type: 'CloseStream' }));
+                    this.ws.removeAllListeners();
+                    this.ws.close();
+                    this.ws = null;
+                }
+            }
+        }, 5000);
+    }
+
+    private stopSilenceWatcher(): void {
+        if (this.silenceTimer) {
+            clearInterval(this.silenceTimer);
+            this.silenceTimer = null;
         }
     }
 

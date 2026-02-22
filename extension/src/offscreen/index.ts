@@ -17,9 +17,10 @@ let isStreamingMedia = false; // NEW: Track if video streaming is active
 let currentDisplayStreamForLiveKit: MediaStream | null = null;
 let liveKitRoom: Room | null = null;
 
-const RECORDING_INTERVAL_MS = 3000;
+const RECORDING_TIMESLICE_MS = 500;
 const SILENCE_THRESHOLD_LEAD = 5;
-const SILENCE_THRESHOLD_SELLER = 15; // Maior para ignorar eco do lead no mic
+const SILENCE_THRESHOLD_SELLER = 15;
+const webmHeaders: Record<string, string> = {};
 
 function log(...args: any[]) {
     console.log(...args);
@@ -385,7 +386,6 @@ function startRecordingCycle(
 ) {
     if (!isRecording) return;
 
-    // Use a robust audio bitrate
     const options = mimeType ? { mimeType, audioBitsPerSecond: 64000 } : { audioBitsPerSecond: 64000 };
     const recorder = new MediaRecorder(stream, options);
 
@@ -399,12 +399,18 @@ function startRecordingCycle(
             const base64Index = dataUrl.indexOf(';base64,');
             const base64 = base64Index >= 0 ? dataUrl.slice(base64Index + 8) : dataUrl.split(',')[1];
             if (!base64) return;
+            const isHeader = !webmHeaders[role];
+            if (isHeader) {
+                webmHeaders[role] = base64;
+                log(`📦 [${role}] WebM header captured (${event.data.size} bytes)`);
+            }
             chrome.runtime.sendMessage({
                 type: 'AUDIO_SEGMENT',
                 data: base64,
                 size: event.data.size,
-                role: role,
-                isStreamChunk: true
+                role,
+                isStreamChunk: true,
+                isHeader,
             }).catch(err => log(`❌ [${role}] send error:`, (err as Error).message));
         };
         reader.readAsDataURL(event.data);
@@ -413,25 +419,12 @@ function startRecordingCycle(
     recorder.onerror = (event: any) => {
         log(`❌ [${role}] Recorder error:`, event.error?.message);
         if (isRecording) {
+            delete webmHeaders[role];
             setTimeout(() => startRecordingCycle(stream, mimeType, role, analyser), 500);
         }
     };
 
-    recorder.onstop = () => {
-        // Restart cycle ONLY AFTER current one has properly stopped
-        if (isRecording) {
-            startRecordingCycle(stream, mimeType, role, analyser);
-        }
-    };
-
-    recorder.start(); // Start without timeslice
-
-    // Stop after the interval to trigger ondataavailable with a complete file, then onstop
-    setTimeout(() => {
-        if (recorder.state !== 'inactive') {
-            recorder.stop();
-        }
-    }, RECORDING_INTERVAL_MS);
+    recorder.start(RECORDING_TIMESLICE_MS);
 
     if (role === 'lead') tabRecorder = recorder as MediaRecorder;
     else micRecorder = recorder as MediaRecorder;
@@ -446,6 +439,8 @@ function stopTranscription() {
     });
     tabRecorder = null;
     micRecorder = null;
+    delete webmHeaders['lead'];
+    delete webmHeaders['seller'];
 
     // NEW: Stop media streaming
     stopMediaStreaming();

@@ -95,6 +95,7 @@ export default function SimpleSidebar() {
     const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
     const [coachFeed, setCoachFeed] = useState<CoachingData[]>([]);
     const [isThinking, setIsThinking] = useState(false);
+    const [streamingCoachJson, setStreamingCoachJson] = useState<string>('');
     const [managerWhisper, setManagerWhisper] = useState<{ content: string; urgency: string; timestamp: number } | null>(null);
     const [isRecording, setIsRecording] = useState(false);
     const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
@@ -244,10 +245,15 @@ export default function SimpleSidebar() {
                 setManagerWhisper({ content: msg.data.content, urgency: msg.data.urgency, timestamp: msg.data.timestamp });
             } else if (msg.type === 'COACH_THINKING') {
                 setIsThinking(true);
-            } else if (msg.type === 'COACH_IDLE') {
+                setStreamingCoachJson('');
+            } else if (msg.type === 'COACH_TOKEN') {
+                setStreamingCoachJson(prev => prev + (msg.data?.token || ''));
+            } else if (msg.type === 'COACH_IDLE' || msg.type === 'COACH_DONE') {
                 setIsThinking(false);
+                setStreamingCoachJson('');
             } else if (msg.type === 'COACHING_MESSAGE') {
                 setIsThinking(false);
+                setStreamingCoachJson('');
                 const payload = msg.data;
                 const newCoaching: CoachingData = {
                     phase: payload.metadata?.phase || 'S',
@@ -333,11 +339,21 @@ export default function SimpleSidebar() {
                 </div>
             )}
 
-            {/* Thinking indicator */}
+            {/* Coach streaming preview / thinking indicator */}
             {isThinking && (
-                <div style={{ padding: '6px 12px', borderBottom: `1px solid ${BORDER}`, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Cpu size={12} style={{ color: NEON_PINK, animation: 'spin 1.5s linear infinite' }} />
-                    <span style={{ fontSize: 11, color: TEXT_MUTED }}>Analisando conversa...</span>
+                <div style={{ padding: '8px 12px', borderBottom: `1px solid ${BORDER}`, flexShrink: 0, borderLeft: `3px solid ${NEON_PINK}`, background: 'rgba(255,0,122,0.04)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: streamingCoachJson ? 4 : 0 }}>
+                        <Cpu size={12} style={{ color: NEON_PINK, animation: 'spin 1.5s linear infinite' }} />
+                        <span style={{ fontSize: 10, color: TEXT_MUTED, fontWeight: 600 }}>Coach analisando...</span>
+                    </div>
+                    {streamingCoachJson && (() => {
+                        try {
+                            const partial = JSON.parse(streamingCoachJson + '"}');
+                            const preview = partial.suggested_response || partial.tip || '';
+                            if (preview) return <div style={{ fontSize: 12, color: TEXT_SECONDARY, lineHeight: 1.4, fontStyle: 'italic' }}>"{preview}"<span style={{ display: 'inline-block', width: 2, height: 12, backgroundColor: NEON_PINK, marginLeft: 2, verticalAlign: 'text-bottom', animation: 'cursorBlink 0.6s step-end infinite' }} /></div>;
+                        } catch { /* partial JSON not parseable yet */ }
+                        return null;
+                    })()}
                 </div>
             )}
 

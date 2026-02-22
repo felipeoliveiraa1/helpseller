@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { env } from '../../shared/config/env.js';
+import { UsageTracker, UsageInfo } from './usage-tracker.js';
 
 export class OpenAIClient {
     private client: OpenAI;
@@ -8,11 +9,11 @@ export class OpenAIClient {
         this.client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
     }
 
-    async streamCoaching(systemPrompt: string, userPrompt: string): Promise<string> {
+    async streamCoaching(systemPrompt: string, userPrompt: string, callId?: string): Promise<string> {
         let fullResponse = '';
 
         const stream = await this.client.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: 'gpt-4.1-mini',
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
@@ -20,20 +21,35 @@ export class OpenAIClient {
             max_tokens: 500,
             temperature: 0.3,
             stream: true,
+            stream_options: { include_usage: true },
             response_format: { type: 'json_object' }
         });
 
+        let usage: UsageInfo | null = null;
         for await (const chunk of stream) {
             const delta = chunk.choices[0]?.delta?.content || '';
             fullResponse += delta;
+            if (chunk.usage) {
+                usage = {
+                    prompt_tokens: chunk.usage.prompt_tokens ?? 0,
+                    completion_tokens: chunk.usage.completion_tokens ?? 0,
+                    cached_tokens: (chunk.usage as any).prompt_tokens_details?.cached_tokens ?? 0,
+                    total_tokens: chunk.usage.total_tokens ?? 0,
+                    model: 'gpt-4.1-mini',
+                };
+            }
+        }
+
+        if (callId && usage) {
+            UsageTracker.logOpenAI({ callId }, 'streamCoaching', usage).catch(() => { });
         }
 
         return fullResponse;
     }
 
-    async analyzePostCall(systemPrompt: string, userPrompt: string): Promise<string> {
+    async analyzePostCall(systemPrompt: string, userPrompt: string, callId?: string): Promise<string> {
         const response = await this.client.chat.completions.create({
-            model: 'gpt-4o',
+            model: 'gpt-4.1',
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
@@ -43,16 +59,28 @@ export class OpenAIClient {
             response_format: { type: 'json_object' }
         });
 
+        if (callId && response.usage) {
+            const usage: UsageInfo = {
+                prompt_tokens: response.usage.prompt_tokens,
+                completion_tokens: response.usage.completion_tokens,
+                cached_tokens: (response.usage as any).prompt_tokens_details?.cached_tokens ?? 0,
+                total_tokens: response.usage.total_tokens,
+                model: 'gpt-4.1',
+            };
+            UsageTracker.logOpenAI({ callId }, 'analyzePostCall', usage).catch(() => { });
+        }
+
         return response.choices[0]?.message?.content || '{}';
     }
 
     /** Yields individual tokens from a streaming LLM coaching response. */
     async *streamCoachingTokens(
         systemPrompt: string,
-        userPrompt: string
+        userPrompt: string,
+        callId?: string
     ): AsyncGenerator<string> {
         const stream = await this.client.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: 'gpt-4.1-mini',
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
@@ -60,19 +88,34 @@ export class OpenAIClient {
             max_tokens: 500,
             temperature: 0.3,
             stream: true,
+            stream_options: { include_usage: true },
             response_format: { type: 'json_object' }
         });
 
+        let usage: UsageInfo | null = null;
         for await (const chunk of stream) {
             const delta = chunk.choices[0]?.delta?.content || '';
             if (delta) yield delta;
+            if (chunk.usage) {
+                usage = {
+                    prompt_tokens: chunk.usage.prompt_tokens ?? 0,
+                    completion_tokens: chunk.usage.completion_tokens ?? 0,
+                    cached_tokens: (chunk.usage as any).prompt_tokens_details?.cached_tokens ?? 0,
+                    total_tokens: chunk.usage.total_tokens ?? 0,
+                    model: 'gpt-4.1-mini',
+                };
+            }
+        }
+
+        if (callId && usage) {
+            UsageTracker.logOpenAI({ callId }, 'streamCoachingTokens', usage).catch(() => { });
         }
     }
 
-    async completeJson<T>(systemPrompt: string, userPrompt: string): Promise<T | null> {
+    async completeJson<T>(systemPrompt: string, userPrompt: string, callId?: string): Promise<T | null> {
         try {
             const response = await this.client.chat.completions.create({
-                model: 'gpt-4o-mini',
+                model: 'gpt-4.1-mini',
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt }
@@ -81,6 +124,17 @@ export class OpenAIClient {
                 temperature: 0.2,
                 response_format: { type: 'json_object' }
             });
+
+            if (callId && response.usage) {
+                const usage: UsageInfo = {
+                    prompt_tokens: response.usage.prompt_tokens,
+                    completion_tokens: response.usage.completion_tokens,
+                    cached_tokens: (response.usage as any).prompt_tokens_details?.cached_tokens ?? 0,
+                    total_tokens: response.usage.total_tokens,
+                    model: 'gpt-4.1-mini',
+                };
+                UsageTracker.logOpenAI({ callId }, 'completeJson', usage).catch(() => { });
+            }
 
             const content = response.choices[0]?.message?.content;
             if (!content) return null;

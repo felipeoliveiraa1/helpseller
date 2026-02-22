@@ -48,6 +48,7 @@ import { PostCallAnalyzer } from '../ai/post-call-analyzer.js';
 import { WhisperClient } from '../ai/whisper-client.js';
 import { DeepgramRealtimeClient } from '../ai/deepgram-realtime-client.js';
 import { SummaryAgent } from '../ai/summary-agent.js';
+import { UsageTracker } from '../ai/usage-tracker.js';
 import { env } from '../../shared/config/env.js';
 
 // Types
@@ -929,6 +930,16 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             await redis.del(`call:${currentCallIdForRest}:session`);
             if (sessionData?.userId) await redis.del(`user:${sessionData.userId}:current_call`);
             closeDeepgramClients();
+
+            // 8. Log infrastructure costs (Deepgram + LiveKit) to Supabase
+            if (durationSeconds && durationSeconds > 0) {
+                const usageCtx = { callId: currentCallIdForRest, userId };
+                // Deepgram: 2 channels (lead + seller)
+                UsageTracker.logDeepgram(usageCtx, durationSeconds).catch(() => { });
+                UsageTracker.logDeepgram(usageCtx, durationSeconds).catch(() => { });
+                // LiveKit: 2 participants (lead + seller)
+                UsageTracker.logLiveKit(usageCtx, durationSeconds, 2).catch(() => { });
+            }
         }
 
         async function handleAudioChunk(event: any, ws: WebSocket) {

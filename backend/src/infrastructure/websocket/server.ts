@@ -229,6 +229,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         let commandHandler: ((message: any) => void) | null = null; // For manager whispers
         let pendingTranscriptions = 0;
         let isAlive = true;
+        let callEnded = false;
         let dgLeadClient: DeepgramRealtimeClient | null = null;
         let dgSellerClient: DeepgramRealtimeClient | null = null;
 
@@ -800,6 +801,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             ws: WebSocket,
             payload?: { callId?: string; result?: string }
         ) {
+            // Prevent duplicate executions (extension may send call:end multiple times + disconnect handler)
+            if (callEnded) {
+                logger.info('⚠️ handleCallEnd already executed for this connection, skipping duplicate');
+                return;
+            }
+            callEnded = true;
             let resolvedCallId = currentCallId ?? (payload?.callId && payload.callId.trim() ? payload.callId.trim() : null);
             if (!resolvedCallId && userId) {
                 const fromRedis = await redis.get<string>(`user:${userId}:current_call`);

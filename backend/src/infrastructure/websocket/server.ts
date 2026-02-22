@@ -1093,7 +1093,9 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         } else {
                             logger.warn({ dbError }, `⚠️ Failed to fetch transcript from DB for Coach, using memory. Call ${callId}`);
                         }
+                        const TWO_MINUTES_AGO = Date.now() - 120_000;
                         const fullContext = transcriptList
+                            .filter((t: any) => t.timestamp > TWO_MINUTES_AGO)
                             .map((t: any) => `${t.role === 'seller' ? 'VENDEDOR' : 'LEAD'}: ${t.text}`)
                             .join('\n');
                         const sentQuestions = sessionData.sentQuestions ?? [];
@@ -1134,20 +1136,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         logger.error({ message: coachError?.message, stack: coachError?.stack }, '❌ SPIN Coach failed (non-fatal)');
                     }
                 }
-                if (!sessionData.lastSummaryAt || (now - sessionData.lastSummaryAt) >= SUMMARY_INTERVAL) {
-                    sessionData.lastSummaryAt = now;
-                    try {
-                        logger.info(`📊 Generating Live Summary for call ${callId}`);
-                        const cutoff = now - CONTEXT_WINDOW;
-                        const recentChunks = sessionData!.transcript.filter(t => t.timestamp > cutoff);
-                        const liveSummary = await summaryAgent.generateLiveSummary(recentChunks, callId ?? undefined);
-                        if (liveSummary) {
-                            await redis.publish(`call:${callId}:live_summary`, JSON.stringify(liveSummary));
-                        }
-                    } catch (summaryError: any) {
-                        logger.error({ message: summaryError?.message, stack: summaryError?.stack }, '❌ Summary Agent failed (non-fatal)');
-                    }
-                }
+                // Summary agent disabled to reduce OpenAI costs
+                // if (!sessionData.lastSummaryAt || (now - sessionData.lastSummaryAt) >= SUMMARY_INTERVAL) { ... }
             }
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({

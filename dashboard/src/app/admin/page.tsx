@@ -358,7 +358,7 @@ export default function AdminPage() {
                                     <Tooltip
                                         contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 13 }}
                                         labelStyle={{ color: '#999' }}
-                                        formatter={(value: number) => [`$${value.toFixed(6)}`, 'Custo']}
+                                        formatter={(value: any) => [`$${Number(value).toFixed(6)}`, 'Custo']}
                                     />
                                     <Bar dataKey="cost" radius={[8, 8, 0, 0]}>
                                         {costByService.map((entry, i) => (
@@ -382,7 +382,7 @@ export default function AdminPage() {
                                         outerRadius={100}
                                         paddingAngle={4}
                                         dataKey="value"
-                                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                        label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
                                     >
                                         {pieData.map((entry, i) => (
                                             <Cell key={i} fill={(COLORS as any)[entry.name.toLowerCase()] || '#888'} />
@@ -390,7 +390,7 @@ export default function AdminPage() {
                                     </Pie>
                                     <Tooltip
                                         contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 13 }}
-                                        formatter={(value: number) => [`$${value.toFixed(6)}`, 'Custo']}
+                                        formatter={(value: any) => [`$${Number(value).toFixed(6)}`, 'Custo']}
                                     />
                                 </PieChart>
                             </ResponsiveContainer>
@@ -407,7 +407,7 @@ export default function AdminPage() {
                                 <YAxis stroke="#666" fontSize={11} tickFormatter={v => `$${v}`} />
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 13 }}
-                                    formatter={(value: number) => [`$${value.toFixed(4)}`, 'Custo']}
+                                    formatter={(value: any) => [`$${Number(value).toFixed(4)}`, 'Custo']}
                                 />
                                 <Line type="monotone" dataKey="cost" stroke={NEON_PINK} strokeWidth={2.5} dot={{ r: 3, fill: NEON_PINK }} activeDot={{ r: 5 }} />
                             </LineChart>

@@ -65,7 +65,7 @@ export class CoachEngine {
      */
     async analyzeTranscription(
         fullTranscript: string,
-        options?: { sentQuestions?: string[] }
+        options?: { sentQuestions?: string[]; callId?: string }
     ): Promise<SpinAnalysis | null> {
         if (!fullTranscript || fullTranscript.trim().length < 10) return null;
 
@@ -89,7 +89,8 @@ Analise e retorne o JSON.Se o lead fez pergunta ou objeção, preencha suggested
         try {
             const result = await this.openaiClient.completeJson<SpinAnalysis & { suggested_question?: string | null; suggested_response?: string | null }>(
                 SPIN_SYSTEM_PROMPT,
-                userPrompt
+                userPrompt,
+                options?.callId
             );
 
             // Validate shape

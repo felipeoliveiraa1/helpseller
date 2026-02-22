@@ -888,7 +888,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             let summary: any = null;
             try {
                 summary = await Promise.race([
-                    postCallAnalyzer.generate(sessionData, scriptName, ["Intro", "Discovery", "Close"]),
+                    postCallAnalyzer.generate(sessionData, scriptName, ["Intro", "Discovery", "Close"], resolvedCallId),
                     new Promise<null>((_, reject) =>
                         setTimeout(() => reject(new Error('Post-call analysis timeout')), POST_CALL_ANALYSIS_TIMEOUT_MS)
                     ),
@@ -934,9 +934,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             // 8. Log infrastructure costs (Deepgram + LiveKit) to Supabase
             if (durationSeconds && durationSeconds > 0) {
                 const usageCtx = { callId: currentCallIdForRest, userId };
-                // Deepgram: 2 channels (lead + seller)
-                UsageTracker.logDeepgram(usageCtx, durationSeconds).catch(() => { });
-                UsageTracker.logDeepgram(usageCtx, durationSeconds).catch(() => { });
+                // Deepgram: 2 channels (lead + seller) — log combined duration
+                UsageTracker.logDeepgram(usageCtx, durationSeconds * 2).catch(() => { });
                 // LiveKit: 2 participants (lead + seller)
                 UsageTracker.logLiveKit(usageCtx, durationSeconds, 2).catch(() => { });
             }
@@ -1092,7 +1091,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                             .join('\n');
                         const sentQuestions = sessionData.sentQuestions ?? [];
                         logger.info(`🧠 Coach analyzing (${fullContext.length} chars, ${sentQuestions.length} sent questions) for call ${callId}`);
-                        const spinResult = await coachEngine.analyzeTranscription(fullContext, { sentQuestions });
+                        const spinResult = await coachEngine.analyzeTranscription(fullContext, { sentQuestions, callId: callId ?? undefined });
                         if (spinResult && ws.readyState === WebSocket.OPEN) {
                             if (spinResult.suggested_question) {
                                 sessionData.sentQuestions = [...sentQuestions, spinResult.suggested_question];
@@ -1134,7 +1133,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         logger.info(`📊 Generating Live Summary for call ${callId}`);
                         const cutoff = now - CONTEXT_WINDOW;
                         const recentChunks = sessionData!.transcript.filter(t => t.timestamp > cutoff);
-                        const liveSummary = await summaryAgent.generateLiveSummary(recentChunks);
+                        const liveSummary = await summaryAgent.generateLiveSummary(recentChunks, callId ?? undefined);
                         if (liveSummary) {
                             await redis.publish(`call:${callId}:live_summary`, JSON.stringify(liveSummary));
                         }

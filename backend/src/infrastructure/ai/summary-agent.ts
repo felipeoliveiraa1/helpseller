@@ -34,7 +34,7 @@ Seu objetivo: fornecer um "Resumo Estratégico" para o Gestor de Vendas a cada 2
 export class SummaryAgent {
     constructor(private openaiClient: OpenAIClient) { }
 
-    async generateLiveSummary(transcript: TranscriptChunk[]): Promise<LiveSummary | null> {
+    async generateLiveSummary(transcript: TranscriptChunk[], callId?: string): Promise<LiveSummary | null> {
         if (transcript.length === 0) return null;
 
         const recentTranscript = transcript
@@ -52,7 +52,8 @@ Gere o Resumo Estratégico em JSON.
         try {
             return await this.openaiClient.completeJson<LiveSummary>(
                 SUMMARY_SYSTEM_PROMPT,
-                userPrompt
+                userPrompt,
+                callId
             );
         } catch (error) {
             console.error("SummaryAgent Error", error);

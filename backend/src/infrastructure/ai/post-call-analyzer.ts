@@ -4,7 +4,7 @@ import { OpenAIClient } from "./openai-client";
 export class PostCallAnalyzer {
   constructor(private openaiClient: OpenAIClient) { }
 
-  async generate(session: CallSession, scriptName: string, steps: string[]) {
+  async generate(session: CallSession, scriptName: string, steps: string[], callId?: string) {
     const systemPrompt = `Abaixo eu vou informar uma <ação> para você executar, a <persona> que você representa, e vou explicar os <passos> que você deve seguir para executar a ação. Vou te enviar um conjunto de <dados>, e explicar o <contexto> da situação. Ao final, vou explicar o <formato> da saída, e mostrar um <exemplo> para você seguir.
 
 <ação>
@@ -214,7 +214,7 @@ Etapas: ${steps.join(' → ')}
 Transcrição completa:
 ${transcriptText}`;
 
-    const raw = await this.openaiClient.analyzePostCall(systemPrompt, userPrompt);
+    const raw = await this.openaiClient.analyzePostCall(systemPrompt, userPrompt, callId);
     try {
       const data = JSON.parse(raw);
       // Compatibility mapping for existing database schema

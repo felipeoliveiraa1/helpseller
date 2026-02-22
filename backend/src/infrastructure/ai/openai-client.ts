@@ -49,7 +49,7 @@ export class OpenAIClient {
 
     async analyzePostCall(systemPrompt: string, userPrompt: string, callId?: string): Promise<string> {
         const response = await this.client.chat.completions.create({
-            model: 'gpt-4.1',
+            model: 'gpt-4.1-mini',
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
@@ -65,7 +65,7 @@ export class OpenAIClient {
                 completion_tokens: response.usage.completion_tokens,
                 cached_tokens: (response.usage as any).prompt_tokens_details?.cached_tokens ?? 0,
                 total_tokens: response.usage.total_tokens,
-                model: 'gpt-4.1',
+                model: 'gpt-4.1-mini',
             };
             UsageTracker.logOpenAI({ callId }, 'analyzePostCall', usage).catch(() => { });
         }

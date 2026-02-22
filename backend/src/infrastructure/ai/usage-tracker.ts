@@ -12,15 +12,15 @@ export interface UsageInfo {
 
 // ─── Pricing Tables (USD) ────────────────────────────────────
 const OPENAI_PRICING: Record<string, { input: number; output: number; cached: number }> = {
-    'gpt-4.1-mini': { input: 0.150 / 1e6, output: 0.600 / 1e6, cached: 0.075 / 1e6 },
+    'gpt-4.1-mini': { input: 0.80 / 1e6, output: 3.20 / 1e6, cached: 0.20 / 1e6 },
     'gpt-4.1-nano': { input: 0.10 / 1e6, output: 0.40 / 1e6, cached: 0.025 / 1e6 },
     'gpt-4o-mini': { input: 0.15 / 1e6, output: 0.60 / 1e6, cached: 0.075 / 1e6 },
     'gpt-4o': { input: 2.50 / 1e6, output: 10.0 / 1e6, cached: 1.25 / 1e6 },
     'gpt-4.1': { input: 2.00 / 1e6, output: 8.00 / 1e6, cached: 0.50 / 1e6 },
 };
 
-const DEEPGRAM_PRICE_PER_MIN = 0.0043;        // Nova-2 Pay-as-you-go
-const LIVEKIT_PRICE_PER_PARTICIPANT_MIN = 0.0015; // Cloud Standard
+const DEEPGRAM_PRICE_PER_MIN = 0.0058;        // Nova-2 Pay-as-you-go
+const LIVEKIT_PRICE_PER_PARTICIPANT_MIN = 0.0005; // Cloud Ship
 
 // ─── Cost Calculators ────────────────────────────────────────
 

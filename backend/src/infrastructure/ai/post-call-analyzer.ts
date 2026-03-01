@@ -1,5 +1,5 @@
 import { CallSession } from "../websocket/server.js";
-import { OpenAIClient } from "./openai-client";
+import { OpenAIClient } from "./openai-client.js";
 
 export class PostCallAnalyzer {
   constructor(private openaiClient: OpenAIClient) { }

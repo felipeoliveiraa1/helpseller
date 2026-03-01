@@ -158,7 +158,7 @@ export async function routes(fastify: FastifyInstance) {
         });
 
         // ADMIN ROUTES
-        fastify.register(adminRoutes, { prefix: '/admin' });
+        protectedRoutes.register(adminRoutes, { prefix: '/admin' });
 
     });
 

@@ -8,6 +8,8 @@ let mediaStreamRecorder: MediaRecorder | null = null; // NEW: For video + audio 
 let tabStream: MediaStream | null = null;
 let micStream: MediaStream | null = null;
 let playbackContext: AudioContext | null = null;
+let tabAnalyserCtx: AudioContext | null = null;
+let micAnalyserCtx: AudioContext | null = null;
 let tabAnalyser: AnalyserNode | null = null;
 let micAnalyser: AnalyserNode | null = null;
 let isRecording = false;
@@ -18,8 +20,6 @@ let currentDisplayStreamForLiveKit: MediaStream | null = null;
 let liveKitRoom: Room | null = null;
 
 const RECORDING_TIMESLICE_MS = 500;
-const SILENCE_THRESHOLD_LEAD = 5;
-const SILENCE_THRESHOLD_SELLER = 15;
 const webmHeaders: Record<string, string> = {};
 
 function log(...args: any[]) {
@@ -138,10 +138,10 @@ async function startTranscription(streamId: string) {
         }
 
         // === 3. Analisador de volume para tab ===
-        const tabCtx = new AudioContext();
-        tabAnalyser = tabCtx.createAnalyser();
+        tabAnalyserCtx = new AudioContext();
+        tabAnalyser = tabAnalyserCtx.createAnalyser();
         tabAnalyser.fftSize = 2048;
-        tabCtx.createMediaStreamSource(tabStream).connect(tabAnalyser);
+        tabAnalyserCtx.createMediaStreamSource(tabStream).connect(tabAnalyser);
 
         // === 4. Capturar Microfone (Vendedor) ===
         try {
@@ -153,10 +153,10 @@ async function startTranscription(streamId: string) {
                 }
             });
             log('✅ Microphone captured (Seller)');
-            const micCtx = new AudioContext();
-            micAnalyser = micCtx.createAnalyser();
+            micAnalyserCtx = new AudioContext();
+            micAnalyser = micAnalyserCtx.createAnalyser();
             micAnalyser.fftSize = 2048;
-            micCtx.createMediaStreamSource(micStream).connect(micAnalyser);
+            micAnalyserCtx.createMediaStreamSource(micStream).connect(micAnalyser);
         } catch (err: any) {
             log('⚠️ Microphone unavailable:', err.message);
         }
@@ -445,10 +445,12 @@ function stopTranscription() {
     // NEW: Stop media streaming
     stopMediaStreaming();
 
-    if (playbackContext) {
-        playbackContext.close().catch(() => { });
-        playbackContext = null;
-    }
+    [playbackContext, tabAnalyserCtx, micAnalyserCtx].forEach(ctx => {
+        if (ctx) ctx.close().catch(() => { });
+    });
+    playbackContext = null;
+    tabAnalyserCtx = null;
+    micAnalyserCtx = null;
 
     [tabStream, micStream].forEach(s => {
         if (s) s.getTracks().forEach(t => t.stop());

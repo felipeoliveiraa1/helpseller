@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import SimpleSidebar from '@/components/SimpleSidebar';
-import { startParticipantMonitoring, sendParticipantInfoNow, startMicStateMonitoring } from './meet-participants';
+import { startParticipantMonitoring, sendParticipantInfoNow, startMicStateMonitoring, getLeadName } from './meet-participants';
 // import '@/index.css';
 
 console.log('HelpSeller Content Script Loaded');
@@ -263,6 +263,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         console.log('Sidebar closed');
     } else if (msg.type === 'GET_SIDEBAR_OPEN') {
         sendResponse({ open: isOpen });
+        return true;
+    } else if (msg.type === 'GET_ACTIVE_SPEAKER') {
+        const leadName = getLeadName();
+        sendResponse({ activeSpeaker: leadName });
         return true;
     } else if (msg.type === 'STATUS_UPDATE' && msg.status === 'RECORDING' && window.location.hostname === 'meet.google.com') {
         sendParticipantInfoNow();

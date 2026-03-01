@@ -10,6 +10,8 @@ class RedisClient {
     private client: Redis | null = null;
     private memoryCache: Map<string, string> = new Map();
     private useMemory = false;
+    private ttlTimers: Map<string, NodeJS.Timeout> = new Map();
+    private saveDumpTimer: NodeJS.Timeout | null = null;
 
     constructor() {
         if (!env.REDIS_URL || env.REDIS_URL === 'memory' || env.REDIS_URL.includes('undefined') || env.REDIS_URL.startsWith('memory:')) {
@@ -60,12 +62,19 @@ class RedisClient {
 
     private saveDump() {
         if (!this.useMemory) return;
-        try {
-            const obj = Object.fromEntries(this.memoryCache);
-            fs.writeFileSync(DUMP_FILE, JSON.stringify(obj, null, 2));
-        } catch (e) {
-            logger.error({ err: e }, 'Failed to save redis dump');
-        }
+        // Debounce: only write at most once per second
+        if (this.saveDumpTimer) return;
+        this.saveDumpTimer = setTimeout(() => {
+            this.saveDumpTimer = null;
+            try {
+                const obj = Object.fromEntries(this.memoryCache);
+                fs.writeFile(DUMP_FILE, JSON.stringify(obj, null, 2), (err) => {
+                    if (err) logger.error({ err }, 'Failed to save redis dump');
+                });
+            } catch (e) {
+                logger.error({ err: e }, 'Failed to save redis dump');
+            }
+        }, 1000);
     }
 
     public getClient() {
@@ -75,13 +84,21 @@ class RedisClient {
     async set(key: string, value: any, ttlSeconds?: number): Promise<void> {
         const serialized = JSON.stringify(value);
         if (this.useMemory || !this.client) {
+            // Clear existing TTL timer to prevent leaks
+            const existingTimer = this.ttlTimers.get(key);
+            if (existingTimer) {
+                clearTimeout(existingTimer);
+                this.ttlTimers.delete(key);
+            }
             this.memoryCache.set(key, serialized);
-            this.saveDump(); // Persist immediately
+            this.saveDump();
             if (ttlSeconds) {
-                setTimeout(() => {
+                const timer = setTimeout(() => {
                     this.memoryCache.delete(key);
+                    this.ttlTimers.delete(key);
                     this.saveDump();
                 }, ttlSeconds * 1000);
+                this.ttlTimers.set(key, timer);
             }
         } else {
             try {
@@ -118,6 +135,11 @@ class RedisClient {
 
     async del(key: string): Promise<void> {
         if (this.useMemory || !this.client) {
+            const existingTimer = this.ttlTimers.get(key);
+            if (existingTimer) {
+                clearTimeout(existingTimer);
+                this.ttlTimers.delete(key);
+            }
             this.memoryCache.delete(key);
             this.saveDump();
         } else {

@@ -18,8 +18,8 @@ const DEEPGRAM_QUERY_PARAMS: Record<string, string> = {
 
 const KEEPALIVE_INTERVAL_MS = 3_000;
 const RECONNECT_DELAY_MS = 1_000;
-const DG_SILENCE_CLOSE_MS = parseInt(process.env.DG_SILENCE_CLOSE_MS || '10000', 10);
-const DG_DEBUG = process.env.DG_DEBUG === 'true';
+const DG_SILENCE_CLOSE_MS = env.DG_SILENCE_CLOSE_MS;
+const DG_DEBUG = env.DG_DEBUG;
 
 interface DeepgramTranscriptResponse {
     type: string;

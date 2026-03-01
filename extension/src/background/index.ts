@@ -16,7 +16,7 @@ edgeCoach.initialize().then(() => {
 
 let currentLeadName = '';
 let micIsMuted = false; // Track mic mute state
-let lastCallStartParams: { platform: string, scriptId: string } | null = null;
+let lastCallStartParams: { platform: string; scriptId: string; leadName?: string; externalId?: string | null } | null = null;
 let cachedObjections: CachedObjection[] = [];
 
 let isCallConfirmed = false;
@@ -648,7 +648,7 @@ async function startCapture(explicitTabId?: number) {
                 scriptId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
                 leadName: currentLeadName,
                 externalId: externalId
-            } as any;
+            };
 
             console.log('📤 Sending call:start (externalId for re-record):', lastCallStartParams);
             send('call:start', lastCallStartParams);
@@ -723,6 +723,16 @@ async function stopCapture(result?: 'CONVERTED' | 'LOST' | 'FOLLOW_UP' | 'UNKNOW
 
     isProcessing = true;
     console.log('⏹️ Stopping capture...', result ? `result: ${result}` : '');
+
+    // Clear retry interval and buffered state to prevent phantom call:start
+    if (callStartRetryIntervalId) {
+        clearInterval(callStartRetryIntervalId);
+        callStartRetryIntervalId = null;
+    }
+    lastCallStartParams = null;
+    audioSegmentBuffer = [];
+    isCallConfirmed = false;
+
     try {
         chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }).catch(() => {
             console.log('Offscreen not reachable (already closed?)');

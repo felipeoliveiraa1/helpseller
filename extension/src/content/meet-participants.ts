@@ -188,7 +188,15 @@ export function startParticipantMonitoring(): void {
     run();
     intervalId = setInterval(run, 2000);
 
-    observer = new MutationObserver(() => checkAndSend(lastSent));
+    // Throttled MutationObserver — process DOM changes at most once per 2s
+    let mutationTimeout: ReturnType<typeof setTimeout> | null = null;
+    observer = new MutationObserver(() => {
+        if (mutationTimeout) return;
+        mutationTimeout = setTimeout(() => {
+            mutationTimeout = null;
+            checkAndSend(lastSent);
+        }, 2000);
+    });
     observer.observe(document.body, {
         childList: true,
         subtree: true,

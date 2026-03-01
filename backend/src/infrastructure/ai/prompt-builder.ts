@@ -1,5 +1,5 @@
-import { CallSession } from "../websocket/server";
-import { TriggerResult } from "./trigger-detector";
+import { CallSession } from "../websocket/server.js";
+import { TriggerResult } from "./trigger-detector.js";
 
 interface Script {
   name: string;

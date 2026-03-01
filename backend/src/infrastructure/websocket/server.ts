@@ -373,6 +373,9 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 commandHandler = null;
             }
 
+            // Skip auto-finalization if call:end already handled it
+            if (callEnded) return;
+
             // Finalize call if not explicitly ended (refresh, troca de conta, crash)
             let finalCallId = callId;
             let finalSession = sessionData;
@@ -401,7 +404,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         await supabaseAdmin.from('calls').update({
                             status: 'COMPLETED',
                             ended_at: endedAt.toISOString(),
-                            duration_seconds: durationSeconds || null,
+                            duration_seconds: durationSeconds ?? null,
                             transcript: finalSession.transcript ?? [],
                         }).eq('id', finalCallId);
                         logger.info(`🔒 Auto-finalized call ${finalCallId} on disconnect (${durationSeconds}s)`);
@@ -907,10 +910,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             const resultForDb = sellerResult ?? summary?.result ?? null;
 
             // 4. Send Summary to Client
-            ws.send(JSON.stringify({
-                type: 'call:summary',
-                payload: summary ? { ...summary, result: resultForDb ?? summary.result } : { result: resultForDb }
-            }));
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'call:summary',
+                    payload: summary ? { ...summary, result: resultForDb ?? summary.result } : { result: resultForDb }
+                }));
+            }
 
             // 5. Update DB — compute duration_seconds
             const endedAt = new Date();
@@ -922,7 +927,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             await supabaseAdmin.from('calls').update({
                 status: 'COMPLETED',
                 ended_at: endedAt.toISOString(),
-                duration_seconds: durationSeconds || null,
+                duration_seconds: durationSeconds ?? null,
                 transcript: sessionData.transcript, // Save full transcript
             }).eq('id', currentCallIdForRest);
 
@@ -1357,6 +1362,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         logger.info(`[LIVE_DEBUG] manager subscribed to callId=${callId} totalManagersForCall=${set.size}`);
 
                         streamHandler = (transcriptData: any) => {
+                            if (socket.readyState !== WebSocket.OPEN) return;
                             // Forward transcript to manager
                             socket.send(JSON.stringify({
                                 type: 'transcript:stream',
@@ -1368,6 +1374,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                         // NEW: Subscribe to media stream (video + audio) — send binary to avoid base64 encoding issues
                         mediaHandler = (mediaData: any) => {
+                            if (socket.readyState !== WebSocket.OPEN) return;
                             const binaryMsg = encodeMediaChunkToBinary(mediaData);
                             if (binaryMsg) socket.send(binaryMsg);
                         };
@@ -1376,6 +1383,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                         // NEW: Subscribe to live summary
                         liveSummaryHandler = async (summaryData: any) => {
+                            if (socket.readyState !== WebSocket.OPEN) return;
                             // Send to manager if valid
                             if (summaryData) {
                                 logger.info({ summary: summaryData }, '📊 Broadcasting Live Summary');
@@ -1392,10 +1400,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         // live chunks. Client waits for the next init segment from the live stream (within ~5s).
                         logger.info(`👔 Manager ${authUser.id} joined call ${callId} (transcript + media)`);
 
-                        socket.send(JSON.stringify({
-                            type: 'manager:joined',
-                            payload: { callId }
-                        }));
+                        if (socket.readyState === WebSocket.OPEN) {
+                            socket.send(JSON.stringify({
+                                type: 'manager:joined',
+                                payload: { callId }
+                            }));
+                        }
                         break;
                     }
 

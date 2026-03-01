@@ -131,7 +131,8 @@ export function getLeadName(): string | null {
         .filter((n) => n !== selfName)
         .map(cleanName)
         .filter((n) => n.length > 1);
-    return cleaned[0] || null;
+    if (cleaned.length === 0) return null;
+    return cleaned.join(', ');
 }
 
 export function sendParticipantInfoNow(): void {
@@ -140,7 +141,7 @@ export function sendParticipantInfoNow(): void {
         .filter((n) => n !== selfName)
         .map(cleanName)
         .filter((n) => n.length > 1);
-    const leadName = cleaned[0] || null;
+    const leadName = cleaned.length > 0 ? cleaned.join(', ') : null;
     if (selfName || leadName || cleaned.length > 0) {
         chrome.runtime.sendMessage({
             type: 'PARTICIPANT_INFO',
@@ -160,7 +161,7 @@ function checkAndSend(lastSent: { leadName: string; selfName: string }) {
         .filter((n) => n !== selfName)
         .map(cleanName)
         .filter((n) => n.length > 1);
-    const leadName = cleaned[0] || null;
+    const leadName = cleaned.length > 0 ? cleaned.join(', ') : null;
     const leadChanged = leadName && leadName !== lastSent.leadName;
     const selfChanged = selfName && selfName !== lastSent.selfName;
     if (leadChanged || selfChanged) {

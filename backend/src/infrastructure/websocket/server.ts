@@ -72,6 +72,8 @@ export interface CallSession {
     lastSellerTranscription?: string;
     leadName?: string;
     sellerName?: string;
+    allParticipants?: string[];
+    participantCount?: number;
     recentTranscriptions?: Array<{ text: string; role: string; timestamp: number }>;
     webmHeader?: Buffer[];
     sentQuestions?: string[];
@@ -938,10 +940,11 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             // 8. Log infrastructure costs (Deepgram + LiveKit) to Supabase
             if (durationSeconds && durationSeconds > 0) {
                 const usageCtx = { callId: currentCallIdForRest, userId };
-                // Deepgram: 2 channels (lead + seller) — log combined duration
+                // Deepgram: 2 audio streams (lead mix + seller mic) — log combined duration
                 UsageTracker.logDeepgram(usageCtx, durationSeconds * 2).catch(() => { });
-                // LiveKit: 2 participants (lead + seller)
-                UsageTracker.logLiveKit(usageCtx, durationSeconds, 2).catch(() => { });
+                // LiveKit: actual participant count (leads + seller)
+                const participants = sessionData?.participantCount || 2;
+                UsageTracker.logLiveKit(usageCtx, durationSeconds, participants).catch(() => { });
             }
         }
 
@@ -991,6 +994,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             logger.info(`📨 Handling call:participants event. Payload: ${JSON.stringify(event.payload)}`);
             const leadName = event.payload?.leadName;
             const selfName = event.payload?.selfName && String(event.payload.selfName).trim() ? String(event.payload.selfName).trim() : null;
+            const allParticipants: string[] = Array.isArray(event.payload?.allParticipants) ? event.payload.allParticipants : [];
 
             if (selfName) {
                 bufferedSellerName = selfName;
@@ -1022,6 +1026,17 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     sessionData.leadName = leadName;
                 }
                 logger.info(`👤 Lead identified and set in session: ${leadName}`);
+            }
+
+            // Track all participants and count (leads + 1 seller)
+            if (session) {
+                session.allParticipants = allParticipants;
+                session.participantCount = allParticipants.length + 1; // +1 for seller
+                if (sessionData && sessionData.callId === session.callId) {
+                    sessionData.allParticipants = allParticipants;
+                    sessionData.participantCount = session.participantCount;
+                }
+                logger.info(`👥 Participants: ${allParticipants.length} lead(s) + 1 seller = ${session.participantCount} total`);
             }
 
             if (session && currentCallId) {

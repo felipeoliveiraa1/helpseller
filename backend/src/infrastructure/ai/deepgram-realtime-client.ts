@@ -225,6 +225,8 @@ export class DeepgramRealtimeClient {
         try {
             const message = JSON.parse(data.toString());
             this.dgMessageCount++;
+            // Any message from Deepgram means the connection is alive — reset silence timer
+            this.lastSpeechAt = Date.now();
             if (this.dgMessageCount <= 3 || this.dgMessageCount % 100 === 0) {
                 logger.info(`[DG MSG #${this.dgMessageCount}] [${this.role}] type=${message.type}`);
             }
@@ -255,7 +257,6 @@ export class DeepgramRealtimeClient {
             logger.info(`[DG RESULT #${this.dgResultCount}] [${this.role}] is_final=${result.is_final} speech_final=${result.speech_final} text="${transcript.slice(0, 60)}" dur=${result.duration?.toFixed(1)}`);
         }
         if (!transcript.trim()) return;
-        this.lastSpeechAt = Date.now();
         if (result.is_final) {
             logger.info(`[DG FINAL] [${this.role}] "${transcript.slice(0, 80)}"`);
             this.onFinal(transcript);

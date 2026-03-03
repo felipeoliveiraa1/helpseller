@@ -522,7 +522,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                         return;
                     }
 
-                    logger.warn(`⚠️ Call already initialized for this connection. ID: ${callId}. Ignoring duplicate call:start.`);
+                    logger.warn(`⚠️ Call already initialized for this connection. ID: ${callId}. Re-sending call:started.`);
+                    // Reinitialize Deepgram if clients were closed (silence watcher, error, etc.)
+                    if (useDeepgram && (!dgLeadClient || !dgSellerClient)) {
+                        logger.info(`🔄 Deepgram clients missing for active call ${callId}, reinitializing...`);
+                        await initDeepgramClients(ws);
+                    }
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'call:started', payload: { callId: callId } }));
                     }
@@ -1173,6 +1178,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         }
 
         async function initDeepgramClients(ws: WebSocket): Promise<void> {
+            // Close existing clients to prevent resource leaks (timers, WebSocket connections)
+            closeDeepgramClients();
             dgLeadClient = new DeepgramRealtimeClient('lead');
             dgSellerClient = new DeepgramRealtimeClient('seller');
             const setupCallbacks = (client: DeepgramRealtimeClient, role: 'seller' | 'lead'): void => {

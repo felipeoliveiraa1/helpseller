@@ -26,7 +26,7 @@ const envSchema = z.object({
     DEEPGRAM_API_KEY: z.string().default(''),
     TRANSCRIPTION_PROVIDER: z.enum(['deepgram', 'whisper']).default('deepgram'),
     TRANSCRIPT_NORMALIZER_ENABLED: z.coerce.boolean().default(false),
-    DG_SILENCE_CLOSE_MS: z.coerce.number().default(10000),
+    DG_SILENCE_CLOSE_MS: z.coerce.number().default(120000),
     SELLER_TRANSCRIPTION: z.enum(['on', 'off']).default('on'),
 
     // Coaching

@@ -217,12 +217,24 @@ export default function Popup() {
             setRecordingStartedAt(null);
             chrome.runtime.sendMessage({ type: 'STOP_CAPTURE', result });
         } else {
+            setLoading(true);
+            try {
+                const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                micStream.getTracks().forEach((t) => t.stop());
+            } catch (micErr: unknown) {
+                const msg = micErr instanceof Error ? micErr.message : String(micErr);
+                setError('Permita o uso do microfone para transcrever suas falas.');
+                setLoading(false);
+                return;
+            }
+            setError('');
             setStatus('RECORDING');
             setRecordingStartedAt(Date.now());
             chrome.runtime.sendMessage({
                 type: 'START_CAPTURE',
                 tabId: tabId ?? undefined
             });
+            setLoading(false);
         }
     };
 

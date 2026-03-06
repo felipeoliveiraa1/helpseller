@@ -143,7 +143,7 @@ async function startTranscription(streamId: string) {
         tabAnalyser.fftSize = 2048;
         tabAnalyserCtx.createMediaStreamSource(tabStream).connect(tabAnalyser);
 
-        // === 4. Capturar Microfone (Vendedor) ===
+        // === 4. Capturar Microfone (Vendedor) — permissão já solicitada no popup com user gesture ===
         try {
             micStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
@@ -158,7 +158,7 @@ async function startTranscription(streamId: string) {
             micAnalyser.fftSize = 2048;
             micAnalyserCtx.createMediaStreamSource(micStream).connect(micAnalyser);
         } catch (err: any) {
-            log('⚠️ Microphone unavailable:', err.message);
+            log('⚠️ Microphone unavailable (suas falas não serão transcritas):', err?.name, err?.message);
         }
 
         isRecording = true;
@@ -171,12 +171,16 @@ async function startTranscription(streamId: string) {
         startRecordingCycle(tabStream, mimeType, 'lead', tabAnalyser);
         if (micStream) {
             startRecordingCycle(micStream, mimeType, 'seller', micAnalyser);
+            log('🎤 Seller (mic) recording cycle started');
+        } else {
+            log('⚠️ Seller recording NOT started — mic stream missing');
         }
 
         chrome.runtime.sendMessage({
             type: 'RECORDING_STARTED',
-            micAvailable: !!micStream
-        }).catch(() => { });
+            micAvailable: !!micStream,
+            micError: micStream ? undefined : 'Microfone não autorizado ou indisponível'
+        }).catch(() => {});
 
         // === 6. Start Video + Audio Streaming for Manager (tela da aba Meet) ===
         await startMediaStreaming(combinedStream);

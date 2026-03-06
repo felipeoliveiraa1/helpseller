@@ -1,6 +1,48 @@
 'use client';
 
 import { useState } from 'react';
+import {
+    Calendar,
+    Clock,
+    ChevronDown,
+    ChevronUp,
+    ChevronRight,
+    Sparkles,
+    CheckCircle2,
+    AlertCircle,
+    User,
+    Lock,
+    MessageSquare,
+    DollarSign,
+    TrendingDown,
+    Search,
+    Settings,
+    Target,
+    Heart,
+    Trophy,
+    Rocket,
+    BarChart3,
+    Star,
+    AlertTriangle,
+    Ghost,
+    Lightbulb,
+    Brain,
+    Award,
+    Users,
+    Zap,
+    Gift,
+    Scale,
+    Ban,
+    XCircle,
+    Copy,
+    Anchor,
+} from 'lucide-react';
+
+const NEON_PINK = '#ff007a';
+const CARD_BG = '#1e1e1e';
+const CARD_BORDER = 'rgba(255,255,255,0.08)';
+const SECTION_HEADER_BG = 'rgba(30,30,30,0.9)';
+const SECTION_BODY_BG = 'rgba(26,26,26,0.6)';
 
 // ─── Helpers ────────────────────────────────────────────────
 function formatDuration(s: number) {
@@ -75,33 +117,42 @@ export interface FlatAnalysis {
 
 function Badge({ value }: { value: string }) {
     const styles: Record<string, string> = {
-        FRIO: "bg-blue-500/20 text-blue-300 border-blue-500/40",
-        MORNO: "bg-amber-500/20 text-amber-300 border-amber-500/40",
-        QUENTE: "bg-orange-500/20 text-orange-300 border-orange-500/40",
-        FECHANDO: "bg-green-500/20 text-green-300 border-green-500/40",
-        POSITIVE: "bg-green-500/20 text-green-300 border-green-500/40",
-        NEUTRAL: "bg-slate-500/20 text-slate-300 border-slate-500/40",
-        NEGATIVE: "bg-red-500/20 text-red-300 border-red-500/40",
-        Baixa: "bg-red-500/20 text-red-300 border-red-500/40",
-        "Média": "bg-amber-500/20 text-amber-300 border-amber-500/40",
-        Alta: "bg-green-500/20 text-green-300 border-green-500/40",
-        Resistente: "bg-red-500/20 text-red-300 border-red-500/40",
-        Ambivalente: "bg-amber-500/20 text-amber-300 border-amber-500/40",
-        Aberto: "bg-green-500/20 text-green-300 border-green-500/40",
+        FRIO: 'rgba(59,130,246,0.2)',
+        MORNO: 'rgba(245,158,11,0.2)',
+        QUENTE: 'rgba(249,115,22,0.2)',
+        FECHANDO: 'rgba(34,197,94,0.2)',
+        POSITIVE: 'rgba(34,197,94,0.2)',
+        NEUTRAL: 'rgba(148,163,184,0.2)',
+        NEGATIVE: 'rgba(239,68,68,0.2)',
+        Baixa: 'rgba(239,68,68,0.2)',
+        'Média': 'rgba(245,158,11,0.2)',
+        Alta: 'rgba(34,197,94,0.2)',
+        Resistente: 'rgba(239,68,68,0.2)',
+        Ambivalente: 'rgba(245,158,11,0.2)',
+        Aberto: 'rgba(34,197,94,0.2)',
+        'Em negociação': 'rgba(245,158,11,0.2)',
+        'Venda realizada': 'rgba(34,197,94,0.2)',
+        'Venda perdida': 'rgba(239,68,68,0.2)',
+        'A definir': 'rgba(148,163,184,0.2)',
+        FOLLOW_UP: 'rgba(245,158,11,0.2)',
+        CONVERTED: 'rgba(34,197,94,0.2)',
+        LOST: 'rgba(239,68,68,0.2)',
+        UNKNOWN: 'rgba(148,163,184,0.2)',
     };
-    const cls = styles[value] || "bg-slate-500/20 text-slate-300 border-slate-500/40";
+    const bg = styles[value] || 'rgba(255,255,255,0.06)';
     return (
-        <span className={`inline-block px-2 py-0.5 rounded border text-xs font-mono font-bold ${cls}`}>
+        <span className="inline-block px-2 py-0.5 rounded border text-xs font-mono font-bold" style={{ backgroundColor: bg, borderColor: CARD_BORDER, color: 'rgb(226,232,240)' }}>
             {value}
         </span>
     );
 }
 
-function Card({ title, icon, children, accent = "border-slate-700" }: { title: string; icon: string; children: React.ReactNode; accent?: string }) {
+function Card({ title, icon, children, accentColor }: { title: string; icon: React.ReactNode; children: React.ReactNode; accentColor?: string }) {
+    const borderStyle = accentColor ? { borderColor: accentColor } : { borderColor: CARD_BORDER };
     return (
-        <div className={`bg-slate-800/60 border ${accent} rounded-xl p-5 space-y-3`}>
-            <h3 className="text-sm font-bold text-slate-300 flex items-center gap-2">
-                <span className="text-base">{icon}</span>
+        <div className="rounded-xl p-5 space-y-3 border" style={{ backgroundColor: CARD_BG, ...borderStyle }}>
+            <h3 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                <span className="flex items-center justify-center [&>svg]:w-4 [&>svg]:h-4" style={{ color: accentColor || 'currentColor' }}>{icon}</span>
                 {title}
             </h3>
             {children}
@@ -109,24 +160,24 @@ function Card({ title, icon, children, accent = "border-slate-700" }: { title: s
     );
 }
 
-function TagList({ items, color = "text-slate-300" }: { items?: string[]; color?: string }) {
-    if (!items?.length) return <p className="text-xs text-slate-500 italic">Não identificado</p>;
+function TagList({ items, color = "text-gray-300" }: { items?: string[]; color?: string }) {
+    if (!items?.length) return <p className="text-xs text-gray-500 italic">Não identificado</p>;
     return (
         <div className="flex flex-wrap gap-2">
             {items.map((t, i) => (
-                <span key={i} className={`text-xs bg-slate-700/50 border border-slate-600/50 rounded px-2 py-0.5 ${color}`}>{t}</span>
+                <span key={i} className={`text-xs rounded px-2 py-0.5 ${color}`} style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>{t}</span>
             ))}
         </div>
     );
 }
 
-function BulletList({ items, icon = "▸", colorClass = "text-slate-400" }: { items?: string[]; icon?: string; colorClass?: string }) {
-    if (!items?.length) return <p className="text-xs text-slate-500 italic">Não identificado</p>;
+function BulletList({ items, colorClass = "text-gray-400" }: { items?: string[]; colorClass?: string }) {
+    if (!items?.length) return <p className="text-xs text-gray-500 italic">Não identificado</p>;
     return (
         <ul className="space-y-1">
             {items.map((item, i) => (
                 <li key={i} className={`flex gap-2 text-xs ${colorClass}`}>
-                    <span className="text-slate-500 mt-0.5 shrink-0">{icon}</span>
+                    <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0 text-gray-500" />
                     <span>{item}</span>
                 </li>
             ))}
@@ -136,35 +187,39 @@ function BulletList({ items, icon = "▸", colorClass = "text-slate-400" }: { it
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
     return (
-        <div className="bg-slate-900/60 rounded-lg p-3 border border-slate-700/50">
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">{label}</p>
+        <div className="rounded-lg p-3 border" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">{label}</p>
             <p className="text-base font-bold text-white mt-0.5">{value}</p>
-            {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
+            {sub && <p className="text-[10px] text-gray-500 mt-0.5">{sub}</p>}
         </div>
     );
 }
 
 function ProgressBar({ value }: { value: number }) {
-    const color = value < 30 ? "bg-red-500" : value < 60 ? "bg-amber-500" : value < 80 ? "bg-orange-500" : "bg-green-500";
+    const barColor = value < 30 ? '#ef4444' : value < 60 ? '#f59e0b' : value < 80 ? NEON_PINK : '#22c55e';
     return (
-        <div className="relative h-2 bg-slate-700 rounded-full overflow-hidden">
-            <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${value}%` }} />
+        <div className="relative h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+            <div className="h-full rounded-full transition-all" style={{ width: `${value}%`, backgroundColor: barColor }} />
         </div>
     );
 }
 
-function Section({ title, id, children }: { title: string; id: string; children: React.ReactNode }) {
+function Section({ title, id, icon, children }: { title: string; id: string; icon: React.ReactNode; children: React.ReactNode }) {
     const [open, setOpen] = useState(true);
     return (
-        <div id={id} className="border border-slate-700/50 rounded-xl overflow-hidden">
+        <div id={id} className="rounded-xl overflow-hidden border" style={{ borderColor: CARD_BORDER }}>
             <button
                 onClick={() => setOpen(o => !o)}
-                className="w-full flex items-center justify-between px-5 py-3 bg-slate-800/80 hover:bg-slate-700/60 transition-colors text-left"
+                className="w-full flex items-center justify-between px-5 py-3 transition-colors text-left hover:opacity-90"
+                style={{ backgroundColor: SECTION_HEADER_BG }}
             >
-                <span className="text-sm font-bold text-slate-200">{title}</span>
-                <span className="text-slate-400 text-sm">{open ? "▲" : "▼"}</span>
+                <span className="text-sm font-bold text-gray-200 flex items-center gap-2">
+                    <span className="flex items-center [&>svg]:w-4 [&>svg]:h-4" style={{ color: NEON_PINK }}>{icon}</span>
+                    {title}
+                </span>
+                <span className="text-gray-400">{open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</span>
             </button>
-            {open && <div className="p-5 bg-slate-900/40 space-y-4">{children}</div>}
+            {open && <div className="p-5 space-y-4" style={{ backgroundColor: SECTION_BODY_BG }}>{children}</div>}
         </div>
     );
 }
@@ -173,14 +228,24 @@ function Section({ title, id, children }: { title: string; id: string; children:
 
 function HeaderSection({ d }: { d: FlatAnalysis }) {
     return (
-        <div className="bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl p-6">
+        <div className="rounded-xl p-6 border" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                 <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-1">Lead</p>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-widest font-mono mb-1">Lead</p>
                     <h1 className="text-2xl font-extrabold text-white">{d.lead_nome || '—'}</h1>
-                    <div className="flex flex-wrap gap-3 mt-2 text-xs text-slate-400">
-                        {d.lead_data_call && <span>📅 {formatDate(d.lead_data_call)}</span>}
-                        {d.lead_duracao_segundos != null && <span>⏱ {formatDuration(d.lead_duracao_segundos)}</span>}
+                    <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-400 items-center">
+                        {d.lead_data_call && (
+                            <span className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5" style={{ color: NEON_PINK }} />
+                                {formatDate(d.lead_data_call)}
+                            </span>
+                        )}
+                        {d.lead_duracao_segundos != null && (
+                            <span className="flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5" style={{ color: NEON_PINK }} />
+                                {formatDuration(d.lead_duracao_segundos)}
+                            </span>
+                        )}
                     </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -191,11 +256,11 @@ function HeaderSection({ d }: { d: FlatAnalysis }) {
             {d.aderencia_percentual != null && (
                 <div className="mt-5">
                     <div className="flex items-center justify-between mb-1">
-                        <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Aderência</p>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">Aderência</p>
                         <p className="text-sm font-bold text-white">{d.aderencia_percentual}%</p>
                     </div>
                     <ProgressBar value={d.aderencia_percentual} />
-                    {d.termometro_justificativa && <p className="text-xs text-slate-400 mt-2 italic">{d.termometro_justificativa}</p>}
+                    {d.termometro_justificativa && <p className="text-xs text-gray-400 mt-2 italic">{d.termometro_justificativa}</p>}
                 </div>
             )}
         </div>
@@ -204,13 +269,13 @@ function HeaderSection({ d }: { d: FlatAnalysis }) {
 
 function PontosOuro({ d }: { d: FlatAnalysis }) {
     return (
-        <Section title="✨ Pontos de Ouro" id="pontos">
+        <Section title="Pontos de Ouro" id="pontos" icon={<Sparkles className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card title="Acertos" icon="✅" accent="border-green-700/40">
-                    <BulletList items={d.pontos_acertos} icon="✓" colorClass="text-green-300" />
+                <Card title="Acertos" icon={<CheckCircle2 className="w-4 h-4" />} accentColor="rgba(34,197,94,0.5)">
+                    <BulletList items={d.pontos_acertos} colorClass="text-green-300" />
                 </Card>
-                <Card title="Melhorias" icon="⚠️" accent="border-amber-700/40">
-                    <BulletList items={d.pontos_melhorias} icon="!" colorClass="text-amber-300" />
+                <Card title="Melhorias" icon={<AlertCircle className="w-4 h-4" />} accentColor="rgba(245,158,11,0.5)">
+                    <BulletList items={d.pontos_melhorias} colorClass="text-amber-300" />
                 </Card>
             </div>
         </Section>
@@ -219,12 +284,12 @@ function PontosOuro({ d }: { d: FlatAnalysis }) {
 
 function PerfilPsicologico({ d }: { d: FlatAnalysis }) {
     return (
-        <Section title="👤 Perfil Psicológico e Comportamental" id="perfil">
+        <Section title="Perfil Psicológico e Comportamental" id="perfil" icon={<User className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <Stat label="Estado Emocional" value={d.perfil_estado_emocional || "—"} />
                 <Stat label="Estilo de Decisão" value={d.perfil_estilo_decisao || "—"} />
-                <div className="bg-slate-900/60 rounded-lg p-3 border border-slate-700/50 space-y-2">
-                    <p className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Consciência / Abertura</p>
+                <div className="rounded-lg p-3 border space-y-2" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
+                    <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">Consciência / Abertura</p>
                     <div className="flex flex-wrap gap-2">
                         {d.perfil_consciencia_problema && <Badge value={d.perfil_consciencia_problema} />}
                         {d.perfil_abertura_mudanca && <Badge value={d.perfil_abertura_mudanca} />}
@@ -232,10 +297,10 @@ function PerfilPsicologico({ d }: { d: FlatAnalysis }) {
                 </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card title="Crenças Limitantes" icon="🔒">
-                    <BulletList items={d.perfil_crencas_limitantes} icon="▸" colorClass="text-red-300" />
+                <Card title="Crenças Limitantes" icon={<Lock className="w-4 h-4" />}>
+                    <BulletList items={d.perfil_crencas_limitantes} colorClass="text-red-300" />
                 </Card>
-                <Card title="Vocabulário Relevante" icon="🗣️">
+                <Card title="Vocabulário Relevante" icon={<MessageSquare className="w-4 h-4" />}>
                     <TagList items={d.perfil_vocabulario_relevante} />
                 </Card>
             </div>
@@ -245,15 +310,15 @@ function PerfilPsicologico({ d }: { d: FlatAnalysis }) {
 
 function ImpactoFinanceiro({ d }: { d: FlatAnalysis }) {
     return (
-        <Section title="💸 Impacto Financeiro da Dor" id="financeiro">
+        <Section title="Impacto Financeiro da Dor" id="financeiro" icon={<DollarSign className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Stat label="Perda Mensal Estimada" value={d.financeiro_perda_mensal || "—"} />
                 <Stat label="Perda Anual Estimada" value={d.financeiro_perda_anual || "—"} />
             </div>
-            <Card title="Custos de Oportunidade" icon="📉">
+            <Card title="Custos de Oportunidade" icon={<TrendingDown className="w-4 h-4" />}>
                 <BulletList items={d.financeiro_custos_oportunidade} colorClass="text-amber-300" />
             </Card>
-            <Card title="Cenário se Nada For Feito (6–12 meses)" icon="⏳" accent="border-red-700/40">
+            <Card title="Cenário se Nada For Feito (6–12 meses)" icon={<Clock className="w-4 h-4" />} accentColor="rgba(239,68,68,0.5)">
                 <p className="text-xs text-red-300">{d.financeiro_cenario_sem_acao || "—"}</p>
             </Card>
         </Section>
@@ -261,27 +326,28 @@ function ImpactoFinanceiro({ d }: { d: FlatAnalysis }) {
 }
 
 function Dores({ d }: { d: FlatAnalysis }) {
+    const cards = [
+        { label: "Operacionais", items: d.dores_operacionais, icon: <Settings className="w-4 h-4" />, colorClass: "text-blue-300" },
+        { label: "Estratégicas", items: d.dores_estrategicas, icon: <Target className="w-4 h-4" />, colorClass: "text-purple-300" },
+        { label: "Financeiras", items: d.dores_financeiras, icon: <DollarSign className="w-4 h-4" />, colorClass: "text-amber-300" },
+        { label: "Emocionais (subtexto)", items: d.dores_emocionais, icon: <Heart className="w-4 h-4" />, colorClass: "text-pink-300" },
+    ] as const;
     return (
-        <Section title="🔍 Problemas e Dores" id="dores">
+        <Section title="Problemas e Dores" id="dores" icon={<Search className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {([
-                    { label: "Operacionais", items: d.dores_operacionais, icon: "⚙️", color: "text-blue-300" },
-                    { label: "Estratégicas", items: d.dores_estrategicas, icon: "🎯", color: "text-purple-300" },
-                    { label: "Financeiras", items: d.dores_financeiras, icon: "💰", color: "text-amber-300" },
-                    { label: "Emocionais (subtexto)", items: d.dores_emocionais, icon: "😰", color: "text-pink-300" },
-                ] as const).map(({ label, items, icon, color }) => (
+                {cards.map(({ label, items, icon, colorClass }) => (
                     <Card key={label} title={label} icon={icon}>
-                        <BulletList items={items} colorClass={color} />
+                        <BulletList items={items} colorClass={colorClass} />
                     </Card>
                 ))}
             </div>
-            <Card title="Top 3 por Impacto" icon="🏆" accent="border-orange-700/40">
+            <Card title="Top 3 por Impacto" icon={<Trophy className="w-4 h-4" />} accentColor="rgba(249,115,22,0.5)">
                 {d.dores_top3?.map((dor, i) => (
-                    <div key={i} className="flex items-start gap-3 py-1.5 border-b border-slate-700/30 last:border-0">
-                        <span className="text-lg font-black text-orange-400 leading-none">{i + 1}</span>
-                        <p className="text-xs text-slate-300">{dor}</p>
+                    <div key={i} className="flex items-start gap-3 py-1.5 border-b last:border-0" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                        <span className="text-lg font-black leading-none" style={{ color: NEON_PINK }}>{i + 1}</span>
+                        <p className="text-xs text-gray-300">{dor}</p>
                     </div>
-                )) || <p className="text-xs text-slate-500 italic">Não identificado</p>}
+                )) || <p className="text-xs text-gray-500 italic">Não identificado</p>}
             </Card>
         </Section>
     );
@@ -289,18 +355,18 @@ function Dores({ d }: { d: FlatAnalysis }) {
 
 function Oportunidades({ d }: { d: FlatAnalysis }) {
     return (
-        <Section title="🚀 Oportunidades" id="oportunidades">
+        <Section title="Oportunidades" id="oportunidades" icon={<Rocket className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card title="Ganhos Tangíveis" icon="📊" accent="border-green-700/40">
+                <Card title="Ganhos Tangíveis" icon={<BarChart3 className="w-4 h-4" />} accentColor="rgba(34,197,94,0.5)">
                     <BulletList items={d.oportunidades_tangiveis} colorClass="text-green-300" />
                 </Card>
-                <Card title="Ganhos Intangíveis" icon="✨" accent="border-cyan-700/40">
+                <Card title="Ganhos Intangíveis" icon={<Sparkles className="w-4 h-4" />} accentColor="rgba(6,182,212,0.5)">
                     <BulletList items={d.oportunidades_intangiveis} colorClass="text-cyan-300" />
                 </Card>
-                <Card title="Diferenciais Relevantes" icon="⭐">
+                <Card title="Diferenciais Relevantes" icon={<Star className="w-4 h-4" />}>
                     <BulletList items={d.oportunidades_diferenciais} colorClass="text-yellow-300" />
                 </Card>
-                <Card title="Alinhamento a Prioridades" icon="🎯">
+                <Card title="Alinhamento a Prioridades" icon={<Target className="w-4 h-4" />}>
                     <BulletList items={d.oportunidades_alinhamento} colorClass="text-purple-300" />
                 </Card>
             </div>
@@ -310,12 +376,12 @@ function Oportunidades({ d }: { d: FlatAnalysis }) {
 
 function Objecoes({ d }: { d: FlatAnalysis }) {
     return (
-        <Section title="⚠️ Objeções e Resistências" id="objecoes">
+        <Section title="Objeções e Resistências" id="objecoes" icon={<AlertTriangle className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card title="Verbalizadas" icon="🗣️" accent="border-red-700/40">
+                <Card title="Verbalizadas" icon={<MessageSquare className="w-4 h-4" />} accentColor="rgba(239,68,68,0.5)">
                     <BulletList items={d.objecoes_verbalizadas} colorClass="text-red-300" />
                 </Card>
-                <Card title="Implícitas" icon="👻" accent="border-orange-700/40">
+                <Card title="Implícitas" icon={<Ghost className="w-4 h-4" />} accentColor="rgba(249,115,22,0.5)">
                     <BulletList items={d.objecoes_implicitas} colorClass="text-orange-300" />
                 </Card>
             </div>
@@ -326,21 +392,24 @@ function Objecoes({ d }: { d: FlatAnalysis }) {
                     { label: "Ângulo Político", val: d.objecoes_angulo_politico, color: "text-purple-300" },
                     { label: "Ângulo Emocional", val: d.objecoes_angulo_emocional, color: "text-pink-300" },
                 ] as const).map(({ label, val, color }) => (
-                    <div key={label} className="bg-slate-900/60 rounded-lg p-3 border border-slate-700/50">
-                        <p className="text-[10px] uppercase tracking-widest text-slate-500 font-mono mb-1">{label}</p>
+                    <div key={label} className="rounded-lg p-3 border" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
+                        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono mb-1">{label}</p>
                         <p className={`text-xs ${color}`}>{val || "—"}</p>
                     </div>
                 ))}
             </div>
             {d.objecoes_neutralizacoes && d.objecoes_neutralizacoes.length > 0 && (
                 <div>
-                    <p className="text-xs font-bold text-slate-400 mb-2">💡 Neutralizações Cirúrgicas</p>
+                    <p className="text-xs font-bold text-gray-400 mb-2 flex items-center gap-1.5">
+                        <Lightbulb className="w-3.5 h-3.5" style={{ color: NEON_PINK }} />
+                        Neutralizações Cirúrgicas
+                    </p>
                     <div className="space-y-2">
                         {d.objecoes_neutralizacoes.map((n, i) => (
-                            <div key={i} className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-4 space-y-1">
+                            <div key={i} className="rounded-lg p-4 space-y-1 border" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
                                 <p className="text-xs font-bold text-red-400">Objeção: {n.objecao}</p>
-                                <p className="text-xs text-slate-300">Estratégia: {n.estrategia}</p>
-                                <p className="text-xs bg-green-900/30 border border-green-700/30 rounded px-3 py-1.5 text-green-300 italic">&ldquo;{n.frase_modelo}&rdquo;</p>
+                                <p className="text-xs text-gray-300">Estratégia: {n.estrategia}</p>
+                                <p className="text-xs rounded px-3 py-1.5 text-green-300 italic" style={{ backgroundColor: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}>&ldquo;{n.frase_modelo}&rdquo;</p>
                             </div>
                         ))}
                     </div>
@@ -352,18 +421,20 @@ function Objecoes({ d }: { d: FlatAnalysis }) {
 
 function Gatilhos({ d }: { d: FlatAnalysis }) {
     const items = [
-        { label: "Autoridade", val: d.gatilho_autoridade, icon: "🏅", border: "border-yellow-700/40", text: "text-yellow-300" },
-        { label: "Prova Social", val: d.gatilho_prova_social, icon: "👥", border: "border-blue-700/40", text: "text-blue-300" },
-        { label: "Urgência", val: d.gatilho_urgencia, icon: "⚡", border: "border-red-700/40", text: "text-red-300" },
-        { label: "Reciprocidade", val: d.gatilho_reciprocidade, icon: "🎁", border: "border-green-700/40", text: "text-green-300" },
-        { label: "Dor vs. Prazer", val: d.gatilho_dor_vs_prazer, icon: "⚖️", border: "border-purple-700/40", text: "text-purple-300" },
+        { label: "Autoridade", val: d.gatilho_autoridade, icon: <Award className="w-3.5 h-3.5" />, accentColor: 'rgba(234,179,8,0.5)', text: "text-yellow-300" },
+        { label: "Prova Social", val: d.gatilho_prova_social, icon: <Users className="w-3.5 h-3.5" />, accentColor: 'rgba(59,130,246,0.5)', text: "text-blue-300" },
+        { label: "Urgência", val: d.gatilho_urgencia, icon: <Zap className="w-3.5 h-3.5" />, accentColor: 'rgba(239,68,68,0.5)', text: "text-red-300" },
+        { label: "Reciprocidade", val: d.gatilho_reciprocidade, icon: <Gift className="w-3.5 h-3.5" />, accentColor: 'rgba(34,197,94,0.5)', text: "text-green-300" },
+        { label: "Dor vs. Prazer", val: d.gatilho_dor_vs_prazer, icon: <Scale className="w-3.5 h-3.5" />, accentColor: 'rgba(168,85,247,0.5)', text: "text-purple-300" },
     ];
     return (
-        <Section title="🧠 Gatilhos Mentais a Ativar" id="gatilhos">
+        <Section title="Gatilhos Mentais a Ativar" id="gatilhos" icon={<Brain className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                {items.map(({ label, val, icon, border, text }) => (
-                    <div key={label} className={`bg-slate-900/60 rounded-lg p-3 border ${border}`}>
-                        <p className="text-[10px] uppercase tracking-widest text-slate-500 font-mono mb-1">{icon} {label}</p>
+                {items.map(({ label, val, icon, accentColor, text }) => (
+                    <div key={label} className="rounded-lg p-3 border" style={{ backgroundColor: CARD_BG, borderColor: accentColor }}>
+                        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono mb-1 flex items-center gap-1.5">
+                            <span style={{ color: accentColor }}>{icon}</span> {label}
+                        </p>
                         <p className={`text-xs ${text}`}>{val || "—"}</p>
                     </div>
                 ))}
@@ -374,16 +445,16 @@ function Gatilhos({ d }: { d: FlatAnalysis }) {
 
 function NaoDizer({ d }: { d: FlatAnalysis }) {
     return (
-        <Section title="🚫 O que NÃO dizer/fazer" id="naodizer">
+        <Section title="O que NÃO dizer/fazer" id="naodizer" icon={<Ban className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card title="Termos-Problema" icon="❌" accent="border-red-700/40">
+                <Card title="Termos-Problema" icon={<XCircle className="w-4 h-4" />} accentColor="rgba(239,68,68,0.5)">
                     <TagList items={d.nao_dizer_termos} color="text-red-300" />
                 </Card>
-                <Card title="Erros Fatais" icon="💀" accent="border-red-700/40">
-                    <BulletList items={d.nao_dizer_erros_fatais} icon="✗" colorClass="text-red-400" />
+                <Card title="Erros Fatais" icon={<XCircle className="w-4 h-4" />} accentColor="rgba(239,68,68,0.5)">
+                    <BulletList items={d.nao_dizer_erros_fatais} colorClass="text-red-400" />
                 </Card>
-                <Card title="Sensibilidades" icon="⚠️" accent="border-amber-700/40">
-                    <BulletList items={d.nao_dizer_sensibilidades} icon="!" colorClass="text-amber-300" />
+                <Card title="Sensibilidades" icon={<AlertTriangle className="w-4 h-4" />} accentColor="rgba(245,158,11,0.5)">
+                    <BulletList items={d.nao_dizer_sensibilidades} colorClass="text-amber-300" />
                 </Card>
             </div>
         </Section>
@@ -394,29 +465,32 @@ function NaoDizer({ d }: { d: FlatAnalysis }) {
 
 function Linguagem({ d }: { d: FlatAnalysis }) {
     return (
-        <Section title="🗣️ Linguagem, Framing & Frases-Chave" id="linguagem">
+        <Section title="Linguagem, Framing & Frases-Chave" id="linguagem" icon={<MessageSquare className="w-4 h-4" />}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card title="Mirroring" icon="🪞">
+                <Card title="Mirroring" icon={<Copy className="w-4 h-4" />}>
                     <TagList items={d.linguagem_mirroring} />
                 </Card>
-                <Card title="Usar" icon="✅" accent="border-green-700/40">
+                <Card title="Usar" icon={<CheckCircle2 className="w-4 h-4" />} accentColor="rgba(34,197,94,0.5)">
                     <TagList items={d.linguagem_palavras_usar} color="text-green-300" />
                 </Card>
-                <Card title="Evitar" icon="🚫" accent="border-red-700/40">
+                <Card title="Evitar" icon={<Ban className="w-4 h-4" />} accentColor="rgba(239,68,68,0.5)">
                     <TagList items={d.linguagem_palavras_evitar} color="text-red-300" />
                 </Card>
             </div>
-            <Card title="Ancoragens Recomendadas" icon="⚓">
+            <Card title="Ancoragens Recomendadas" icon={<Anchor className="w-4 h-4" />}>
                 <BulletList items={d.linguagem_ancoragens} colorClass="text-cyan-300" />
             </Card>
             {d.linguagem_frases_modelo && d.linguagem_frases_modelo.length > 0 && (
                 <div>
-                    <p className="text-xs font-bold text-slate-400 mb-3">💬 Frases-Modelo Prontas</p>
+                    <p className="text-xs font-bold text-gray-400 mb-3 flex items-center gap-1.5">
+                        <MessageSquare className="w-3.5 h-3.5" style={{ color: NEON_PINK }} />
+                        Frases-Modelo Prontas
+                    </p>
                     <div className="space-y-2">
                         {d.linguagem_frases_modelo.map((frase, i) => (
-                            <div key={i} className="bg-slate-800/80 border border-slate-600/50 rounded-lg px-4 py-3 flex gap-3 items-start">
-                                <span className="text-slate-500 font-mono text-xs shrink-0">{i + 1}.</span>
-                                <p className="text-sm text-slate-200 italic">&ldquo;{frase}&rdquo;</p>
+                            <div key={i} className="rounded-lg px-4 py-3 flex gap-3 items-start border" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderColor: CARD_BORDER }}>
+                                <span className="text-gray-500 font-mono text-xs shrink-0">{i + 1}.</span>
+                                <p className="text-sm text-gray-200 italic">&ldquo;{frase}&rdquo;</p>
                             </div>
                         ))}
                     </div>

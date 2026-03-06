@@ -22,7 +22,7 @@
     "src": "index.tsx-loader.js"
   },
   "offscreen/index.html": {
-    "file": "assets/offscreen-Bxuv4_mF.js",
+    "file": "assets/offscreen-C8EYacx6.js",
     "name": "offscreen",
     "src": "offscreen/index.html",
     "isEntry": true,
@@ -31,7 +31,7 @@
     ]
   },
   "popup.html": {
-    "file": "assets/popup.html-CrEPyyR7.js",
+    "file": "assets/popup.html-CKCIywwQ.js",
     "name": "popup.html",
     "src": "popup.html",
     "isEntry": true,

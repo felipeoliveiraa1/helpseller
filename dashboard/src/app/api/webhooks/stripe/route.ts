@@ -109,7 +109,7 @@ async function handleCheckoutCompleted(
     : session.customer?.id ?? null;
 
   if (orderCode) {
-    await supabase
+    const { error: orderUpdateError } = await supabase
       .from('billing_orders')
       .update({
         status: 'paid',
@@ -121,6 +121,7 @@ async function handleCheckoutCompleted(
       })
       .eq('order_code', orderCode)
       .in('status', ['draft', 'pending']);
+    console.log('[WEBHOOK_STRIPE] Order update:', { orderCode, error: orderUpdateError });
   }
 
   if (session.mode === 'subscription' && session.subscription) {
@@ -128,8 +129,7 @@ async function handleCheckoutCompleted(
       ? session.subscription
       : session.subscription.id;
     const planId = session.metadata?.plan_id || null;
-
-    await supabase.from('billing_subscriptions').upsert(
+    const { error: subError } = await supabase.from('billing_subscriptions').upsert(
       {
         organization_id: organizationId!,
         plan_id: planId,
@@ -140,11 +140,13 @@ async function handleCheckoutCompleted(
       },
       { onConflict: 'stripe_subscription_id' }
     );
+    console.log('[WEBHOOK_STRIPE] Subscription upsert:', { stripeSubscriptionId, planId, error: subError });
   }
 
   if (organizationId) {
     const planSlug = await resolvePlanSlug(supabase, session.metadata?.plan_id || null);
-    await supabase
+    console.log('[WEBHOOK_STRIPE] Resolved plan slug:', { planId: session.metadata?.plan_id, planSlug });
+    const { error: orgError } = await supabase
       .from('organizations')
       .update({
         ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
@@ -159,6 +161,7 @@ async function handleCheckoutCompleted(
         updated_at: new Date().toISOString(),
       })
       .eq('id', organizationId);
+    console.log('[WEBHOOK_STRIPE] Organization update:', { organizationId, planSlug, error: orgError });
   }
 }
 

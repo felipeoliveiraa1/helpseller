@@ -19,6 +19,7 @@ const navSections = [
       { name: 'Ao Vivo', href: '/live', icon: 'cell_tower' },
       { name: 'Analytics', href: '/analytics', icon: 'bar_chart' },
       { name: 'Equipe', href: '/team', icon: 'people' },
+      { name: 'Planos', href: '/billing', icon: 'credit_card' },
     ],
   },
 ] as const

@@ -26,6 +26,7 @@ export interface CreateCheckoutSessionParams {
   metadata?: Record<string, string>;
   clientReferenceId?: string;
   subscriptionMetadata?: Record<string, string>;
+  trialPeriodDays?: number;
 }
 
 export interface CheckoutSessionResult {
@@ -53,7 +54,10 @@ export async function createCheckoutSession(
       ? { metadata: params.metadata ?? {} }
       : undefined,
     subscription_data: params.mode === 'subscription'
-      ? { metadata: params.subscriptionMetadata ?? params.metadata ?? {} }
+      ? {
+          metadata: params.subscriptionMetadata ?? params.metadata ?? {},
+          ...(params.trialPeriodDays ? { trial_period_days: params.trialPeriodDays } : {}),
+        }
       : undefined,
   };
   const session = await stripe.checkout.sessions.create(sessionParams);

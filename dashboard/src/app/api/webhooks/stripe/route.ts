@@ -142,11 +142,12 @@ async function handleCheckoutCompleted(
     );
   }
 
-  if (organizationId && stripeCustomerId) {
+  if (organizationId) {
+    const planSlug = await resolvePlanSlug(supabase, session.metadata?.plan_id || null);
     await supabase
       .from('organizations')
       .update({
-        stripe_customer_id: stripeCustomerId,
+        ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
         ...(session.mode === 'subscription' && session.subscription
           ? {
               stripe_subscription_id: typeof session.subscription === 'string'
@@ -154,10 +155,24 @@ async function handleCheckoutCompleted(
                 : session.subscription.id,
             }
           : {}),
+        ...(planSlug ? { plan: planSlug } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('id', organizationId);
   }
+}
+
+async function resolvePlanSlug(
+  supabase: SupabaseAdmin,
+  planId: string | null
+): Promise<string | null> {
+  if (!planId) return null;
+  const { data } = await supabase
+    .from('billing_plans')
+    .select('slug')
+    .eq('id', planId)
+    .maybeSingle();
+  return (data as { slug: string } | null)?.slug ?? null;
 }
 
 function extractSubscriptionIdFromInvoice(invoice: Stripe.Invoice): string | null {
@@ -262,6 +277,7 @@ async function handleSubscriptionDeleted(
       .from('organizations')
       .update({
         stripe_subscription_id: null,
+        plan: 'FREE',
         updated_at: new Date().toISOString(),
       })
       .eq('id', organizationId);

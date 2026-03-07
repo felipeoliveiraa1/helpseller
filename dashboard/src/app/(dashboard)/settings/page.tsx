@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { DashboardHeader } from '@/components/layout/dashboard-header'
 import { Settings, Building2, Loader2, User, Mail, Shield, Briefcase, CreditCard, Lock, Camera, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -26,6 +27,7 @@ const PLAN_LABELS: Record<string, string> = {
   FREE: 'Grátis',
   STARTER: 'Starter',
   PRO: 'Pro',
+  TEAM: 'Team',
   ENTERPRISE: 'Enterprise',
   Gratis: 'Grátis',
   Pro: 'Pro',
@@ -349,6 +351,16 @@ export default function SettingsPage() {
             </div>
             {!hasOrg && (
               <p className="text-xs text-gray-500 mt-1">Vincule-se a uma organização para ver o plano.</p>
+            )}
+            {hasOrg && (
+              <Link
+                href="/billing"
+                className="mt-3 inline-flex items-center justify-center gap-2 h-11 px-6 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90 w-fit"
+                style={{ backgroundColor: NEON_PINK }}
+              >
+                <CreditCard className="w-4 h-4" />
+                Gerenciar plano
+              </Link>
             )}
           </div>
         </section>

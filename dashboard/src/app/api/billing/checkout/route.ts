@@ -5,17 +5,19 @@ import { createCheckoutSession, type CheckoutMode } from '@/lib/stripe';
 import { z } from 'zod';
 
 const BodySchema = z.object({
-  mode: z.enum(['payment', 'subscription']).default('payment'),
+  mode: z.enum(['payment', 'subscription']).default('subscription'),
   priceId: z.string().optional(),
+  planSlug: z.string().optional(),
+  planId: z.string().uuid().optional(),
   name: z.string().min(1).max(64).optional(),
   amountCents: z.number().int().min(1).optional(),
   currency: z.string().length(3).default('brl'),
-  planId: z.string().uuid().optional(),
 });
 
 /**
  * POST /api/billing/checkout
  * Creates a Stripe Checkout Session and persists an order in the DB.
+ * Accepts planSlug (e.g. "PRO") to auto-resolve priceId from billing_plans.
  * Returns checkoutUrl and orderId. Requires authenticated user with organization_id.
  */
 export async function POST(request: NextRequest) {
@@ -53,7 +55,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { mode, priceId, name, amountCents, currency, planId } = parsed.data;
+    let { mode, priceId, planSlug, planId, name, amountCents, currency } = parsed.data;
+    let trialDays: number | undefined;
+
+    if (planSlug && !priceId) {
+      const { data: planRow } = await supabase
+        .from('billing_plans')
+        .select('id, stripe_price_id, amount_cents, name, interval, slug')
+        .eq('slug', planSlug)
+        .maybeSingle();
+
+      const plan = planRow as {
+        id: string;
+        stripe_price_id: string | null;
+        amount_cents: number;
+        name: string;
+        interval: string | null;
+        slug: string;
+      } | null;
+
+      if (!plan) {
+        return NextResponse.json({ error: `Plan "${planSlug}" not found` }, { status: 404 });
+      }
+
+      planId = plan.id;
+      amountCents = plan.amount_cents;
+      name = plan.name;
+
+      if (plan.stripe_price_id) {
+        priceId = plan.stripe_price_id;
+      }
+
+      if (plan.interval) {
+        mode = 'subscription';
+      }
+
+      if (plan.slug === 'STARTER') {
+        trialDays = 7;
+      }
+    }
+
+    if (!priceId && !amountCents) {
+      return NextResponse.json(
+        { error: 'Either priceId, planSlug, or amountCents is required' },
+        { status: 400 }
+      );
+    }
+
     const customerEmail = (profile as { email: string | null })?.email ?? user.email ?? '';
     const orderCode = crypto.randomUUID();
     const origin = request.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
@@ -84,6 +132,7 @@ export async function POST(request: NextRequest) {
         order_code: orderCode,
         plan_id: planId ?? '',
       },
+      trialPeriodDays: trialDays,
     });
 
     const { data: orderRow, error: insertError } = await supabase

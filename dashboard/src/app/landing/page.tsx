@@ -117,60 +117,94 @@ const TRUST_NAMES = [
 
 const PLANS = [
   {
-    id: 'gratis',
-    name: 'Grátis',
-    price: 'R$ 0',
+    id: 'starter',
+    name: 'Starter',
+    price: 'R$ 397',
     period: '/mês',
-    description: 'Para testar o HelpSeller com seu time.',
+    description: 'Para vendedores que querem vender mais.',
+    trial: '7 dias grátis para testar',
     features: [
-      'Até 3 vendedores',
-      'Coaching em tempo real',
-      'Até 50 chamadas/mês',
-      'Scripts e objeções',
-      'Suporte por e-mail',
+      '2 vendedores',
+      '15h de calls/mês (compartilhadas)',
+      'Coaching IA em tempo real',
+      'Detecção de objeções',
+      'Indicador de fase SPIN',
+      'Histórico de chamadas',
+      'Resumo automático pós-call',
+      'Dashboard básico',
     ],
-    ctaText: 'Começar grátis',
-    ctaLink: '/register?plan=gratis',
+    extra: 'R$ 8 por hora adicional',
+    ctaText: 'Testar 7 dias grátis',
+    ctaLink: '/register?plan=starter',
   },
   {
     id: 'pro',
     name: 'Pro',
-    price: 'R$ 497',
+    price: 'R$ 897',
     period: '/mês',
-    description: 'Para equipes que querem escalar vendas.',
+    description: 'Para equipes de vendas estruturadas.',
     popular: true,
     features: [
-      'Vendedores ilimitados',
-      'Chamadas ilimitadas',
-      'Whisper para gestores',
-      'Métricas e dashboard',
-      'Integrações (CRM, Meet)',
-      'Suporte prioritário',
+      '5 vendedores',
+      '60h de calls/mês (compartilhadas)',
+      'Coaching IA em tempo real',
+      'Detecção de objeções',
+      'Indicador SPIN',
+      'Análise completa da chamada',
+      'Analytics avançado',
+      'Ranking de vendedores',
+      'Dashboard manager',
+      'Reprocessamento de análise',
     ],
+    extra: 'R$ 7 por hora adicional',
     ctaText: 'Assinar Pro',
     ctaLink: '/register?plan=pro',
   },
   {
+    id: 'team',
+    name: 'Team',
+    price: 'R$ 1.797',
+    period: '/mês',
+    description: 'Para times maiores com visibilidade completa.',
+    features: [
+      '10 vendedores',
+      '200h de calls/mês (compartilhadas)',
+      'Torre de comando ao vivo',
+      'Manager Whisper',
+      'Coaching IA em tempo real',
+      'Análise avançada de chamadas',
+      'KPIs e analytics avançados',
+      'Histórico completo',
+      'Gestão de equipe',
+    ],
+    ctaText: 'Assinar Team',
+    ctaLink: '/register?plan=team',
+  },
+  {
     id: 'enterprise',
     name: 'Enterprise',
-    price: 'Sob consulta',
-    description: 'Para grandes operações e compliance.',
+    price: 'R$ 3.997',
+    period: '/mês',
+    description: 'Para operações de vendas grandes.',
     features: [
-      'Tudo do Pro',
-      'SSO e SAML',
-      'Gestor de sucesso dedicado',
-      'SLA e conformidade',
-      'On-premise ou VPC',
+      'Vendedores ilimitados',
+      'Horas personalizadas',
+      'Suporte prioritário',
+      'Onboarding dedicado',
+      'Integrações personalizadas',
+      'Relatórios avançados',
+      'SLA dedicado',
     ],
     ctaText: 'Falar com vendas',
-    ctaLink: '/register?plan=enterprise',
+    ctaLink: 'https://wa.me/5511999999999?text=Quero%20conhecer%20o%20plano%20Enterprise',
+    isExternal: true,
   },
-] as { id: string; name: string; price: string; period?: string; description: string; popular?: boolean; features: string[]; ctaText: string; ctaLink: string }[]
+] as { id: string; name: string; price: string; period?: string; description: string; popular?: boolean; trial?: string; features: string[]; extra?: string; ctaText: string; ctaLink: string; isExternal?: boolean }[]
 
 const FAQ_ITEMS = [
   {
     question: 'Posso testar antes de assinar?',
-    answer: 'Sim. O plano Grátis não exige cartão de crédito e inclui coaching em tempo real e até 50 chamadas por mês. Você pode migrar para Pro ou Enterprise quando quiser.',
+    answer: 'Entre em contato com nosso time para agendar uma demonstração gratuita. Você poderá testar o coaching em tempo real com seu time antes de assinar.',
   },
   {
     question: 'Quais formas de pagamento vocês aceitam?',
@@ -582,14 +616,14 @@ export default function LandingPage() {
               Planos que cabem no seu time
             </h2>
             <p className="text-lg text-gray-500 max-w-xl mx-auto">
-              Comece grátis. Escale quando precisar. Sem surpresas na fatura.
+              Escolha o plano ideal para o tamanho do seu time. Escale quando precisar.
             </p>
           </div>
-          <div className="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 max-w-6xl mx-auto">
             {PLANS.map((plan) => (
               <div
                 key={plan.id}
-                className={`relative flex flex-col rounded-2xl border p-8 transition-all duration-300 ${plan.popular
+                className={`relative flex flex-col rounded-2xl border p-6 transition-all duration-300 ${plan.popular
                     ? 'border-neon-pink bg-[#14151A]/80 ring-1 ring-neon-pink/30 shadow-[0_0_40px_-10px_rgba(255,0,122,0.2)]'
                     : 'border-[#2A2A2A] bg-[#14151A]/60 hover:border-white/10'
                   }`}
@@ -601,27 +635,48 @@ export default function LandingPage() {
                 )}
                 <h3 className="text-xl font-semibold text-white">{plan.name}</h3>
                 <div className="mt-2 flex items-baseline gap-1">
-                  <span className="text-3xl font-bold text-white">{plan.price}</span>
-                  {plan.period && <span className="text-gray-500">{plan.period}</span>}
+                  <span className="text-2xl font-bold text-white">{plan.price}</span>
+                  {plan.period && <span className="text-gray-500 text-sm">{plan.period}</span>}
                 </div>
                 <p className="mt-2 text-sm text-gray-500">{plan.description}</p>
-                <ul className="mt-6 space-y-3 flex-1">
+                {plan.trial && (
+                  <div className="mt-3 px-3 py-1.5 rounded-lg bg-neon-green/10 border border-neon-green/20 text-neon-green text-xs font-semibold text-center">
+                    {plan.trial}
+                  </div>
+                )}
+                <ul className="mt-5 space-y-2.5 flex-1">
                   {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-center gap-2 text-sm text-gray-400">
-                      <Check className="w-4 h-4 shrink-0 text-neon-green" />
+                    <li key={feature} className="flex items-start gap-2 text-sm text-gray-400">
+                      <Check className="w-4 h-4 shrink-0 text-neon-green mt-0.5" />
                       {feature}
                     </li>
                   ))}
                 </ul>
-                <Link
-                  href={plan.ctaLink}
-                  className={`mt-8 w-full inline-flex items-center justify-center rounded-xl py-3 text-sm font-semibold transition-all ${plan.popular
-                      ? 'bg-neon-pink text-white hover:opacity-90 shadow-[0_0_20px_-5px_rgba(255,0,122,0.4)]'
-                      : 'border border-[#2A2A2A] bg-white/5 text-white hover:bg-white/10'
-                    }`}
-                >
-                  {plan.ctaText}
-                </Link>
+                {plan.extra && (
+                  <p className="mt-3 text-xs text-gray-500 border-t border-white/5 pt-3">
+                    + {plan.extra}
+                  </p>
+                )}
+                {plan.isExternal ? (
+                  <a
+                    href={plan.ctaLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-6 w-full inline-flex items-center justify-center rounded-xl py-3 text-sm font-semibold transition-all border border-[#2A2A2A] bg-white/5 text-white hover:bg-white/10"
+                  >
+                    {plan.ctaText}
+                  </a>
+                ) : (
+                  <Link
+                    href={plan.ctaLink}
+                    className={`mt-6 w-full inline-flex items-center justify-center rounded-xl py-3 text-sm font-semibold transition-all ${plan.popular
+                        ? 'bg-neon-pink text-white hover:opacity-90 shadow-[0_0_20px_-5px_rgba(255,0,122,0.4)]'
+                        : 'border border-[#2A2A2A] bg-white/5 text-white hover:bg-white/10'
+                      }`}
+                  >
+                    {plan.ctaText}
+                  </Link>
+                )}
               </div>
             ))}
           </div>

@@ -13,6 +13,7 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 let onMessageCallback: ((data: any) => void) | null = null;
 let onConnectCallback: (() => void) | null = null;
 let onCloseCallback: (() => void) | null = null;
+let onPlanRequiredCallback: (() => void) | null = null;
 
 export function onWsMessage(cb: (data: any) => void) {
     onMessageCallback = cb;
@@ -24,6 +25,10 @@ export function onWsConnect(cb: () => void) {
 
 export function onWsClose(cb: () => void) {
     onCloseCallback = cb;
+}
+
+export function onWsPlanRequired(cb: () => void) {
+    onPlanRequiredCallback = cb;
 }
 
 export async function connect() {
@@ -77,14 +82,19 @@ export async function connect() {
             ws = null;
             if (onCloseCallback) onCloseCallback();
 
+            if (event.code === 4403) {
+                console.warn('🚫 Active plan required. Not reconnecting.');
+                if (onPlanRequiredCallback) onPlanRequiredCallback();
+                return;
+            }
+
             if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
                 console.error('❌ Max reconnect attempts reached, stopping.');
                 return;
             }
 
-            // Exponential backoff for invalid token (1008)
             const delay = event.code === 1008
-                ? Math.min(5000 * Math.pow(1.5, reconnectAttempts), 30000) // 5s -> 7.5s -> 11s -> ...
+                ? Math.min(5000 * Math.pow(1.5, reconnectAttempts), 30000)
                 : 2000;
 
             reconnectAttempts++;

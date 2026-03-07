@@ -1,5 +1,5 @@
 import { authService } from '../services/auth';
-import { connect, send, onWsConnect, onWsMessage, onWsClose } from '../services/websocket';
+import { connect, send, onWsConnect, onWsMessage, onWsClose, onWsPlanRequired } from '../services/websocket';
 import { edgeCoach } from '../services/edge-coach';
 import type { CachedObjection } from '../stores/coaching-store';
 import { dashboardUrl, apiBaseUrl } from '../config/env';
@@ -48,6 +48,16 @@ onWsConnect(() => {
 
 onWsClose(() => {
     isCallConfirmed = false;
+});
+
+onWsPlanRequired(async () => {
+    const state = await getState();
+    if (state.currentTabId) {
+        chrome.tabs.sendMessage(state.currentTabId, {
+            type: 'PLAN_REQUIRED',
+        }).catch(() => { });
+    }
+    chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', status: 'PLAN_REQUIRED' }).catch(() => { });
 });
 
 // Listen for messages from WebSocket

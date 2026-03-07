@@ -230,6 +230,30 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             return;
         }
 
+        const { data: profileRow } = await supabaseAdmin
+            .from('profiles')
+            .select('organization_id')
+            .eq('id', user.id)
+            .single();
+        const orgId = (profileRow as { organization_id: string | null } | null)?.organization_id;
+        if (orgId) {
+            const { data: orgRow } = await supabaseAdmin
+                .from('organizations')
+                .select('plan')
+                .eq('id', orgId)
+                .single();
+            const plan = (orgRow as { plan?: string } | null)?.plan ?? 'FREE';
+            if (plan === 'FREE') {
+                logger.warn(`🚫 User ${user.id} rejected: FREE plan`);
+                socket.close(4403, 'Active plan required');
+                return;
+            }
+        } else {
+            logger.warn(`🚫 User ${user.id} rejected: no organization`);
+            socket.close(4403, 'Active plan required');
+            return;
+        }
+
         logger.info(`✅ User authenticated: ${user.id}`);
         let callId: string | null = null;
         let sessionData: CallSession | null = null;
@@ -1351,6 +1375,29 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
             if (error || !user) {
                 try { socket.close(1008, 'Invalid token'); } catch { /* already closed */ }
+                return;
+            }
+            const { data: mgrProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('organization_id')
+                .eq('id', user.id)
+                .single();
+            const mgrOrgId = (mgrProfile as { organization_id: string | null } | null)?.organization_id;
+            if (mgrOrgId) {
+                const { data: mgrOrg } = await supabaseAdmin
+                    .from('organizations')
+                    .select('plan')
+                    .eq('id', mgrOrgId)
+                    .single();
+                const mgrPlan = (mgrOrg as { plan?: string } | null)?.plan ?? 'FREE';
+                if (mgrPlan === 'FREE') {
+                    logger.warn(`🚫 Manager ${user.id} rejected: FREE plan`);
+                    try { socket.close(4403, 'Active plan required'); } catch { /* already closed */ }
+                    return;
+                }
+            } else {
+                logger.warn(`🚫 Manager ${user.id} rejected: no organization`);
+                try { socket.close(4403, 'Active plan required'); } catch { /* already closed */ }
                 return;
             }
             authUser = user;

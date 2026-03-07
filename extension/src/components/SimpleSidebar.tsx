@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { authService } from '../services/auth';
-import { GripVertical, Mic, Minus, X, Cpu, MessageCircle, HelpCircle, AlertTriangle, Copy, Check } from 'lucide-react';
+import { GripVertical, Mic, Minus, X, Cpu, MessageCircle, HelpCircle, AlertTriangle, Copy, Check, Lock } from 'lucide-react';
 import { BG, BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED, INPUT_BG, ACCENT_ACTIVE, ACCENT_DANGER, NEON_PINK, RADIUS } from '../lib/theme';
+import { dashboardUrl } from '../config/env';
 
 interface TranscriptEntry {
     text: string;
@@ -99,6 +100,7 @@ export default function SimpleSidebar() {
     const [managerWhisper, setManagerWhisper] = useState<{ content: string; urgency: string; timestamp: number } | null>(null);
     const [isRecording, setIsRecording] = useState(false);
     const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
+    const [isPlanRequired, setIsPlanRequired] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const dragRef = useRef({ startX: 0, startY: 0, startLeft: 0, startTop: 0, panelW: SIDEBAR_W, panelH: 300 });
     const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -241,6 +243,9 @@ export default function SimpleSidebar() {
                 if (msg.status === 'PERMISSION_REQUIRED') {
                     alert('Permissão necessária. Clique no ícone da extensão na barra do navegador para autorizar a captura da aba.');
                 }
+                if (msg.status === 'PLAN_REQUIRED') {
+                    setIsPlanRequired(true);
+                }
             } else if (msg.type === 'MANAGER_WHISPER') {
                 setManagerWhisper({ content: msg.data.content, urgency: msg.data.urgency, timestamp: msg.data.timestamp });
             } else if (msg.type === 'COACH_THINKING') {
@@ -265,6 +270,8 @@ export default function SimpleSidebar() {
                     timestamp: Date.now(),
                 };
                 setCoachFeed(prev => [newCoaching, ...prev].slice(0, MAX_VISIBLE_COACHING));
+            } else if (msg.type === 'PLAN_REQUIRED') {
+                setIsPlanRequired(true);
             }
         };
         chrome.runtime.onMessage.addListener(listener);
@@ -305,6 +312,31 @@ export default function SimpleSidebar() {
                 <button onClick={toggleMinimize} title="Expandir" style={{ width: 32, height: 32, borderRadius: RADIUS, border: `1px solid ${BORDER}`, background: BG_ELEVATED, color: TEXT_SECONDARY, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <GripVertical size={16} style={{ transform: 'rotate(-90deg)' }} />
                 </button>
+            </div>
+        );
+    }
+
+    if (isPlanRequired) {
+        return (
+            <div style={{ ...baseContainer, height: '100%', padding: 24, justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+                <Lock size={40} style={{ color: NEON_PINK, marginBottom: 16 }} />
+                <p style={{ fontSize: 16, fontWeight: 700, color: TEXT, marginBottom: 8 }}>Plano necessário</p>
+                <p style={{ fontSize: 13, color: TEXT_SECONDARY, marginBottom: 20, lineHeight: 1.5 }}>
+                    Para usar o coaching IA em tempo real, ative um plano. Comece com 7 dias grátis!
+                </p>
+                <a
+                    href={`${dashboardUrl}/billing`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        padding: '10px 24px', borderRadius: RADIUS, backgroundColor: NEON_PINK,
+                        color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none',
+                        cursor: 'pointer', border: 'none',
+                    }}
+                >
+                    Escolher plano
+                </a>
             </div>
         );
     }

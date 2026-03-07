@@ -1,7 +1,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Client com service role para uso apenas em server (ex.: webhook Pagar.me).
+ * Client com service role para uso apenas em server (ex.: webhook Stripe).
  * Nunca expor no browser. Usar para operações que não têm usuário autenticado.
  */
 export function createAdminClient() {

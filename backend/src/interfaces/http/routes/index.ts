@@ -162,10 +162,6 @@ export async function routes(fastify: FastifyInstance) {
 
     });
 
-    // Public/Webhooks
-    fastify.post('/webhooks/stripe', async (request, reply) => {
-        // Stripe logic here
-        return { received: true };
-    });
+    // Public/Webhooks (billing is handled by Next.js dashboard API routes)
 
 }

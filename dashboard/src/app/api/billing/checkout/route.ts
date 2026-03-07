@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { createPaymentLink } from '@/lib/pagarme';
+import { createCheckoutSession, type CheckoutMode } from '@/lib/stripe';
 import { z } from 'zod';
 
 const BodySchema = z.object({
-  type: z.enum(['order', 'subscription']).default('order'),
+  mode: z.enum(['payment', 'subscription']).default('payment'),
+  priceId: z.string().optional(),
   name: z.string().min(1).max(64).optional(),
-  amountCents: z.number().int().min(1),
-  currency: z.string().length(3).default('BRL'),
+  amountCents: z.number().int().min(1).optional(),
+  currency: z.string().length(3).default('brl'),
   planId: z.string().uuid().optional(),
 });
 
 /**
  * POST /api/billing/checkout
- * Cria link de pagamento na Pagar.me e persiste order no DB.
- * Retorna checkout_url e orderId. Requer usuário autenticado com organization_id.
+ * Creates a Stripe Checkout Session and persists an order in the DB.
+ * Returns checkoutUrl and orderId. Requires authenticated user with organization_id.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -52,50 +53,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { type, name, amountCents, currency, planId } = parsed.data;
-    const productName = name ?? `Pagamento ${type === 'subscription' ? 'assinatura' : 'único'}`;
+    const { mode, priceId, name, amountCents, currency, planId } = parsed.data;
+    const customerEmail = (profile as { email: string | null })?.email ?? user.email ?? '';
     const orderCode = crypto.randomUUID();
+    const origin = request.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+    const productName = name ?? (mode === 'subscription' ? 'Assinatura' : 'Pagamento único');
 
-    const linkPayload = {
-      type: type as 'order' | 'subscription',
-      name: productName,
-      order_code: orderCode,
-      payment_settings: {
-        accepted_payment_methods: ['credit_card', 'pix', 'boleto'] as ('credit_card' | 'pix' | 'boleto')[],
-      },
-      cart_settings: {
-        items: [
-          {
-            name: productName,
-            amount: amountCents,
-            default_quantity: 1,
+    const lineItems = priceId
+      ? [{ price: priceId, quantity: 1 }]
+      : [{
+          price_data: {
+            currency,
+            product_data: { name: productName },
+            unit_amount: amountCents!,
+            ...(mode === 'subscription' ? { recurring: { interval: 'month' as const } } : {}),
           },
-        ],
+          quantity: 1,
+        }];
+
+    const sessionResult = await createCheckoutSession({
+      mode: mode as CheckoutMode,
+      customerEmail,
+      lineItems,
+      successUrl: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${origin}/billing/cancel`,
+      clientReferenceId: organizationId,
+      metadata: {
+        organization_id: organizationId,
+        user_id: user.id,
+        order_code: orderCode,
+        plan_id: planId ?? '',
       },
-      customer_settings: {
-        customer: {
-          name: (profile as { full_name: string | null }).full_name ?? user.email ?? 'Cliente',
-          email: (profile as { email: string | null }).email ?? user.email ?? '',
-          code: organizationId,
-        },
-      },
-    };
-
-    if (type === 'subscription') {
-      (linkPayload as Record<string, unknown>).subscription_settings = {
-        billing_cycle: { interval: 'month' as const, interval_count: 1 },
-        payment_methods: ['credit_card', 'pix', 'boleto'],
-      };
-    }
-
-    const pagarmeResponse = await createPaymentLink(
-      linkPayload as unknown as Parameters<typeof createPaymentLink>[0]
-    );
-
-    const checkoutUrl = pagarmeResponse.checkout_url;
-    const pagarmeOrderId =
-      pagarmeResponse.order?.id ?? (pagarmeResponse as { order_id?: string }).order_id ?? null;
-    const pagarmeLinkId = pagarmeResponse.id ?? null;
+    });
 
     const { data: orderRow, error: insertError } = await supabase
       .from('billing_orders')
@@ -104,11 +93,10 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         plan_id: planId ?? null,
         status: 'pending',
-        amount_cents: amountCents,
+        amount_cents: amountCents ?? 0,
         currency,
         order_code: orderCode,
-        pagarme_order_id: pagarmeOrderId,
-        pagarme_payment_link_id: pagarmeLinkId,
+        stripe_session_id: sessionResult.sessionId,
         metadata: {},
       })
       .select('id')
@@ -123,14 +111,14 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      checkoutUrl,
+      checkoutUrl: sessionResult.checkoutUrl,
       orderId: orderRow.id,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    if (message.includes('PAGARME_SECRET_KEY')) {
+    if (message.includes('STRIPE_SECRET_KEY')) {
       return NextResponse.json(
-        { error: 'Billing is not configured (missing PAGARME_SECRET_KEY)' },
+        { error: 'Billing is not configured (missing STRIPE_SECRET_KEY)' },
         { status: 503 }
       );
     }

@@ -18,9 +18,9 @@ Visão geral do que sobe onde e o que configurar.
 3. Configurar variáveis de ambiente na Vercel (Settings → Environment Variables):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY` (para webhook Pagar.me e outras rotas server-side)
+   - `SUPABASE_SERVICE_ROLE_KEY` (para webhook Stripe e outras rotas server-side)
    - `NEXT_PUBLIC_API_URL` = URL do backend no GCP (ex.: `https://seu-backend-xxx.run.app`)
-   - Pagar.me: `PAGARME_SECRET_KEY`, `PAGARME_BASE_URL`
+   - Stripe: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
    - LiveKit (se usar): `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `NEXT_PUBLIC_LIVEKIT_URL`
 
 **Ajuste para produção:** Em `dashboard/src/app/(dashboard)/live/page.tsx` a URL do WebSocket está fixa em `ws://localhost:3001/ws/manager`. Trocar para usar a URL do backend em produção, por exemplo derivar de `NEXT_PUBLIC_API_URL` (ex.: `wss://seu-backend.run.app/ws/manager`).

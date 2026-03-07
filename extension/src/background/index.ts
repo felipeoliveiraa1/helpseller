@@ -535,7 +535,22 @@ async function startCapture(explicitTabId?: number) {
         const tab = await chrome.tabs.get(state.currentTabId);
         console.log('🚀 Initiating capture flow for:', tab.url);
 
-        // 1. Update Status and recording start time for popup timer
+        // 1. Generate StreamID IMMEDIATELY (must happen close to user gesture before it expires)
+        console.log('🎥 Requesting MediaStreamId for tab:', state.currentTabId);
+        const streamId = await new Promise<string>((resolve, reject) => {
+            chrome.tabCapture.getMediaStreamId({ targetTabId: state.currentTabId! }, (id) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else if (!id) {
+                    reject(new Error('Got empty streamId'));
+                } else {
+                    resolve(id);
+                }
+            });
+        });
+        console.log('✅ Fresh StreamID generated:', streamId);
+
+        // 2. Update Status and recording start time for popup timer
         await setState({ isRecording: true, recordingStartedAt: Date.now() });
         broadcastStatus('RECORDING');
 
@@ -543,17 +558,8 @@ async function startCapture(explicitTabId?: number) {
         isCallConfirmed = false;
         audioSegmentBuffer = [];
 
-        // 2. Connect WebSocket FIRST (Bug 3 Fix)
+        // 3. Connect WebSocket
         const session = await authService.getSession() as any;
-
-        // 🔍 DEBUG: Token Info
-        console.log('🔑 Token Debug:', {
-            sessionPresent: !!session,
-            accessTokenPresent: !!session?.access_token,
-            accessTokenLength: session?.access_token?.length,
-            accessTokenPrefix: session?.access_token?.substring(0, 30) + '...',
-            expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'N/A'
-        });
 
         if (!session?.access_token) {
             console.error('❌ No access token available! User may need to log in.');
@@ -564,10 +570,9 @@ async function startCapture(explicitTabId?: number) {
         }
 
         console.log('🔌 Connecting WebSocket...');
-        console.log('🔌 Connecting WebSocket...');
         await connect();
 
-        // 3. Ensure Offscreen Document Exists & Wait for Ready
+        // 4. Ensure Offscreen Document Exists & Wait for Ready
         const offscreenPath = 'offscreen/index.html';
         const offscreenUrl = chrome.runtime.getURL(offscreenPath);
         const existingContexts = await chrome.runtime.getContexts({
@@ -614,22 +619,6 @@ async function startCapture(explicitTabId?: number) {
             console.log('✅ Offscreen document already exists');
         }
         offscreenDocument = offscreenPath;
-
-        // 4. Generate StreamID (Single Source of Truth - Bug 2 Fix)
-        console.log('🎥 Requesting MediaStreamId for tab:', state.currentTabId);
-        const streamId = await new Promise<string>((resolve, reject) => {
-            chrome.tabCapture.getMediaStreamId({ targetTabId: state.currentTabId! }, (id) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else if (!id) {
-                    reject(new Error('Got empty streamId'));
-                } else {
-                    resolve(id);
-                }
-            });
-        });
-
-        console.log('✅ Fresh StreamID generated:', streamId);
 
         // 5. Send INIT_RECORDING Immediately
         console.log('📤 Sending INIT_RECORDING to offscreen...');
@@ -710,11 +699,15 @@ async function startCapture(explicitTabId?: number) {
             broadcastStatus('ERROR');
         }
 
-        await setState({ isRecording: false });
+        await setState({ isRecording: false, recordingStartedAt: null });
 
-        // Clean up if failed
+        // Clean up offscreen document directly (cannot call stopCapture because isProcessing is true)
         if (offscreenDocument) {
-            await stopCapture(); // Ensure cleanup
+            try {
+                chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }).catch(() => {});
+                await chrome.offscreen.closeDocument();
+            } catch (_) { /* may already be closed */ }
+            offscreenDocument = null;
         }
     } finally {
         isProcessing = false;

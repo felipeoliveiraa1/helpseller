@@ -144,8 +144,9 @@ async function handleCheckoutCompleted(
   }
 
   if (organizationId) {
-    const planSlug = await resolvePlanSlug(supabase, session.metadata?.plan_id || null);
-    console.log('[WEBHOOK_STRIPE] Resolved plan slug:', { planId: session.metadata?.plan_id, planSlug });
+    const resolvedSlug = await resolvePlanSlug(supabase, session.metadata?.plan_id || null);
+    const planSlug = resolvedSlug || session.metadata?.plan_slug || null;
+    console.log('[WEBHOOK_STRIPE] Resolved plan slug:', { planId: session.metadata?.plan_id, metadataSlug: session.metadata?.plan_slug, planSlug });
     const { error: orgError } = await supabase
       .from('organizations')
       .update({

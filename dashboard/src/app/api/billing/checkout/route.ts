@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         order_code: orderCode,
         plan_id: planId ?? '',
+        plan_slug: planSlug ?? '',
       },
       trialPeriodDays: trialDays,
     });

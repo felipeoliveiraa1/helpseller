@@ -205,6 +205,7 @@ export default function Popup() {
     const [activeTabId, setActiveTabId] = useState<number | null>(null);
     const [showResultModal, setShowResultModal] = useState(false);
     const [currentPlan, setCurrentPlan] = useState<string | null>(null);
+    const [planLoaded, setPlanLoaded] = useState(false);
     const [coaches, setCoaches] = useState<CoachOption[]>([]);
     const [selectedCoachId, setSelectedCoachId] = useState<string>('');
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -225,10 +226,14 @@ export default function Popup() {
                 setSessionCheckDone(true);
                 setLoading(false);
                 setSession(sess);
-                authService.restoreSessionInMemory(sess).catch(() => {});
-                authService.fetchOrganizationPlan().then((orgData) => {
+                authService.restoreSessionInMemory(sess).then(() => {
+                    return authService.fetchOrganizationPlan();
+                }).then((orgData) => {
                     if (orgData) setCurrentPlan(orgData.plan);
-                }).catch(() => {});
+                    setPlanLoaded(true);
+                }).catch(() => {
+                    setPlanLoaded(true);
+                });
             }
         };
         const setNoSession = () => {
@@ -402,7 +407,7 @@ export default function Popup() {
         setSession(null);
     };
 
-    const isFreePlan = currentPlan === 'FREE' || currentPlan === null;
+    const isFreePlan = planLoaded && (currentPlan === 'FREE' || currentPlan === null);
 
     const toggleCapture = async (result?: 'CONVERTED' | 'LOST' | 'FOLLOW_UP' | 'UNKNOWN') => {
         const tabId = status === 'RECORDING' ? undefined : (selectedTabId ?? tabs[0]?.id ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id);
@@ -495,7 +500,7 @@ export default function Popup() {
         flexDirection: 'column',
     };
 
-    if (!sessionCheckDone || loading) {
+    if (!sessionCheckDone || loading || (session && !planLoaded)) {
         return (
             <div style={{ ...base, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
                 <Loader2 size={28} style={{ color: NEON_PINK }} className="animate-spin" />

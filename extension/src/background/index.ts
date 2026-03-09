@@ -629,6 +629,9 @@ async function startCapture(explicitTabId?: number) {
             return;
         }
 
+        // Restore session in Supabase client memory (critical for other computers / service worker restart)
+        await authService.restoreSessionInMemory(session);
+
         console.log('🔌 Connecting WebSocket...');
         await connect();
 

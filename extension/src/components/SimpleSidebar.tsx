@@ -212,14 +212,30 @@ export default function SimpleSidebar() {
     const checkSession = async () => {
         const sess = await authService.getSession();
         setSession(sess);
-        setLoading(false);
-        if (sess) {
-            const orgData = await authService.fetchOrganizationPlan();
-            if (orgData) {
-                setCurrentPlan(orgData.plan);
-                if (orgData.plan === 'FREE') setIsPlanRequired(true);
-            }
+        if (!sess) {
+            setLoading(false);
+            return;
         }
+
+        // Restore session in Supabase client memory before fetching plan
+        await authService.restoreSessionInMemory(sess);
+
+        // Fetch plan BEFORE ending loading state
+        let orgData = await authService.fetchOrganizationPlan();
+
+        // If first attempt fails, wait and retry once (session may still be initializing)
+        if (!orgData && sess.refresh_token) {
+            await new Promise(r => setTimeout(r, 1500));
+            orgData = await authService.fetchOrganizationPlan();
+        }
+
+        if (orgData) {
+            setCurrentPlan(orgData.plan);
+            if (orgData.plan === 'FREE') setIsPlanRequired(true);
+        }
+
+        // Only show UI after plan is resolved
+        setLoading(false);
     };
 
     const handleLogout = async () => {
@@ -227,6 +243,17 @@ export default function SimpleSidebar() {
         setSession(null);
         setIsRecording(false);
     };
+
+    // Re-check plan when storage changes (e.g. login from popup or plan updated)
+    useEffect(() => {
+        const storageListener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+            if (changes.supabase_session) {
+                checkSession();
+            }
+        };
+        chrome.storage.local.onChanged.addListener(storageListener);
+        return () => chrome.storage.local.onChanged.removeListener(storageListener);
+    }, []);
 
     useEffect(() => {
         transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });

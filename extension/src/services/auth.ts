@@ -37,6 +37,19 @@ try {
 
 export { supabase };
 
+// Keep supabase_session in sync when Supabase client auto-refreshes the token
+supabase.auth.onAuthStateChange((event: string, session: any) => {
+    if (session && (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')) {
+        const authKey = getSupabaseAuthStorageKey();
+        chrome.storage.local.set({
+            supabase_session: session,
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+            [authKey]: JSON.stringify(session),
+        }).catch(() => {});
+    }
+});
+
 export const authService = {
     async login(email: string, password: string) {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -87,8 +100,21 @@ export const authService = {
 
     async fetchOrganizationPlan(): Promise<{ plan: string; organizationId: string } | null> {
         try {
-            const { data: { user }, error: userErr } = await supabase.auth.getUser();
-            if (userErr || !user) return null;
+            // Ensure session is in Supabase client memory
+            let { data: { user }, error: userErr } = await supabase.auth.getUser();
+
+            // If getUser fails, try restoring session from storage first
+            if (userErr || !user) {
+                const storedSession = await this.getSession();
+                if (storedSession?.access_token && storedSession?.refresh_token) {
+                    await this.restoreSessionInMemory(storedSession);
+                    const retry = await supabase.auth.getUser();
+                    user = retry.data.user;
+                    userErr = retry.error;
+                }
+                if (userErr || !user) return null;
+            }
+
             const { data: profile, error: profErr } = await supabase
                 .from('profiles')
                 .select('organization_id')
@@ -101,7 +127,9 @@ export const authService = {
                 .eq('id', profile.organization_id)
                 .single();
             if (orgErr || !org) return null;
-            return { plan: org.plan || 'FREE', organizationId: profile.organization_id };
+            // Only return a plan if it actually exists in the DB, never default to FREE
+            if (!org.plan) return null;
+            return { plan: org.plan, organizationId: profile.organization_id };
         } catch {
             return null;
         }

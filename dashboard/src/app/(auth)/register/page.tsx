@@ -5,10 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { useTheme } from '@/components/theme-provider'
 
-const INPUT_CLASS =
-  'mt-1 block w-full px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100'
+const NEON_PINK = '#ff007a'
 
 export default function RegisterPage() {
   const [name, setName] = useState('')
@@ -22,7 +20,37 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
-  const { theme, toggleTheme } = useTheme()
+
+  const formatDocument = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 14)
+    if (digits.length <= 11) {
+      // CPF: 000.000.000-00
+      return digits
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+    }
+    // CNPJ: 00.000.000/0001-00
+    return digits
+      .replace(/(\d{2})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1/$2')
+      .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
+  }
+
+  const formatPhone = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 11)
+    if (digits.length <= 10) {
+      // (00) 0000-0000
+      return digits
+        .replace(/(\d{2})(\d)/, '($1) $2')
+        .replace(/(\d{4})(\d{1,4})$/, '$1-$2')
+    }
+    // (00) 00000-0000
+    return digits
+      .replace(/(\d{2})(\d)/, '($1) $2')
+      .replace(/(\d{5})(\d{1,4})$/, '$1-$2')
+  }
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,36 +86,55 @@ export default function RegisterPage() {
     setLoading(false)
   }
 
+  const inputClass =
+    'w-full px-4 py-3 rounded-xl text-white placeholder:text-gray-600 border border-white/10 bg-black/30 focus:outline-none focus:ring-2 focus:ring-neon-pink focus:border-transparent transition-colors text-sm'
+
   return (
-    <div className="flex min-h-screen">
+    <div
+      className="flex min-h-screen"
+      style={{ backgroundColor: '#0B0C10' }}
+    >
+      {/* Glow decorations */}
+      <div
+        className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] pointer-events-none"
+        style={{
+          background: `radial-gradient(ellipse at center, ${NEON_PINK}15 0%, transparent 70%)`,
+        }}
+        aria-hidden
+      />
+      <div
+        className="fixed bottom-0 left-0 w-[400px] h-[400px] pointer-events-none"
+        style={{
+          background: `radial-gradient(ellipse at center, rgba(0,209,255,0.06) 0%, transparent 70%)`,
+        }}
+        aria-hidden
+      />
+
       {/* Form side */}
-      <div className="w-full lg:w-1/2 flex flex-col">
-        <div className="p-6 flex justify-end">
-          <button
-            type="button"
-            aria-label={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
-            onClick={toggleTheme}
-            className="p-2 text-slate-500 hover:bg-white dark:hover:bg-slate-800 rounded-xl shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all"
-          >
-            <span className="material-icons-outlined block dark:hidden">dark_mode</span>
-            <span className="material-icons-outlined hidden dark:block">light_mode</span>
-          </button>
-        </div>
+      <div className="w-full lg:w-1/2 flex flex-col relative z-10">
         <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
-          <div className="w-full max-w-md">
-            <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800">
+          <div className="w-full max-w-xl">
+            <div
+              className="p-8 rounded-[24px] border"
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.03)',
+                borderColor: 'rgba(255,255,255,0.06)',
+                backdropFilter: 'blur(20px)',
+                boxShadow: `0 0 60px ${NEON_PINK}08, 0 4px 30px rgba(0,0,0,0.3)`,
+              }}
+            >
               <div className="flex items-center mb-8">
                 <img src="/logo.svg" alt="HelpSeller" className="h-10 w-auto" />
               </div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
+              <h1 className="text-2xl font-bold text-white mb-1">
                 Criar conta
               </h1>
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-8">
+              <p className="text-gray-500 text-sm mb-8">
                 Comece a usar o HelpSeller agora
               </p>
-              <form className="space-y-5" onSubmit={handleRegister}>
+              <form className="space-y-4" onSubmit={handleRegister}>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="block text-sm font-medium text-gray-400 mb-1">
                     Nome completo
                   </label>
                   <input
@@ -95,16 +142,24 @@ export default function RegisterPage() {
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className={INPUT_CLASS}
+                    className={inputClass}
                     placeholder="Seu nome"
                   />
                 </div>
-                <div className="space-y-4">
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+
+                {/* Org section */}
+                <div
+                  className="space-y-4 p-4 rounded-xl border"
+                  style={{
+                    borderColor: 'rgba(255,255,255,0.06)',
+                    backgroundColor: 'rgba(255,255,255,0.02)',
+                  }}
+                >
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                     Dados da organização
                   </p>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    <label className="block text-sm font-medium text-gray-400 mb-1">
                       Nome da empresa
                     </label>
                     <input
@@ -112,61 +167,65 @@ export default function RegisterPage() {
                       required
                       value={orgName}
                       onChange={(e) => setOrgName(e.target.value)}
-                      className={INPUT_CLASS}
+                      className={inputClass}
                       placeholder="Sua empresa"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      CNPJ / CPF
-                    </label>
-                    <input
-                      type="text"
-                      value={orgDocument}
-                      onChange={(e) => setOrgDocument(e.target.value)}
-                      className={INPUT_CLASS}
-                      placeholder="00.000.000/0001-00"
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-400 mb-1">
+                        CNPJ / CPF
+                      </label>
+                      <input
+                        type="text"
+                        value={orgDocument}
+                        onChange={(e) => setOrgDocument(formatDocument(e.target.value))}
+                        className={inputClass}
+                        placeholder="000.000.000-00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-400 mb-1">
+                        Telefone
+                      </label>
+                      <input
+                        type="tel"
+                        value={orgPhone}
+                        onChange={(e) => setOrgPhone(formatPhone(e.target.value))}
+                        className={inputClass}
+                        placeholder="(11) 99999-9999"
+                      />
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Telefone da empresa
-                    </label>
-                    <input
-                      type="tel"
-                      value={orgPhone}
-                      onChange={(e) => setOrgPhone(e.target.value)}
-                      className={INPUT_CLASS}
-                      placeholder="(11) 99999-9999"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    <label className="block text-sm font-medium text-gray-400 mb-1">
                       E-mail da empresa
                     </label>
                     <input
                       type="email"
                       value={orgEmail}
                       onChange={(e) => setOrgEmail(e.target.value)}
-                      className={INPUT_CLASS}
+                      className={inputClass}
                       placeholder="contato@empresa.com"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    <label className="block text-sm font-medium text-gray-400 mb-1">
                       Endereço
                     </label>
                     <input
                       type="text"
                       value={orgAddress}
                       onChange={(e) => setOrgAddress(e.target.value)}
-                      className={INPUT_CLASS}
+                      className={inputClass}
                       placeholder="Rua, número, bairro, cidade"
                     />
                   </div>
                 </div>
+
+                {/* Credentials */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="block text-sm font-medium text-gray-400 mb-1">
                     Seu email
                   </label>
                   <input
@@ -174,12 +233,12 @@ export default function RegisterPage() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className={INPUT_CLASS}
+                    className={inputClass}
                     placeholder="seu@email.com"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="block text-sm font-medium text-gray-400 mb-1">
                     Sua senha
                   </label>
                   <input
@@ -187,23 +246,28 @@ export default function RegisterPage() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className={INPUT_CLASS}
+                    className={inputClass}
                     placeholder="••••••••"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-primary hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-opacity"
+                  className="w-full flex justify-center py-3 px-4 rounded-xl text-sm font-semibold text-white border-0 focus:outline-none focus:ring-2 focus:ring-neon-pink focus:ring-offset-2 disabled:opacity-50 transition-all cursor-pointer"
+                  style={{
+                    background: `linear-gradient(135deg, ${NEON_PINK}, #ff3d9a)`,
+                    boxShadow: `0 0 24px ${NEON_PINK}40, 0 0 48px ${NEON_PINK}15`,
+                  }}
                 >
                   {loading ? 'Criando conta...' : 'Criar conta'}
                 </button>
               </form>
-              <p className="mt-8 text-center text-sm text-slate-500 dark:text-slate-400">
+              <p className="mt-8 text-center text-sm text-gray-500">
                 Já tem uma conta?{' '}
                 <Link
                   href="/login"
-                  className="font-semibold text-primary hover:opacity-90 transition-opacity"
+                  className="font-semibold transition-opacity hover:opacity-90"
+                  style={{ color: NEON_PINK }}
                 >
                   Fazer login
                 </Link>
@@ -212,22 +276,88 @@ export default function RegisterPage() {
           </div>
         </div>
       </div>
+
       {/* Right side - branding */}
       <div
         className="hidden lg:flex lg:w-1/2 rounded-l-3xl overflow-hidden relative bg-cover bg-top bg-no-repeat"
         style={{ backgroundImage: 'url(/bg2.jpg)' }}
       >
-        <div className="absolute inset-0 bg-white/30 pointer-events-none" aria-hidden />
-        <div className="relative z-10 flex flex-col justify-center p-12 max-w-md">
-          <div className="flex items-center mb-6">
-            <img src="/logo.svg" alt="HelpSeller" className="h-12 w-auto" />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ backgroundColor: 'rgba(0,0,0,0.72)' }}
+          aria-hidden
+        />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `radial-gradient(ellipse 70% 50% at 50% 50%, rgba(0,0,0,0.75) 0%, transparent 70%)`,
+          }}
+          aria-hidden
+        />
+        {/* Neon glow accent */}
+        <div
+          className="absolute bottom-0 left-0 w-full h-1/2 pointer-events-none"
+          style={{
+            background: `linear-gradient(to top, ${NEON_PINK}10 0%, transparent 60%)`,
+          }}
+          aria-hidden
+        />
+        <div className="relative z-10 flex flex-col items-start justify-center text-left p-12 w-full max-w-lg">
+          <div
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold uppercase tracking-widest mb-6"
+            style={{
+              color: '#fff',
+              background: `linear-gradient(135deg, ${NEON_PINK}, #ff3d9a)`,
+              boxShadow: `0 0 20px ${NEON_PINK}50, 0 0 40px ${NEON_PINK}20`,
+            }}
+          >
+            <span className="w-2 h-2 rounded-full animate-pulse bg-white" />
+            7 dias grátis
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">
-            Junte-se a nós
+          <h2
+            className="text-4xl font-bold text-white mb-4 md:text-5xl leading-tight"
+            style={{ textShadow: '0 2px 12px rgba(0,0,0,0.8)' }}
+          >
+            Seu time vendendo{' '}
+            <span
+              style={{
+                background: `linear-gradient(135deg, ${NEON_PINK}, #ff3d9a)`,
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              mais
+            </span>
+            {' '}em menos tempo
           </h2>
-          <p className="text-slate-700 text-lg">
-            Milhares de vendedores já batem meta com coaching em tempo real.
+          <p
+            className="text-gray-300 text-lg max-w-md md:text-xl leading-relaxed"
+            style={{ textShadow: '0 2px 10px rgba(0,0,0,0.9)' }}
+          >
+            A IA escuta a chamada e sugere o que falar na hora. Seu vendedor nunca mais trava numa objeção.
           </p>
+          {/* Stats */}
+          <div className="flex gap-8 mt-10">
+            {[
+              { value: '2 min', label: 'para configurar' },
+              { value: '100%', label: 'em tempo real' },
+              { value: '0', label: 'integrações necessárias' },
+            ].map((stat) => (
+              <div key={stat.label} className="text-center">
+                <div
+                  className="text-2xl font-bold mb-1"
+                  style={{
+                    background: `linear-gradient(135deg, #fff, ${NEON_PINK})`,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                  }}
+                >
+                  {stat.value}
+                </div>
+                <div className="text-xs text-gray-400">{stat.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

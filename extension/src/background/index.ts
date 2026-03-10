@@ -7,6 +7,15 @@ import { dashboardUrl, apiBaseUrl } from '../config/env';
 // State
 console.log('Background Service Worker Starting...');
 
+// On install/update, reload Meet/Zoom tabs so content scripts are injected
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.tabs.query({ url: ['*://meet.google.com/*', 'https://*.zoom.us/*', 'https://app.zoom.us/*'] }, (tabs) => {
+        for (const tab of tabs) {
+            if (tab.id) chrome.tabs.reload(tab.id);
+        }
+    });
+});
+
 // Initialize Edge Coach
 edgeCoach.initialize().then(() => {
     console.log('✅ Edge coach initialized');
@@ -537,17 +546,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         authService.getSession().then(session => {
             if (!session) return;
             const meetZoomPatterns = ['*://meet.google.com/*', 'https://*.zoom.us/*', 'https://app.zoom.us/*'];
+            const trySendToggle = (tabId: number) => {
+                chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_SIDEBAR_TRUSTED' }).catch(() => {
+                    // Content script not injected - reload the tab to inject it
+                    chrome.tabs.reload(tabId);
+                });
+            };
             chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
                 const url = activeTab?.url ?? '';
                 const isMeetOrZoom = url.includes('meet.google.com') || url.includes('zoom.us');
                 if (activeTab?.id && isMeetOrZoom) {
-                    chrome.tabs.sendMessage(activeTab.id, { type: 'TOGGLE_SIDEBAR_TRUSTED' }).catch(() => {});
+                    trySendToggle(activeTab.id);
                     return;
                 }
                 chrome.tabs.query({ url: meetZoomPatterns }, (tabs) => {
                     if (tabs.length === 0) return;
                     const tab = tabs.find(t => t.id === activeTab?.id) ?? tabs[0];
-                    if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR_TRUSTED' }).catch(() => {});
+                    if (tab?.id) trySendToggle(tab.id);
                 });
             });
         }).catch(() => {});

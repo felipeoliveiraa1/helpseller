@@ -59,8 +59,8 @@ const FEATURES = [
   },
   {
     icon: Zap,
-    title: 'Integração com sua stack',
-    description: 'Conecte com sua plataforma de reuniões e CRM. Setup rápido, sem depender de time de engenharia. Você configura, a IA entra na chamada e começa a apoiar.',
+    title: 'Setup em 2 minutos',
+    description: 'Instale a extensão, faça login e comece a usar. Sem integrações complexas, sem depender de TI. Qualquer vendedor configura sozinho e já recebe coaching na próxima chamada.',
     color: NEON_PURPLE,
   },
   {

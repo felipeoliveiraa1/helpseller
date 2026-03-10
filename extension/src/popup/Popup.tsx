@@ -208,6 +208,7 @@ export default function Popup() {
     const [planLoaded, setPlanLoaded] = useState(false);
     const [coaches, setCoaches] = useState<CoachOption[]>([]);
     const [selectedCoachId, setSelectedCoachId] = useState<string>('');
+    const [micPermission, setMicPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const CALL_RESULTS = [
@@ -257,6 +258,24 @@ export default function Popup() {
             chrome.runtime.onMessage.removeListener(onSessionResult);
         };
     }, []);
+
+    // Check microphone permission on mount
+    useEffect(() => {
+        if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: 'microphone' as PermissionName }).then((result) => {
+                setMicPermission(result.state as 'granted' | 'denied' | 'prompt');
+                result.onchange = () => {
+                    setMicPermission(result.state as 'granted' | 'denied' | 'prompt');
+                };
+            }).catch(() => {
+                setMicPermission('unknown');
+            });
+        }
+    }, []);
+
+    const openMicGuide = () => {
+        chrome.tabs.create({ url: `${dashboardUrl}/guia-microfone` });
+    };
 
     useEffect(() => {
         const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
@@ -392,9 +411,19 @@ export default function Popup() {
         setLoading(true);
         setError('');
         try {
-            await authService.login(email, password);
-            const sess = await authService.getSession();
-            setSession(sess);
+            const result = await authService.login(email, password);
+            if (result.session) {
+                setSession(result.session);
+                // Session is already in Supabase memory after signInWithPassword,
+                // no need to call restoreSessionInMemory (which would trigger another SIGNED_IN)
+                try {
+                    const orgData = await authService.fetchOrganizationPlan();
+                    if (orgData) setCurrentPlan(orgData.plan);
+                    setPlanLoaded(true);
+                } catch {
+                    setPlanLoaded(true);
+                }
+            }
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -648,6 +677,41 @@ export default function Popup() {
                 })()}
             </div>
 
+            {micPermission !== 'granted' && (
+                <div style={{
+                    marginBottom: 10,
+                    padding: '10px 12px',
+                    borderRadius: RADIUS,
+                    background: BG_CARD,
+                    border: `1px solid ${NEON_PINK}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                }}>
+                    <Mic size={18} style={{ color: NEON_PINK, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 11, color: TEXT, margin: 0, fontWeight: 500, lineHeight: 1.3 }}>
+                            Permita o uso do microfone para transcrever suas falas.
+                        </p>
+                        <a
+                            href="#"
+                            onClick={(e) => { e.preventDefault(); openMicGuide(); }}
+                            style={{
+                                display: 'inline-block',
+                                marginTop: 6,
+                                fontSize: 10,
+                                fontWeight: 600,
+                                color: NEON_PINK,
+                                textDecoration: 'underline',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            Ver como ativar o microfone &rarr;
+                        </a>
+                    </div>
+                </div>
+            )}
+
             {isMeetOrZoomTab && (
                 <div style={{ marginBottom: 10 }}>
                     <button
@@ -674,106 +738,115 @@ export default function Popup() {
                 </div>
             )}
 
-            <div
-                style={{
-                    textAlign: 'center',
-                    marginBottom: 14,
-                    padding: '12px 10px',
-                    borderRadius: 12,
-                    background: BG_CARD,
-                    border: `1px solid ${BORDER_PINK}`,
-                    flexShrink: 0,
-                }}
-            >
-                <div style={{ fontSize: 10, color: TEXT_MUTED, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Tempo de gravação</div>
+            {micPermission === 'granted' ? (<>
                 <div
                     style={{
-                        fontSize: 32,
-                        fontWeight: 700,
-                        fontVariantNumeric: 'tabular-nums',
-                        color: isRecording ? '#fff' : TEXT_MUTED,
-                        textShadow: isRecording ? `0 0 20px ${NEON_PINK}40` : undefined,
-                        letterSpacing: '0.02em',
+                        textAlign: 'center',
+                        marginBottom: 14,
+                        padding: '12px 10px',
+                        borderRadius: 12,
+                        background: BG_CARD,
+                        border: `1px solid ${BORDER_PINK}`,
+                        flexShrink: 0,
                     }}
                 >
-                    {isRecording ? formatDuration(elapsedSeconds) : '00:00'}
+                    <div style={{ fontSize: 10, color: TEXT_MUTED, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Tempo de gravação</div>
+                    <div
+                        style={{
+                            fontSize: 32,
+                            fontWeight: 700,
+                            fontVariantNumeric: 'tabular-nums',
+                            color: isRecording ? '#fff' : TEXT_MUTED,
+                            textShadow: isRecording ? `0 0 20px ${NEON_PINK}40` : undefined,
+                            letterSpacing: '0.02em',
+                        }}
+                    >
+                        {isRecording ? formatDuration(elapsedSeconds) : '00:00'}
+                    </div>
                 </div>
-            </div>
 
-            {!isRecording && tabs.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 500, marginBottom: 4, color: TEXT_SECONDARY }}>
-                        <Monitor size={12} />
-                        Aba
-                    </label>
-                    <CustomDropdown
-                        options={tabs.map((tab) => ({
-                            value: String(tab.id),
-                            label: tab.title.length > 36 ? tab.title.slice(0, 36) + '…' : tab.title,
-                        }))}
-                        value={String(selectedTabId ?? tabs[0]?.id ?? '')}
-                        onChange={(val) => setSelectedTabId(Number(val) || null)}
-                        placeholder="Selecione uma aba"
-                    />
+                {!isRecording && tabs.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 500, marginBottom: 4, color: TEXT_SECONDARY }}>
+                            <Monitor size={12} />
+                            Aba
+                        </label>
+                        <CustomDropdown
+                            options={tabs.map((tab) => ({
+                                value: String(tab.id),
+                                label: tab.title.length > 36 ? tab.title.slice(0, 36) + '…' : tab.title,
+                            }))}
+                            value={String(selectedTabId ?? tabs[0]?.id ?? '')}
+                            onChange={(val) => setSelectedTabId(Number(val) || null)}
+                            placeholder="Selecione uma aba"
+                        />
+                    </div>
+                )}
+
+                {!isRecording && coaches.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 500, marginBottom: 4, color: TEXT_SECONDARY }}>
+                            <BrainCircuit size={12} />
+                            Coach
+                        </label>
+                        <CustomDropdown
+                            options={coaches.map((coach) => ({
+                                value: coach.id,
+                                label: coach.name,
+                                badge: coach.is_default ? 'padrão' : undefined,
+                            }))}
+                            value={selectedCoachId}
+                            onChange={setSelectedCoachId}
+                            placeholder="Nenhum coach disponível"
+                        />
+                    </div>
+                )}
+
+                {error && (
+                    <p style={{ color: ACCENT_DANGER, fontSize: 11, textAlign: 'center', marginBottom: 8 }}>{error}</p>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                    <button
+                        type="button"
+                        onClick={isRecording ? handleStopClick : () => toggleCapture()}
+                        style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: '50%',
+                            border: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            background: isRecording
+                                ? `linear-gradient(135deg, ${ACCENT_DANGER}, #b91c1c)`
+                                : `linear-gradient(135deg, ${NEON_PINK}, ${NEON_PINK_LIGHT})`,
+                            color: 'white',
+                            boxShadow: isRecording
+                                ? '0 0 20px rgba(220, 38, 62, 0.5), 0 0 40px rgba(220, 38, 62, 0.2)'
+                                : `0 0 24px ${NEON_PINK}50, 0 0 48px ${NEON_PINK_LIGHT}30`,
+                            animation: isRecording ? 'neon-pulse-stop 2s ease-in-out infinite' : 'neon-pulse 2s ease-in-out infinite',
+                            transition: 'transform 0.15s ease',
+                        }}
+                        onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.95)')}
+                        onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                    >
+                        {isRecording ? <Square size={24} fill="currentColor" /> : <Mic size={24} />}
+                    </button>
+                </div>
+                <p style={{ textAlign: 'center', fontSize: 10, color: TEXT_MUTED, marginTop: 8 }}>
+                    {isRecording ? 'Clique para parar' : 'Clique para iniciar'}
+                </p>
+            </>) : (
+                <div style={{ textAlign: 'center', padding: '24px 12px' }}>
+                    <Mic size={32} style={{ color: TEXT_MUTED, marginBottom: 8 }} />
+                    <p style={{ fontSize: 12, color: TEXT_SECONDARY, margin: 0, lineHeight: 1.4 }}>
+                        Ative a permissão do microfone para começar a gravar.
+                    </p>
                 </div>
             )}
-
-            {!isRecording && coaches.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 500, marginBottom: 4, color: TEXT_SECONDARY }}>
-                        <BrainCircuit size={12} />
-                        Coach
-                    </label>
-                    <CustomDropdown
-                        options={coaches.map((coach) => ({
-                            value: coach.id,
-                            label: coach.name,
-                            badge: coach.is_default ? 'padrão' : undefined,
-                        }))}
-                        value={selectedCoachId}
-                        onChange={setSelectedCoachId}
-                        placeholder="Nenhum coach disponível"
-                    />
-                </div>
-            )}
-
-            {error && (
-                <p style={{ color: ACCENT_DANGER, fontSize: 11, textAlign: 'center', marginBottom: 8 }}>{error}</p>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-                <button
-                    type="button"
-                    onClick={isRecording ? handleStopClick : () => toggleCapture()}
-                    style={{
-                        width: 64,
-                        height: 64,
-                        borderRadius: '50%',
-                        border: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        background: isRecording
-                            ? `linear-gradient(135deg, ${ACCENT_DANGER}, #b91c1c)`
-                            : `linear-gradient(135deg, ${NEON_PINK}, ${NEON_PINK_LIGHT})`,
-                        color: 'white',
-                        boxShadow: isRecording
-                            ? '0 0 20px rgba(220, 38, 62, 0.5), 0 0 40px rgba(220, 38, 62, 0.2)'
-                            : `0 0 24px ${NEON_PINK}50, 0 0 48px ${NEON_PINK_LIGHT}30`,
-                        animation: isRecording ? 'neon-pulse-stop 2s ease-in-out infinite' : 'neon-pulse 2s ease-in-out infinite',
-                        transition: 'transform 0.15s ease',
-                    }}
-                    onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.95)')}
-                    onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                >
-                    {isRecording ? <Square size={24} fill="currentColor" /> : <Mic size={24} />}
-                </button>
-            </div>
-            <p style={{ textAlign: 'center', fontSize: 10, color: TEXT_MUTED, marginTop: 8 }}>
-                {isRecording ? 'Clique para parar' : 'Clique para iniciar'}
-            </p>
 
             {showResultModal && (
                 <div

@@ -37,9 +37,13 @@ try {
 
 export { supabase };
 
+// Guard: prevent onAuthStateChange from firing while we're already saving
+let _isSavingSession = false;
+
 // Keep supabase_session in sync when Supabase client auto-refreshes the token
 supabase.auth.onAuthStateChange((event: string, session: any) => {
-    if (session && (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')) {
+    if (_isSavingSession) return;
+    if (session && event === 'TOKEN_REFRESHED') {
         const authKey = getSupabaseAuthStorageKey();
         chrome.storage.local.set({
             supabase_session: session,
@@ -72,7 +76,12 @@ export const authService = {
             refresh_token: session.refresh_token,
             [authKey]: JSON.stringify(session),
         };
-        await chrome.storage.local.set(payload);
+        _isSavingSession = true;
+        try {
+            await chrome.storage.local.set(payload);
+        } finally {
+            _isSavingSession = false;
+        }
     },
 
     async getSession(): Promise<any> {
@@ -82,6 +91,7 @@ export const authService = {
 
     async restoreSessionInMemory(session: any): Promise<void> {
         if (!session?.access_token || !session?.refresh_token) return;
+        _isSavingSession = true;
         try {
             await supabase.auth.setSession({
                 access_token: session.access_token,
@@ -89,6 +99,8 @@ export const authService = {
             });
         } catch (e) {
             console.warn('restoreSessionInMemory failed', e);
+        } finally {
+            _isSavingSession = false;
         }
     },
 

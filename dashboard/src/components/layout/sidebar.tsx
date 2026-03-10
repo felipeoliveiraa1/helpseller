@@ -113,7 +113,7 @@ export function Sidebar() {
           navSections.map((section) => {
             const filteredItems = section.items.filter((item) => {
               if (displayRole === 'SELLER') {
-                if (['Scripts', 'Equipe', 'Ao Vivo', 'Coaches'].includes(item.name))
+                if (['Scripts', 'Equipe', 'Ao Vivo', 'Coaches', 'Planos'].includes(item.name))
                   return false
               }
               return true

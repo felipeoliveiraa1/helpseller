@@ -435,7 +435,23 @@ export default function DashboardPage() {
 
   if (loadingProfile) {
     return (
-      <div className="p-8 text-gray-400">Carregando...</div>
+      <>
+        <DashboardHeader title="Dashboard" />
+        <div className="space-y-8 animate-pulse">
+          <div className="rounded-[24px] border p-6 flex gap-6" style={{ backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' }}>
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex-1 space-y-3">
+                <div className="h-7 w-16 bg-white/10 rounded-lg" />
+                <div className="h-4 w-24 bg-white/5 rounded" />
+              </div>
+            ))}
+          </div>
+          <div className="rounded-[24px] border p-6" style={{ backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="h-5 w-48 bg-white/10 rounded-lg mb-6" />
+            <div className="h-48 w-full bg-white/5 rounded-xl" />
+          </div>
+        </div>
+      </>
     )
   }
 
@@ -453,6 +469,7 @@ export default function DashboardPage() {
     { value: String(totalMonth), label: totalLabel, color: NEON_PINK, path: METRIC_PATHS[0] },
     { value: String(todayCompleted), label: 'Chamadas hoje', color: NEON_BLUE, path: METRIC_PATHS[1] },
     { value: String(convertedCount), label: 'Convertidas', color: NEON_GREEN, path: METRIC_PATHS[2] },
+    { value: String(followUpCount), label: 'Em negociação', color: NEON_ORANGE, path: METRIC_PATHS[3] },
   ]
   const chartValues = chartData.map((d) => d.count)
   const chartLabels = chartData.map((d) => d.label)
@@ -721,10 +738,10 @@ export default function DashboardPage() {
                         stroke="rgba(148, 163, 184, 0.4)"
                         strokeWidth="1"
                       />
-                      {yTickValues.map((v) => {
+                      {yTickValues.map((v, vi) => {
                         const y = valueToY(v)
                         return (
-                          <g key={v}>
+                          <g key={`ytick-${vi}`}>
                             <line
                               x1={CHART_MARGIN_LEFT - 2}
                               y1={y}
@@ -876,9 +893,18 @@ export default function DashboardPage() {
                   className="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                      {(call.user?.full_name ?? '?').charAt(0)}
-                    </div>
+                    {(() => {
+                      const name = call.user?.full_name ?? '?'
+                      const avatarColor = METRIC_COLORS[name.charCodeAt(0) % METRIC_COLORS.length]
+                      return (
+                        <div
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                          style={{ backgroundColor: `${avatarColor}20`, border: `1px solid ${avatarColor}40`, color: avatarColor }}
+                        >
+                          {name.charAt(0)}
+                        </div>
+                      )
+                    })()}
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-white truncate">
                         {call.user?.full_name ?? 'Desconhecido'}
@@ -940,7 +966,10 @@ export default function DashboardPage() {
                 >
                   <td className="py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gray-700 border border-white/10 flex items-center justify-center text-white text-xs font-bold">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                        style={{ backgroundColor: `${row.color}20`, border: `1px solid ${row.color}40`, color: row.color }}
+                      >
                         {row.name.charAt(0)}
                       </div>
                       <div>

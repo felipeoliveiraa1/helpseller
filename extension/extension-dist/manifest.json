@@ -24,7 +24,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/index.tsx-loader-C8Cix0a-.js"
+        "assets/index.tsx-loader-DfHIdmuF.js"
       ],
       "matches": [
         "https://meet.google.com/*",
@@ -33,8 +33,18 @@
       "run_at": "document_idle"
     }
   ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "web_accessible_resources": [
     {
@@ -54,8 +64,8 @@
       ],
       "resources": [
         "assets/theme-B5Qw5Qu-.js",
-        "assets/env-4L6rcpfm.js",
-        "assets/index.tsx-flGjII6r.js"
+        "assets/env-LfPSinX1.js",
+        "assets/index.tsx-Cdtw9KHG.js"
       ],
       "use_dynamic_url": false
     }

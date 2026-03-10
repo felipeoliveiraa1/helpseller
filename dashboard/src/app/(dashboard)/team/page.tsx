@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Users, UserPlus, ShieldAlert, Loader2, Trash2, ArrowUpDown, Shield, User, MoreVertical, KeyRound, Lock, Sparkles } from 'lucide-react'
+import { Users, UserPlus, ShieldAlert, Loader2, Trash2, ArrowUpDown, Shield, User, MoreVertical, KeyRound, Lock, Sparkles, CheckCircle2, XCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { api } from '@/lib/api'
 import { usePlanLimits } from '@/components/feature-gate'
@@ -287,7 +287,7 @@ export default function TeamPage() {
             ? 'bg-green-900/80 border-green-500/30 text-green-300'
             : 'bg-red-900/80 border-red-500/30 text-red-300'
           }`}>
-          {feedback.type === 'success' ? '✅' : '❌'} {feedback.message}
+          {feedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 inline-block mr-1 text-green-400" /> : <XCircle className="w-4 h-4 inline-block mr-1 text-red-400" />} {feedback.message}
         </div>
       )}
 

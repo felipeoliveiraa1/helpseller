@@ -333,37 +333,39 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Seção: Plano */}
-        <section className="rounded-2xl border p-6 sm:p-8" style={CARD_STYLE}>
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-              <CreditCard className="w-6 h-6 text-gray-400" />
+        {/* Seção: Plano (só para manager/admin) */}
+        {isManager && (
+          <section className="rounded-2xl border p-6 sm:p-8" style={CARD_STYLE}>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                <CreditCard className="w-6 h-6 text-gray-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">Plano</h2>
+                <p className="text-sm text-gray-500">Plano atual da sua organização</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-white">Plano</h2>
-              <p className="text-sm text-gray-500">Plano atual da sua organização</p>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider text-gray-500">Plano atual</label>
+              <div className="h-11 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white flex items-center font-medium">
+                {hasOrg ? (PLAN_LABELS[organizationPlan] ?? organizationPlan ?? 'Grátis') : '—'}
+              </div>
+              {!hasOrg && (
+                <p className="text-xs text-gray-500 mt-1">Vincule-se a uma organização para ver o plano.</p>
+              )}
+              {hasOrg && (
+                <Link
+                  href="/billing"
+                  className="mt-3 inline-flex items-center justify-center gap-2 h-11 px-6 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90 w-fit"
+                  style={{ backgroundColor: NEON_PINK }}
+                >
+                  <CreditCard className="w-4 h-4" />
+                  Gerenciar plano
+                </Link>
+              )}
             </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500">Plano atual</label>
-            <div className="h-11 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white flex items-center font-medium">
-              {hasOrg ? (PLAN_LABELS[organizationPlan] ?? organizationPlan ?? 'Grátis') : '—'}
-            </div>
-            {!hasOrg && (
-              <p className="text-xs text-gray-500 mt-1">Vincule-se a uma organização para ver o plano.</p>
-            )}
-            {hasOrg && (
-              <Link
-                href="/billing"
-                className="mt-3 inline-flex items-center justify-center gap-2 h-11 px-6 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90 w-fit"
-                style={{ backgroundColor: NEON_PINK }}
-              >
-                <CreditCard className="w-4 h-4" />
-                Gerenciar plano
-              </Link>
-            )}
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* Seção: Alteração de senha */}
         <section className="rounded-2xl border p-6 sm:p-8" style={CARD_STYLE}>
@@ -495,17 +497,15 @@ export default function SettingsPage() {
           </section>
         )}
 
-        {/* Sem organização ou não é manager */}
-        {(!hasOrg || !isManager) && (
+        {/* Sem organização */}
+        {!hasOrg && (
           <section className="rounded-2xl border p-6 sm:p-8 text-center" style={CARD_STYLE}>
             <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-4">
               <Settings className="w-7 h-7 text-gray-500" />
             </div>
-            <h2 className="text-lg font-bold text-white mb-2">Configurações</h2>
+            <h2 className="text-lg font-bold text-white mb-2">Organização</h2>
             <p className="text-sm text-gray-500 max-w-md mx-auto">
-              {!hasOrg
-                ? 'Sua conta não está vinculada a uma organização. Entre em contato com o administrador para vincular sua conta.'
-                : 'Outras opções de configuração em breve.'}
+              Sua conta não está vinculada a uma organização. Entre em contato com o administrador para vincular sua conta.
             </p>
           </section>
         )}

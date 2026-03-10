@@ -306,7 +306,7 @@ export default function AnalyticsPage() {
     return (
       <div suppressHydrationWarning={true}>
         <DashboardHeader title="Analytics" />
-        <SellerDashboard stats={{ callsToday: data.callsToday, conversionRate: data.conversionRate }} />
+        <SellerDashboard />
       </div>
     )
   }

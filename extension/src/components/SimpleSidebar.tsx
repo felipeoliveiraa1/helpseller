@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { authService } from '../services/auth';
-import { GripVertical, Mic, Minus, X, Cpu, MessageCircle, HelpCircle, AlertTriangle, Copy, Check, Lock } from 'lucide-react';
+import { GripVertical, Mic, Minus, X, Cpu, MessageCircle, HelpCircle, AlertTriangle, Copy, Check, Lock, ChevronsDown } from 'lucide-react';
 import { BG, BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED, INPUT_BG, ACCENT_ACTIVE, ACCENT_DANGER, NEON_PINK, RADIUS } from '../lib/theme';
 import { dashboardUrl } from '../config/env';
 
@@ -21,8 +21,6 @@ interface CoachingData {
     urgency: string;
     timestamp: number;
 }
-
-const MAX_VISIBLE_COACHING = 4;
 
 const TYPING_SPEED_MS = 18;
 const ACCENT_GREEN = '#22c55e';
@@ -119,8 +117,13 @@ export default function SimpleSidebar() {
     const [isPlanRequired, setIsPlanRequired] = useState(false);
     const [currentPlan, setCurrentPlan] = useState<string | null>(null);
     const [isMinimized, setIsMinimized] = useState(false);
+    const [userScrolledUp, setUserScrolledUp] = useState(false);
+    const [transcriptPct, setTranscriptPct] = useState(30); // % of height for transcripts
     const dragRef = useRef({ startX: 0, startY: 0, startLeft: 0, startTop: 0, panelW: SIDEBAR_W, panelH: 300 });
     const transcriptEndRef = useRef<HTMLDivElement>(null);
+    const coachFeedRef = useRef<HTMLDivElement>(null);
+    const coachFeedEndRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const host = getHost();
@@ -257,7 +260,41 @@ export default function SimpleSidebar() {
 
     useEffect(() => {
         transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [transcripts, coachFeed]);
+    }, [transcripts]);
+
+    // Auto-scroll coach feed only if user is NOT scrolled up reading
+    useEffect(() => {
+        if (!userScrolledUp) {
+            coachFeedEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [coachFeed, userScrolledUp]);
+
+    const handleCoachFeedScroll = () => {
+        const el = coachFeedRef.current;
+        if (!el) return;
+        const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+        setUserScrolledUp(!isAtBottom);
+    };
+
+    const handleDividerDrag = (e: React.MouseEvent) => {
+        e.preventDefault();
+        const container = containerRef.current;
+        if (!container) return;
+        const startY = e.clientY;
+        const containerRect = container.getBoundingClientRect();
+        const startPct = transcriptPct;
+        const onMove = (e2: MouseEvent) => {
+            const dy = startY - e2.clientY;
+            const deltaP = (dy / containerRect.height) * 100;
+            setTranscriptPct(Math.max(10, Math.min(70, startPct + deltaP)));
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    };
 
     useEffect(() => {
         const listener = (msg: any) => {
@@ -320,7 +357,7 @@ export default function SimpleSidebar() {
                     urgency: payload.urgency || 'medium',
                     timestamp: Date.now(),
                 };
-                setCoachFeed(prev => [newCoaching, ...prev].slice(0, MAX_VISIBLE_COACHING));
+                setCoachFeed(prev => [...prev, newCoaching]);
             } else if (msg.type === 'PLAN_REQUIRED') {
                 setIsPlanRequired(true);
             }
@@ -405,7 +442,7 @@ export default function SimpleSidebar() {
     }
 
     return (
-        <div style={{ ...baseContainer, height: '100%' }}>
+        <div ref={containerRef} style={{ ...baseContainer, height: '100%', overflow: 'hidden' }}>
             {/* Header */}
             <div onMouseDown={handleDragStart} style={{ padding: '8px 12px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'move', userSelect: 'none', flexShrink: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -449,32 +486,31 @@ export default function SimpleSidebar() {
                 </div>
             )}
 
-            {/* Coach streaming preview / thinking indicator */}
+            {/* Coach thinking indicator */}
             {isThinking && (
-                <div style={{ padding: '8px 12px', borderBottom: `1px solid ${BORDER}`, flexShrink: 0, borderLeft: `3px solid ${NEON_PINK}`, background: 'rgba(255,0,122,0.04)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: streamingCoachJson ? 4 : 0 }}>
+                <div style={{ padding: '6px 12px', borderBottom: `1px solid ${BORDER}`, flexShrink: 0, background: 'rgba(255,0,122,0.04)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Cpu size={12} style={{ color: NEON_PINK, animation: 'spin 1.5s linear infinite' }} />
                         <span style={{ fontSize: 10, color: TEXT_MUTED, fontWeight: 600 }}>Coach analisando...</span>
                     </div>
-                    {streamingCoachJson && (() => {
-                        try {
-                            const partial = JSON.parse(streamingCoachJson + '"}');
-                            const preview = partial.suggested_response || partial.tip || '';
-                            if (preview) return <div style={{ fontSize: 12, color: TEXT_SECONDARY, lineHeight: 1.4, fontStyle: 'italic' }}>"{preview}"<span style={{ display: 'inline-block', width: 2, height: 12, backgroundColor: NEON_PINK, marginLeft: 2, verticalAlign: 'text-bottom', animation: 'cursorBlink 0.6s step-end infinite' }} /></div>;
-                        } catch { /* partial JSON not parseable yet */ }
-                        return null;
-                    })()}
                 </div>
             )}
 
-            {/* Coach Feed — prominent coaching cards */}
-            {coachFeed.length > 0 && (
-                <div style={{ flexShrink: 0, maxHeight: '50%', overflowY: 'auto', borderBottom: `1px solid ${BORDER}` }}>
-                    {coachFeed.map((item, idx) => {
-                        const isLatest = idx === 0;
-                        const opacity = isLatest ? 1 : 0.45;
+            {/* Coach Feed — scrollable chat-like feed */}
+            <div
+                ref={coachFeedRef}
+                onScroll={handleCoachFeedScroll}
+                style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}
+            >
+                {coachFeed.length === 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 20 }}>
+                        <span style={{ fontSize: 12, color: TEXT_MUTED }}>As sugestões do coach aparecerão aqui</span>
+                    </div>
+                ) : (
+                    coachFeed.map((item, idx) => {
+                        const isLatest = idx === coachFeed.length - 1;
                         return (
-                            <div key={`cf-${item.timestamp}-${idx}`} style={{ opacity, borderBottom: idx < coachFeed.length - 1 ? `1px solid ${BORDER}` : 'none', animation: isLatest ? 'coachPop 0.4s ease' : 'none' }}>
+                            <div key={`cf-${item.timestamp}-${idx}`} style={{ borderBottom: `1px solid ${BORDER}`, opacity: isLatest ? 1 : 0.7, animation: isLatest ? 'coachPop 0.4s ease' : 'none' }}>
                                 {item.objection && (
                                     <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.12)', borderBottom: '1px solid rgba(239,68,68,0.3)' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -486,29 +522,29 @@ export default function SimpleSidebar() {
                                     </div>
                                 )}
                                 {item.suggestedResponse && (
-                                    <div style={{ padding: '10px 12px', background: isLatest ? 'rgba(34,197,94,0.10)' : 'transparent', borderLeft: isLatest ? `3px solid ${ACCENT_GREEN}` : 'none' }}>
+                                    <div style={{ padding: '10px 12px', background: isLatest ? 'rgba(34,197,94,0.10)' : 'transparent', borderLeft: isLatest ? `3px solid ${ACCENT_GREEN}` : `3px solid transparent` }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                 <MessageCircle size={13} style={{ color: ACCENT_GREEN, animation: isLatest ? 'pulse 1.5s ease-in-out 3' : 'none' }} />
                                                 <span style={{ fontSize: 11, fontWeight: 800, color: ACCENT_GREEN, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Diga Agora</span>
                                             </div>
-                                            {isLatest && <CopyButton text={item.suggestedResponse} />}
+                                            <CopyButton text={item.suggestedResponse} />
                                         </div>
-                                        <div style={{ fontSize: isLatest ? 14 : 11, fontWeight: 600, lineHeight: 1.5, color: TEXT }}>
+                                        <div style={{ fontSize: isLatest ? 14 : 12, fontWeight: 600, lineHeight: 1.5, color: TEXT, wordBreak: 'break-word' }}>
                                             "{item.suggestedResponse}"
                                         </div>
                                     </div>
                                 )}
                                 {item.suggestedQuestion && (
-                                    <div style={{ padding: '8px 12px', background: isLatest ? 'rgba(59,130,246,0.08)' : 'transparent', borderLeft: isLatest ? `3px solid ${ACCENT_BLUE}` : 'none' }}>
+                                    <div style={{ padding: '8px 12px', background: isLatest ? 'rgba(59,130,246,0.08)' : 'transparent', borderLeft: isLatest ? `3px solid ${ACCENT_BLUE}` : `3px solid transparent` }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                 <HelpCircle size={12} style={{ color: ACCENT_BLUE }} />
                                                 <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT_BLUE, textTransform: 'uppercase' }}>Pergunte</span>
                                             </div>
-                                            {isLatest && <CopyButton text={item.suggestedQuestion} />}
+                                            <CopyButton text={item.suggestedQuestion} />
                                         </div>
-                                        <div style={{ fontSize: isLatest ? 13 : 11, fontWeight: 500, lineHeight: 1.4, color: TEXT }}>
+                                        <div style={{ fontSize: isLatest ? 13 : 12, fontWeight: 500, lineHeight: 1.4, color: TEXT, wordBreak: 'break-word' }}>
                                             "{item.suggestedQuestion}"
                                         </div>
                                     </div>
@@ -527,12 +563,53 @@ export default function SimpleSidebar() {
                                 )}
                             </div>
                         );
-                    })}
-                </div>
-            )}
+                    })
+                )}
+                <div ref={coachFeedEndRef} />
+
+                {/* "Scroll to latest" button when user scrolled up */}
+                {userScrolledUp && coachFeed.length > 0 && (
+                    <button
+                        onClick={() => {
+                            coachFeedEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                            setUserScrolledUp(false);
+                        }}
+                        style={{
+                            position: 'sticky',
+                            bottom: 8,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '5px 12px',
+                            borderRadius: 20,
+                            border: `1px solid ${NEON_PINK}44`,
+                            background: `${BG}ee`,
+                            color: NEON_PINK,
+                            fontSize: 10,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            backdropFilter: 'blur(8px)',
+                            boxShadow: `0 2px 12px rgba(0,0,0,0.5)`,
+                        }}
+                    >
+                        <ChevronsDown size={12} />
+                        Nova sugestão
+                    </button>
+                )}
+            </div>
+
+            {/* Resizable divider */}
+            <div
+                onMouseDown={handleDividerDrag}
+                style={{ flexShrink: 0, height: 6, cursor: 'row-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}`, background: BG_ELEVATED, userSelect: 'none' }}
+            >
+                <div style={{ width: 32, height: 2, borderRadius: 1, background: TEXT_MUTED }} />
+            </div>
 
             {/* Realtime Transcripts — Chat Bubble Layout */}
-            <div style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, backgroundColor: BG }}>
+            <div style={{ flexShrink: 0, height: `${transcriptPct}%`, minHeight: 40, overflowY: 'auto', overflowX: 'hidden', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, backgroundColor: BG }}>
                 <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 2, color: TEXT_MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0, display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: ACCENT_BLUE }}>Cliente</span>
                     <span>Transcrição</span>
@@ -591,6 +668,13 @@ export default function SimpleSidebar() {
             </div>
 
             <style>{`
+                :host *, :host *::before, :host *::after { box-sizing: border-box; }
+                :host ::-webkit-scrollbar { width: 5px; }
+                :host ::-webkit-scrollbar-track { background: transparent; }
+                :host ::-webkit-scrollbar-thumb { background: ${NEON_PINK}40; border-radius: 4px; }
+                :host ::-webkit-scrollbar-thumb:hover { background: ${NEON_PINK}70; }
+                * { scrollbar-width: thin; scrollbar-color: ${NEON_PINK}40 transparent; }
+                div[style*="overflowY"] { word-break: break-word; }
                 @keyframes cursorBlink {
                     0%, 100% { opacity: 1; }
                     50% { opacity: 0; }

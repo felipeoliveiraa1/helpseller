@@ -784,13 +784,20 @@ export default function LandingPage() {
             <div>
               <h4 className="text-white font-medium mb-4">Legal</h4>
               <ul className="space-y-3 text-sm text-gray-500">
-                <li><a href="#" className="hover:text-white transition-colors">Privacidade</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Termos</a></li>
+                <li><Link href="/privacy" className="hover:text-white transition-colors">Privacidade</Link></li>
+                <li><Link href="/terms" className="hover:text-white transition-colors">Termos de Uso</Link></li>
               </ul>
             </div>
           </div>
-          <div className="pt-8 text-xs text-gray-500">
-            © {new Date().getFullYear()} HelpSeller. Todos os direitos reservados.
+          <div className="pt-8 border-t border-[#2A2A2A] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-gray-500">
+            <div>
+              <p>© {new Date().getFullYear()} HelpSeller. Todos os direitos reservados.</p>
+              <p className="mt-1">CNPJ: 53.979.090/0001-70</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <Link href="/privacy" className="hover:text-white transition-colors">Privacidade</Link>
+              <Link href="/terms" className="hover:text-white transition-colors">Termos de Uso</Link>
+            </div>
           </div>
         </Container>
       </footer>

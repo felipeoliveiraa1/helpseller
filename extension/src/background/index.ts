@@ -77,6 +77,10 @@ onWsMessage(async (data: any) => {
         console.log('✅ Call started confirmed by backend. CallId:', callId);
         console.log('🎬 Requesting LiveKit token for room:', callId);
         isCallConfirmed = true;
+        // Save callId for video recording upload
+        if (callId) {
+            chrome.storage.local.set({ currentCallId: callId }).catch(() => {});
+        }
         if (callStartRetryIntervalId) {
             clearInterval(callStartRetryIntervalId);
             callStartRetryIntervalId = null;
@@ -819,9 +823,41 @@ async function stopCapture(result?: 'CONVERTED' | 'LOST' | 'FOLLOW_UP' | 'UNKNOW
     isCallConfirmed = false;
 
     try {
-        chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }).catch(() => {
-            console.log('Offscreen not reachable (already closed?)');
-        });
+        const callIdToEnd = lastLiveKitCallId;
+        lastLiveKitCallId = null;
+
+        // Wait for offscreen to finish video upload before closing
+        let videoRecordingUrl: string | null = null;
+        try {
+            videoRecordingUrl = await new Promise<string | null>((resolve) => {
+                const timeout = setTimeout(() => {
+                    console.log('⚠️ Video upload timeout, proceeding without video');
+                    resolve(null);
+                }, 60000); // 60s max wait
+
+                const listener = (msg: any) => {
+                    if (msg.type === 'RECORDING_STOPPED') {
+                        clearTimeout(timeout);
+                        chrome.runtime.onMessage.removeListener(listener);
+                        resolve(msg.videoRecordingUrl || null);
+                    }
+                };
+                chrome.runtime.onMessage.addListener(listener);
+
+                chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }).catch(() => {
+                    console.log('Offscreen not reachable (already closed?)');
+                    clearTimeout(timeout);
+                    chrome.runtime.onMessage.removeListener(listener);
+                    resolve(null);
+                });
+            });
+        } catch {
+            console.log('⚠️ Could not get video recording URL');
+        }
+
+        if (videoRecordingUrl) {
+            console.log('🎬 Video recording URL:', videoRecordingUrl);
+        }
 
         if (offscreenDocument) {
             await chrome.offscreen.closeDocument();
@@ -829,10 +865,15 @@ async function stopCapture(result?: 'CONVERTED' | 'LOST' | 'FOLLOW_UP' | 'UNKNOW
         }
 
         await setState({ isRecording: false, recordingStartedAt: null });
-        const callIdToEnd = lastLiveKitCallId;
-        lastLiveKitCallId = null;
         broadcastStatus('PROGRAMMED');
-        send('call:end', { callId: callIdToEnd ?? undefined, result: result ?? undefined });
+        send('call:end', {
+            callId: callIdToEnd ?? undefined,
+            result: result ?? undefined,
+            videoRecordingUrl: videoRecordingUrl ?? undefined,
+        });
+
+        // Clean up stored callId
+        chrome.storage.local.remove('currentCallId').catch(() => {});
     } catch (err) {
         console.error('❌ stopCapture failed:', err);
     } finally {

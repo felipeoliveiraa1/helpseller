@@ -918,7 +918,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
             currentCallId: string | null,
             userId: string,
             ws: WebSocket,
-            payload?: { callId?: string; result?: string }
+            payload?: { callId?: string; result?: string; videoRecordingUrl?: string }
         ) {
             // Prevent duplicate executions (extension may send call:end multiple times + disconnect handler)
             if (callEnded) {
@@ -1091,6 +1091,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 sessionData.recordingChunks = { lead: [], seller: [] };
             }
 
+            // Video recording URL from extension (uploaded directly to Supabase Storage)
+            const videoRecordingUrl = payload?.videoRecordingUrl || null;
+            if (videoRecordingUrl) {
+                logger.info(`🎬 Video recording URL received: ${videoRecordingUrl}`);
+            }
+
             await supabaseAdmin.from('calls').update({
                 status: 'COMPLETED',
                 ended_at: endedAt.toISOString(),
@@ -1098,6 +1104,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 transcript: sessionData.transcript,
                 recording_url_lead: recordingUrlLead,
                 recording_url_seller: recordingUrlSeller,
+                recording_url_video: videoRecordingUrl,
             }).eq('id', currentCallIdForRest);
 
             // 6. Save Summary to specific table (only columns that exist in call_summaries)

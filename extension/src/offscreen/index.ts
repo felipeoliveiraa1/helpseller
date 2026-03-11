@@ -5,6 +5,8 @@ import { Room, LocalVideoTrack, LocalAudioTrack, Track } from 'livekit-client';
 let tabRecorder: MediaRecorder | null = null;
 let micRecorder: MediaRecorder | null = null;
 let mediaStreamRecorder: MediaRecorder | null = null; // NEW: For video + audio streaming
+let fullCallRecorder: MediaRecorder | null = null; // Full call video recording
+let fullCallChunks: Blob[] = []; // Buffer for full call recording
 let tabStream: MediaStream | null = null;
 let micStream: MediaStream | null = null;
 let playbackContext: AudioContext | null = null;
@@ -184,6 +186,9 @@ async function startTranscription(streamId: string) {
 
         // === 6. Start Video + Audio Streaming for Manager (tela da aba Meet) ===
         await startMediaStreaming(combinedStream);
+
+        // === 7. Start full call video recording (continuous, for playback later) ===
+        startFullCallRecording(combinedStream);
 
     } catch (err: any) {
         log('❌ Failed:', err.name, err.message);
@@ -382,6 +387,122 @@ function stopLiveKitPublish(): void {
 
 
 
+// === Full Call Video Recording (continuous, no restarts) ===
+function startFullCallRecording(stream: MediaStream) {
+    fullCallChunks = [];
+    const mimeType = ['video/webm;codecs=opus,vp9', 'video/webm;codecs=opus,vp8', 'video/webm']
+        .find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+
+    fullCallRecorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 500000, // 500kbps for storage efficiency
+        audioBitsPerSecond: 64000,
+    });
+
+    fullCallRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+            fullCallChunks.push(event.data);
+        }
+    };
+
+    fullCallRecorder.onerror = (event: any) => {
+        log('❌ Full call recorder error:', event.error?.message);
+    };
+
+    fullCallRecorder.start(2000); // 2s chunks
+    log('🎬 Full call video recording started (continuous)');
+}
+
+async function stopFullCallRecordingAndUpload(): Promise<string | null> {
+    if (!fullCallRecorder || fullCallChunks.length === 0) {
+        log('⚠️ No full call recording to upload');
+        return null;
+    }
+
+    return new Promise((resolve) => {
+        const recorder = fullCallRecorder!;
+
+        const doUpload = async () => {
+            const blob = new Blob(fullCallChunks, { type: recorder.mimeType || 'video/webm' });
+            fullCallChunks = [];
+            fullCallRecorder = null;
+
+            if (blob.size < 10000) {
+                log('⚠️ Recording too small, skipping upload');
+                resolve(null);
+                return;
+            }
+
+            log(`🎬 Full call recording: ${(blob.size / 1024 / 1024).toFixed(1)} MB, uploading...`);
+
+            try {
+                // Get Supabase credentials and auth token from storage
+                const stored = await chrome.storage.local.get(['session']);
+                const accessToken = stored.session?.access_token;
+                const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
+                const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+
+                if (!supabaseUrl || !supabaseAnonKey) {
+                    log('❌ Supabase credentials not available for upload');
+                    resolve(null);
+                    return;
+                }
+
+                // Get callId from storage
+                const callState = await chrome.storage.local.get(['currentCallId']);
+                const callId = callState.currentCallId;
+                if (!callId) {
+                    log('❌ No callId available for recording upload');
+                    resolve(null);
+                    return;
+                }
+
+                const dateStr = new Date().toISOString().split('T')[0];
+                const filePath = `${dateStr}/${callId}_video.webm`;
+
+                // Upload to Supabase Storage via REST API
+                const uploadUrl = `${supabaseUrl}/storage/v1/object/call-recordings/${filePath}`;
+                const headers: Record<string, string> = {
+                    'apikey': supabaseAnonKey,
+                    'Content-Type': blob.type || 'video/webm',
+                    'x-upsert': 'true',
+                };
+                if (accessToken) {
+                    headers['Authorization'] = `Bearer ${accessToken}`;
+                }
+
+                const response = await fetch(uploadUrl, {
+                    method: 'POST',
+                    headers,
+                    body: blob,
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    log(`❌ Upload failed (${response.status}): ${errText}`);
+                    resolve(null);
+                    return;
+                }
+
+                // Get public URL
+                const publicUrl = `${supabaseUrl}/storage/v1/object/public/call-recordings/${filePath}`;
+                log(`✅ Video recording uploaded: ${publicUrl}`);
+                resolve(publicUrl);
+            } catch (err: any) {
+                log('❌ Upload error:', err.message);
+                resolve(null);
+            }
+        };
+
+        if (recorder.state !== 'inactive') {
+            recorder.onstop = () => doUpload();
+            recorder.stop();
+        } else {
+            doUpload();
+        }
+    });
+}
+
 function startRecordingCycle(
     stream: MediaStream,
     mimeType: string,
@@ -446,6 +567,14 @@ async function stopTranscription() {
     delete webmHeaders['lead'];
     delete webmHeaders['seller'];
 
+    // Upload full call recording before stopping streams
+    let videoRecordingUrl: string | null = null;
+    try {
+        videoRecordingUrl = await stopFullCallRecordingAndUpload();
+    } catch (err: any) {
+        log('⚠️ Video upload failed:', err.message);
+    }
+
     // Stop media streaming (includes LiveKit disconnect)
     stopMediaStreaming();
 
@@ -468,5 +597,8 @@ async function stopTranscription() {
     micAnalyser = null;
 
     log('✅ Stopped');
-    chrome.runtime.sendMessage({ type: 'RECORDING_STOPPED' }).catch(() => { });
+    chrome.runtime.sendMessage({
+        type: 'RECORDING_STOPPED',
+        videoRecordingUrl,
+    }).catch(() => { });
 }

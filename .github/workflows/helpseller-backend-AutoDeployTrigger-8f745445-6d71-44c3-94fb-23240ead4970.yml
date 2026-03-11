@@ -1,0 +1,45 @@
+name: Trigger auto deployment for helpseller-backend
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ main ]
+    paths:
+    - '**'
+    - '.github/workflows/helpseller-backend-AutoDeployTrigger-8f745445-6d71-44c3-94fb-23240ead4970.yml'
+
+  # Allow manual trigger 
+  workflow_dispatch:
+      
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.HELPSELLERBACKEND_AZURE_CREDENTIALS }}
+
+      - name: Build and push container image to registry
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          appSourcePath: ${{ github.workspace }}/backend
+          _dockerfilePathKey_: _dockerfilePath_
+          _targetLabelKey_: _targetLabel_
+          registryUrl: helpsellercr.azurecr.io
+          registryUsername: ${{ secrets.HELPSELLERBACKEND_REGISTRY_USERNAME }}
+          registryPassword: ${{ secrets.HELPSELLERBACKEND_REGISTRY_PASSWORD }}
+          containerAppName: helpseller-backend
+          resourceGroup: helpseller-rg
+          imageToBuild: helpsellercr.azurecr.io/helpseller-backend:${{ github.sha }}
+          
+            
+
+     
+

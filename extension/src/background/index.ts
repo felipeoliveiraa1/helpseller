@@ -7,6 +7,9 @@ import { dashboardUrl, apiBaseUrl } from '../config/env';
 // State
 console.log('Background Service Worker Starting...');
 
+// Allow content scripts to access chrome.storage.session
+chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
+
 // On install/update, reload Meet/Zoom tabs so content scripts are injected
 chrome.runtime.onInstalled.addListener(() => {
     chrome.tabs.query({ url: ['*://meet.google.com/*', 'https://*.zoom.us/*', 'https://app.zoom.us/*'] }, (tabs) => {

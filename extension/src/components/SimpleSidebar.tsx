@@ -213,32 +213,37 @@ export default function SimpleSidebar() {
     useEffect(() => { checkSession(); }, []);
 
     const checkSession = async () => {
-        const sess = await authService.getSession();
-        setSession(sess);
-        if (!sess) {
+        try {
+            const sess = await authService.getSession();
+            setSession(sess);
+            if (!sess) {
+                setLoading(false);
+                return;
+            }
+
+            // Restore session in Supabase client memory before fetching plan
+            await authService.restoreSessionInMemory(sess);
+
+            // Fetch plan BEFORE ending loading state
+            let orgData = await authService.fetchOrganizationPlan();
+
+            // If first attempt fails, wait and retry once (session may still be initializing)
+            if (!orgData && sess.refresh_token) {
+                await new Promise(r => setTimeout(r, 1500));
+                orgData = await authService.fetchOrganizationPlan();
+            }
+
+            if (orgData) {
+                setCurrentPlan(orgData.plan);
+                if (orgData.plan === 'FREE') setIsPlanRequired(true);
+            }
+        } catch (err) {
+            console.error('checkSession failed:', err);
+            setSession(null);
+        } finally {
+            // Always end loading state
             setLoading(false);
-            return;
         }
-
-        // Restore session in Supabase client memory before fetching plan
-        await authService.restoreSessionInMemory(sess);
-
-        // Fetch plan BEFORE ending loading state
-        let orgData = await authService.fetchOrganizationPlan();
-
-        // If first attempt fails, wait and retry once (session may still be initializing)
-        if (!orgData && sess.refresh_token) {
-            await new Promise(r => setTimeout(r, 1500));
-            orgData = await authService.fetchOrganizationPlan();
-        }
-
-        if (orgData) {
-            setCurrentPlan(orgData.plan);
-            if (orgData.plan === 'FREE') setIsPlanRequired(true);
-        }
-
-        // Only show UI after plan is resolved
-        setLoading(false);
     };
 
     const handleLogout = async () => {

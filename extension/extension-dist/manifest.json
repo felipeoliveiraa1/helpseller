@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "HelpSeller",
+  "version": "1.0.0",
+  "description": "Coach de vendas em tempo real com IA",
+  "permissions": [
+    "activeTab",
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "https://*.zoom.us/*",
+    "https://app.zoom.us/*",
+    "http://localhost:3000/*",
+    "https://*.vercel.app/*"
+  ],
+  "background": {
+    "service_worker": "service-worker-loader.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "js": [
+        "assets/index.tsx-loader-DsBLfavo.js"
+      ],
+      "matches": [
+        "https://meet.google.com/*",
+        "https://*.zoom.us/*"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "https://*.zoom.us/*",
+        "https://meet.google.com/*"
+      ],
+      "resources": [
+        "src/index.css",
+        "logo.svg",
+        "assets/theme-B5Qw5Qu-.js",
+        "assets/env-LCyqNDsh.js",
+        "assets/index.tsx-BDWOaEqI.js"
+      ],
+      "use_dynamic_url": false
+    }
+  ]
+}

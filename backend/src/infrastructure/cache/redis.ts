@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { EventEmitter } from 'events';
 import { env } from '../../shared/config/env.js';
 import { logger } from '../../shared/utils/logger.js';
 import fs from 'fs';
@@ -12,6 +13,8 @@ class RedisClient {
     private useMemory = false;
     private ttlTimers: Map<string, NodeJS.Timeout> = new Map();
     private saveDumpTimer: NodeJS.Timeout | null = null;
+    /** In-memory pub/sub emitter for when Redis is unavailable */
+    private memoryPubSub: EventEmitter = new EventEmitter();
 
     constructor() {
         if (!env.REDIS_URL || env.REDIS_URL === 'memory' || env.REDIS_URL.includes('undefined') || env.REDIS_URL.startsWith('memory:')) {
@@ -205,6 +208,8 @@ class RedisClient {
      */
     async publish(channel: string, message: any): Promise<void> {
         if (this.useMemory || !this.client) {
+            logger.info(`📡 [Memory] Publishing to ${channel}`);
+            this.memoryPubSub.emit(channel, message);
             return;
         }
 
@@ -222,6 +227,8 @@ class RedisClient {
      */
     async subscribe(channel: string, handler: (message: any) => void): Promise<void> {
         if (this.useMemory || !this.client) {
+            this.memoryPubSub.on(channel, handler);
+            logger.info(`✅ [Memory] Subscribed to ${channel}`);
             return;
         }
 
@@ -246,6 +253,12 @@ class RedisClient {
      * Unsubscribes a specific handler from a channel
      */
     async unsubscribe(channel: string, handler: (message: any) => void): Promise<void> {
+        if (this.useMemory || !this.client) {
+            this.memoryPubSub.removeListener(channel, handler);
+            logger.info(`🔌 [Memory] Unsubscribed from ${channel}`);
+            return;
+        }
+
         const handlers = this.subscriptionHandlers.get(channel);
         if (handlers) {
             handlers.delete(handler);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HelpSeller",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Coach de vendas em tempo real com IA",
   "permissions": [
     "activeTab",
@@ -14,8 +14,7 @@
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
     "https://app.zoom.us/*",
-    "http://localhost:3000/*",
-    "https://*.vercel.app/*"
+    "https://helpseller.app/*"
   ],
   "background": {
     "service_worker": "src/background/index.ts",

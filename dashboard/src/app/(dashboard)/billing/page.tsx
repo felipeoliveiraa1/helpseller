@@ -81,6 +81,7 @@ const PLAN_DEFINITIONS: PlanDefinition[] = [
       'Histórico completo',
       'Gestão de equipe',
     ],
+    extra: 'R$ 8/h adicional',
   },
   {
     slug: 'ENTERPRISE',

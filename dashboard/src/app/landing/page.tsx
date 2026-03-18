@@ -175,6 +175,7 @@ const PLANS = [
       'Histórico completo',
       'Gestão de equipe',
     ],
+    extra: 'R$ 8 por hora adicional',
     ctaText: 'Assinar Team',
     ctaLink: '/register?plan=team',
   },

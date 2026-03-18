@@ -254,7 +254,21 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 return reply.code(403).send({ error: 'Você só pode excluir membros da sua organização.' });
             }
 
-            // 1. Delete profile row
+            // 1. Delete related records that reference this user
+            // Get call IDs first to clean up call_summaries
+            const { data: userCalls } = await supabaseAdmin
+                .from('calls')
+                .select('id')
+                .eq('user_id', targetUserId);
+            const callIds = (userCalls || []).map((c: any) => c.id);
+
+            if (callIds.length > 0) {
+                await supabaseAdmin.from('call_summaries').delete().in('call_id', callIds);
+            }
+            await supabaseAdmin.from('ai_usage_logs').delete().eq('user_id', targetUserId);
+            await supabaseAdmin.from('calls').delete().eq('user_id', targetUserId);
+
+            // 2. Delete profile row
             const { error: deleteProfileError } = await supabaseAdmin
                 .from('profiles')
                 .delete()
@@ -263,7 +277,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 logger.error({ err: deleteProfileError }, 'Admin: Failed to delete profile');
             }
 
-            // 2. Delete auth user completely
+            // 3. Delete auth user completely
             const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
             if (deleteAuthError) {
                 logger.error({ err: deleteAuthError }, 'Admin: Failed to delete auth user');

@@ -59,7 +59,7 @@ export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
   STARTER: {
     maxSellers: 2,
     maxCallHoursPerMonth: 15,
-    extraHourCents: 800, // R$ 8/hora
+    extraHourCents: 1000, // R$ 10/hora
     features: {
       coaching_ai: true,
       objection_detection: true,
@@ -83,7 +83,7 @@ export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
   PRO: {
     maxSellers: 5,
     maxCallHoursPerMonth: 60,
-    extraHourCents: 700, // R$ 7/hora
+    extraHourCents: 900, // R$ 9/hora
     features: {
       coaching_ai: true,
       objection_detection: true,
@@ -107,7 +107,7 @@ export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
   TEAM: {
     maxSellers: 10,
     maxCallHoursPerMonth: 150,
-    extraHourCents: 600, // R$ 6/hora
+    extraHourCents: 800, // R$ 8/hora
     features: {
       coaching_ai: true,
       objection_detection: true,

@@ -62,7 +62,7 @@ const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
   STARTER: {
     maxSellers: 2,
     maxCallHoursPerMonth: 15,
-    extraHourCents: 800,
+    extraHourCents: 1000, // R$ 10/hora
     features: {
       coaching_ai: true,
       objection_detection: true,
@@ -86,7 +86,7 @@ const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
   PRO: {
     maxSellers: 5,
     maxCallHoursPerMonth: 60,
-    extraHourCents: 700,
+    extraHourCents: 900, // R$ 9/hora
     features: {
       coaching_ai: true,
       objection_detection: true,
@@ -110,7 +110,7 @@ const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
   TEAM: {
     maxSellers: 10,
     maxCallHoursPerMonth: 150,
-    extraHourCents: 600, // R$ 6/hora
+    extraHourCents: 800, // R$ 8/hora
     features: {
       coaching_ai: true,
       objection_detection: true,
@@ -270,9 +270,28 @@ export async function checkCallHoursLimit(organizationId: string | null): Promis
     }, 0);
 
     const currentHours = totalSeconds / 3600;
-    const remainingHours = Math.max(0, limits.maxCallHoursPerMonth - currentHours);
 
-    if (currentHours >= limits.maxCallHoursPerMonth) {
+    // Check for extra hours purchased this month
+    let extraHours = 0;
+    try {
+      const { data: purchases } = await supabaseAdmin
+        .from('extra_hours_purchases')
+        .select('hours')
+        .eq('organization_id', organizationId)
+        .eq('status', 'paid')
+        .eq('valid_month', startOfMonth.toISOString().split('T')[0]);
+
+      if (purchases) {
+        extraHours = purchases.reduce((sum, p) => sum + (p.hours ?? 0), 0);
+      }
+    } catch {
+      // If table doesn't exist yet, ignore
+    }
+
+    const totalAllowed = limits.maxCallHoursPerMonth + extraHours;
+    const remainingHours = Math.max(0, totalAllowed - currentHours);
+
+    if (currentHours >= totalAllowed) {
       logger.info({
         organizationId,
         plan,
@@ -285,7 +304,7 @@ export async function checkCallHoursLimit(organizationId: string | null): Promis
         reason: 'LIMIT_REACHED',
         plan,
         currentUsage: Math.round(currentHours * 100) / 100,
-        maxAllowed: limits.maxCallHoursPerMonth,
+        maxAllowed: totalAllowed,
         remainingHours: 0,
       };
     }
@@ -294,7 +313,7 @@ export async function checkCallHoursLimit(organizationId: string | null): Promis
       allowed: true,
       plan,
       currentUsage: Math.round(currentHours * 100) / 100,
-      maxAllowed: limits.maxCallHoursPerMonth,
+      maxAllowed: totalAllowed,
       remainingHours: Math.round(remainingHours * 100) / 100,
     };
   } catch (err) {

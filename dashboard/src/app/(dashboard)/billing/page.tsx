@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardHeader } from '@/components/layout/dashboard-header'
-import { Check, Loader2, ExternalLink, Sparkles } from 'lucide-react'
+import { Check, Loader2, ExternalLink, Sparkles, Clock, Plus, Minus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -41,7 +41,7 @@ const PLAN_DEFINITIONS: PlanDefinition[] = [
       'Indicador SPIN',
       'Dashboard básico',
     ],
-    extra: 'R$ 8/h adicional',
+    extra: 'R$ 10/h adicional',
   },
   {
     slug: 'PRO',
@@ -62,7 +62,7 @@ const PLAN_DEFINITIONS: PlanDefinition[] = [
       'Dashboard manager',
       'Reprocessamento de análise',
     ],
-    extra: 'R$ 7/h adicional',
+    extra: 'R$ 9/h adicional',
   },
   {
     slug: 'TEAM',
@@ -110,6 +110,8 @@ export default function BillingPage() {
   const [hasStripeCustomer, setHasStripeCustomer] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
   const [portalLoading, setPortalLoading] = useState(false)
+  const [extraHours, setExtraHours] = useState(5)
+  const [extraHoursLoading, setExtraHoursLoading] = useState(false)
   const supabase = createClient()
 
   const loadBillingData = useCallback(async () => {
@@ -174,6 +176,27 @@ export default function BillingPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao abrir portal')
       setPortalLoading(false)
+    }
+  }
+
+  const extraHourPrices: Record<string, number> = { STARTER: 10, PRO: 9, TEAM: 8 }
+  const extraHourPrice = extraHourPrices[currentPlan] || 0
+  const extraHoursTotal = extraHourPrice * extraHours
+
+  async function handleExtraHoursCheckout() {
+    setExtraHoursLoading(true)
+    try {
+      const response = await fetch('/api/billing/extra-hours', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hours: extraHours }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error ?? 'Erro ao criar checkout')
+      window.location.href = data.checkoutUrl
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao comprar horas extras')
+      setExtraHoursLoading(false)
     }
   }
 
@@ -323,6 +346,76 @@ export default function BillingPage() {
             )
           })}
         </div>
+
+        {/* Extra Hours Section */}
+        {currentPlan !== 'FREE' && currentPlan !== 'ENTERPRISE' && extraHourPrice > 0 && (
+          <div className="rounded-2xl border p-6" style={CARD_STYLE}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${NEON_PINK}15` }}>
+                <Clock className="w-5 h-5" style={{ color: NEON_PINK }} />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-white">Horas Extras</h3>
+                <p className="text-sm text-gray-500">Compre horas adicionais de coaching quando precisar</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+              {/* Quantity selector */}
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-400">Quantidade:</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExtraHours(Math.max(5, extraHours - 5))}
+                    disabled={extraHours <= 5}
+                    className="w-8 h-8 rounded-lg border border-white/10 flex items-center justify-center text-gray-400 hover:bg-white/5 disabled:opacity-30 transition-colors"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="w-16 text-center text-xl font-bold text-white">{extraHours}h</span>
+                  <button
+                    type="button"
+                    onClick={() => setExtraHours(extraHours + 5)}
+                    className="w-8 h-8 rounded-lg border border-white/10 flex items-center justify-center text-gray-400 hover:bg-white/5 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Price info */}
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-500">
+                  <span className="text-white font-medium">R$ {extraHourPrice}</span>/hora ({currentPlan})
+                </div>
+                <div className="text-xs text-gray-600">|</div>
+                <div className="text-lg font-bold text-white">
+                  R$ {extraHoursTotal.toFixed(0)}
+                </div>
+              </div>
+
+              {/* Buy button */}
+              <button
+                type="button"
+                onClick={handleExtraHoursCheckout}
+                disabled={extraHoursLoading}
+                className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50 whitespace-nowrap"
+                style={{ backgroundColor: NEON_PINK }}
+              >
+                {extraHoursLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  `Comprar ${extraHours} horas`
+                )}
+              </button>
+            </div>
+
+            <p className="mt-4 text-xs text-gray-600">
+              Mínimo de 5 horas. As horas extras são válidas para o mês atual e somam ao limite do seu plano.
+            </p>
+          </div>
+        )}
       </div>
     </>
   )

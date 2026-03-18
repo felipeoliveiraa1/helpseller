@@ -143,6 +143,12 @@ async function handleCheckoutCompleted(
     console.log('[WEBHOOK_STRIPE] Subscription upsert:', { stripeSubscriptionId, planId, error: subError });
   }
 
+  // Handle extra hours purchase
+  if (session.metadata?.type === 'extra_hours') {
+    await handleExtraHoursPurchase(supabase, session);
+    return;
+  }
+
   if (organizationId) {
     const resolvedSlug = await resolvePlanSlug(supabase, session.metadata?.plan_id || null);
     const planSlug = resolvedSlug || session.metadata?.plan_slug || null;
@@ -285,5 +291,41 @@ async function handleSubscriptionDeleted(
         updated_at: new Date().toISOString(),
       })
       .eq('id', organizationId);
+  }
+}
+
+async function handleExtraHoursPurchase(
+  supabase: SupabaseAdmin,
+  session: Stripe.Checkout.Session
+): Promise<void> {
+  const purchaseId = session.metadata?.purchase_id;
+  if (!purchaseId) {
+    console.error('[WEBHOOK_STRIPE] Extra hours purchase missing purchase_id in metadata');
+    return;
+  }
+
+  const stripePaymentIntentId = typeof session.payment_intent === 'string'
+    ? session.payment_intent
+    : session.payment_intent?.id ?? null;
+
+  const { error } = await supabase
+    .from('extra_hours_purchases')
+    .update({
+      status: 'paid',
+      paid_at: new Date().toISOString(),
+      stripe_payment_intent_id: stripePaymentIntentId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', purchaseId)
+    .in('status', ['pending']);
+
+  if (error) {
+    console.error('[WEBHOOK_STRIPE] Failed to update extra hours purchase:', error);
+  } else {
+    console.log('[WEBHOOK_STRIPE] Extra hours purchase confirmed:', {
+      purchaseId,
+      hours: session.metadata?.hours,
+      plan: session.metadata?.plan,
+    });
   }
 }

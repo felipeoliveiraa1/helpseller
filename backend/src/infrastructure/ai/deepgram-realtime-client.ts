@@ -4,12 +4,10 @@ import { env } from '../../shared/config/env.js';
 
 const DEEPGRAM_WS_URL = 'wss://api.deepgram.com/v1/listen';
 
-const DEEPGRAM_QUERY_PARAMS: Record<string, string> = {
+const BASE_DEEPGRAM_PARAMS: Record<string, string> = {
     model: 'nova-2',
     language: 'pt-BR',
-    // encoding omitted — Deepgram auto-detects from WebM container
-    // This handles both mono (extension) and stereo (web session) correctly
-    multichannel: 'false',
+    encoding: 'opus',
     punctuate: 'true',
     smart_format: 'true',
     interim_results: 'true',
@@ -69,6 +67,7 @@ export class DeepgramRealtimeClient {
     private isClosed = false;
     private isSilenceClosed = false;
     private role: string;
+    private channels: number;
     private pendingAudio: Buffer[] = [];
     private droppedAudioCount = 0;
     private lastSpeechAt: number = Date.now();
@@ -80,8 +79,9 @@ export class DeepgramRealtimeClient {
     onUtteranceEnd: DeepgramUtteranceEndCallback = () => {};
     onError: DeepgramErrorCallback = () => {};
 
-    constructor(role: string) {
+    constructor(role: string, channels: number = 1) {
         this.role = role;
+        this.channels = channels;
     }
 
     async connect(): Promise<void> {
@@ -92,8 +92,10 @@ export class DeepgramRealtimeClient {
             throw new Error('DEEPGRAM_API_KEY is not configured');
         }
 
-        const queryString = new URLSearchParams(DEEPGRAM_QUERY_PARAMS).toString();
+        const params = { ...BASE_DEEPGRAM_PARAMS, channels: String(this.channels) };
+        const queryString = new URLSearchParams(params).toString();
         const url = `${DEEPGRAM_WS_URL}?${queryString}`;
+        logger.info(`🎙️ Deepgram [${this.role}] connecting with channels=${this.channels}`);
 
         this.isSilenceClosed = false;
         this.lastSpeechAt = Date.now();

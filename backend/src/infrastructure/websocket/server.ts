@@ -343,6 +343,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         let callEnded = false;
         let dgLeadClient: DeepgramRealtimeClient | null = null;
         let dgSellerClient: DeepgramRealtimeClient | null = null;
+        let callPlatform: string = 'extension'; // 'web' = getDisplayMedia (stereo), 'extension' = chrome.tabCapture (mono)
 
         // HEARTBEAT
         const pingInterval = setInterval(() => {
@@ -570,6 +571,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
             try {
                 const { scriptId, platform, leadName, coachId: payloadCoachId } = event.payload;
+                callPlatform = platform || 'extension';
+                logger.info(`📱 Call platform: ${callPlatform} (channels=${callPlatform === 'web' ? 2 : 1})`);
                 const externalIdRaw = event.payload?.externalId ?? event.payload?.external_id;
                 const externalId = typeof externalIdRaw === 'string' ? externalIdRaw.trim() || null : null;
 
@@ -1425,8 +1428,9 @@ export async function websocketRoutes(fastify: FastifyInstance) {
         async function initDeepgramClients(ws: WebSocket): Promise<void> {
             // Close existing clients to prevent resource leaks (timers, WebSocket connections)
             closeDeepgramClients();
-            dgLeadClient = new DeepgramRealtimeClient('lead');
-            dgSellerClient = new DeepgramRealtimeClient('seller');
+            const dgChannels = callPlatform === 'web' ? 2 : 1;
+            dgLeadClient = new DeepgramRealtimeClient('lead', dgChannels);
+            dgSellerClient = new DeepgramRealtimeClient('seller', dgChannels);
             const setupCallbacks = (client: DeepgramRealtimeClient, role: 'seller' | 'lead'): void => {
                 client.onFinal = (text: string) => {
                     pendingTranscriptions++;

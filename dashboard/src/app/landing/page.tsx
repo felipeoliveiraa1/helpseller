@@ -9,7 +9,6 @@ import {
   MessageSquare,
   Zap,
   Shield,
-  CheckCircle2,
   ArrowRight,
   Menu,
   X,
@@ -22,6 +21,11 @@ import {
   Clock,
   UserCheck,
   BookOpen,
+  AlertTriangle,
+  EyeOff,
+  Target,
+  Quote,
+  Compass,
 } from 'lucide-react'
 import { StarField } from '@/components/landing/star-field'
 import { Container } from '@/components/landing/container'
@@ -35,38 +39,38 @@ const NEON_PURPLE = '#9d00ff'
 const FEATURES = [
   {
     icon: Mic,
-    title: 'Coaching em tempo real',
-    description: 'A IA escuta cada palavra da chamada e sugere respostas na hora — no ouvido do vendedor. Seu time fecha mais sem precisar decorar script. Dicas contextuais, no momento certo.',
+    title: 'A IA sussurra a resposta certa',
+    description: 'Enquanto o cliente fala, a IA já mostra na tela do vendedor o que dizer. Ele nunca mais trava, nunca mais improvisa. Responde com segurança — como se tivesse anos de experiência.',
     color: NEON_PINK,
   },
   {
+    icon: MessageSquare,
+    title: 'Gestor na call sem o cliente saber',
+    description: 'Você entra na chamada do seu vendedor, ouve tudo e manda dicas que só ele vê. Corrige a rota na hora, sem o cliente perceber. Como ter um coach invisível do lado.',
+    color: NEON_ORANGE,
+  },
+  {
+    icon: Compass,
+    title: 'Guia o vendedor passo a passo',
+    description: 'A IA mostra em que momento da conversa o vendedor está e qual a próxima pergunta ideal. Ele segue o caminho certo até o fechamento — sem pular etapas.',
+    color: NEON_GREEN,
+  },
+  {
     icon: FileText,
-    title: 'Scripts que se adaptam',
-    description: 'Crie playbooks por etapa do funil, defina a personalidade da IA (estratégica, empática ou challenger) e o nível de intervenção. Um script para cada tipo de venda.',
+    title: 'Roteiros prontos para cada situação',
+    description: 'Crie roteiros diferentes para cada tipo de venda — prospecção, demonstração, renovação. A IA usa o roteiro certo automaticamente e adapta as sugestões ao contexto da conversa.',
     color: NEON_BLUE,
   },
   {
     icon: BarChart3,
-    title: 'Métricas que importam',
-    description: 'Taxa de conversão, objeções mais ouvidas, desempenho por vendedor e por script. Dashboard em tempo real para você tomar decisão com base em dado, não em feeling.',
-    color: NEON_GREEN,
-  },
-  {
-    icon: MessageSquare,
-    title: 'Whisper para gestores',
-    description: 'Envie dicas em tempo real para o vendedor durante a chamada — só ele ouve. Corrija rota, destaque oportunidade ou dê o próximo argumento sem o cliente perceber.',
-    color: NEON_ORANGE,
-  },
-  {
-    icon: Zap,
-    title: 'Setup em 2 minutos',
-    description: 'Instale a extensão, faça login e comece a usar. Sem integrações complexas, sem depender de TI. Qualquer vendedor configura sozinho e já recebe coaching na próxima chamada.',
+    title: 'Veja onde seu time está perdendo vendas',
+    description: 'Descubra quais objeções mais aparecem, quem converte mais e onde cada vendedor trava. Números claros para você tomar decisões — sem depender de achismo.',
     color: NEON_PURPLE,
   },
   {
-    icon: Shield,
-    title: 'Privacidade e segurança',
-    description: 'Dados criptografados e uso ético de IA. Você decide o que é gravado e por quanto tempo. Conformidade e controle total sobre as informações da sua equipe e clientes.',
+    icon: Zap,
+    title: 'Funciona em 2 minutos, sem instalar nada',
+    description: 'Acesse pelo navegador, faça login e comece. Funciona com Google Meet, Zoom e qualquer chamada online. Seu vendedor configura sozinho — sem precisar de equipe técnica.',
     color: NEON_BLUE,
   },
 ]
@@ -74,32 +78,32 @@ const FEATURES = [
 const BENEFIT_CARDS = [
   {
     icon: Clock,
-    title: 'Menos tempo perdido',
-    description: 'Treinamento genérico vira prática na chamada. Seu time aprende vendendo, não em sala.',
+    title: 'Treina vendendo, não em sala',
+    description: 'Seu vendedor aprende no momento que importa — durante a chamada real, com cliente real.',
     color: NEON_ORANGE,
   },
   {
     icon: Headphones,
-    title: 'Respostas na hora',
-    description: 'Sem pausar a chamada. A IA sugere no ouvido do vendedor, no momento certo.',
+    title: 'Nunca mais trava na call',
+    description: 'A resposta aparece na tela antes que o cliente perceba a hesitação. Zero silêncio constrangedor.',
     color: NEON_PINK,
   },
   {
     icon: BarChart3,
-    title: 'Métricas reais',
-    description: 'Por vendedor e por script. Decisão com base em dado, não em feeling.',
+    title: 'Saiba exatamente onde melhorar',
+    description: 'Veja quem converte mais, quais objeções aparecem e onde cada vendedor precisa de ajuda.',
     color: NEON_GREEN,
   },
   {
     icon: UserCheck,
-    title: 'Gestor ao vivo',
-    description: 'Acompanhe a chamada e envie dicas em tempo real. Só o vendedor ouve.',
+    title: 'Acompanhe sem atrapalhar',
+    description: 'Entre na chamada do vendedor e mande dicas em tempo real. Só ele vê. O cliente nem sabe.',
     color: NEON_BLUE,
   },
   {
     icon: BookOpen,
-    title: 'Objeções mapeadas',
-    description: 'Melhores respostas organizadas em um só lugar. O time sempre preparado.',
+    title: 'Respostas prontas para objeções',
+    description: 'Cadastre as objeções do seu mercado e as melhores respostas. A IA entrega na hora certa.',
     color: NEON_PURPLE,
   },
 ]
@@ -115,14 +119,63 @@ const TRUST_NAMES = [
   'Equipes remotas',
 ]
 
+const TRUST_STATS = [
+  { value: '+12.000', label: 'chamadas analisadas' },
+  { value: '+38%', label: 'aumento médio na conversão' },
+  { value: '2min', label: 'para o primeiro coaching' },
+  { value: 'R$397', label: 'para começar (2 vendedores)' },
+]
+
+const PAIN_CARDS = [
+  {
+    icon: AlertTriangle,
+    title: 'O silêncio que custa negócios',
+    description: 'Vendedores travam em objeções de preço, prazo e concorrência. 3 segundos de hesitação destroem a credibilidade conquistada em 30 minutos de call.',
+    color: NEON_PINK,
+  },
+  {
+    icon: EyeOff,
+    title: 'Gestor cego sobre o que acontece',
+    description: 'Você só descobre o que saiu errado depois — no CRM, na reunião de pipeline, ou quando o cliente some. Tarde demais para corrigir a rota.',
+    color: NEON_ORANGE,
+  },
+  {
+    icon: Target,
+    title: 'Treinamento que não vira prática',
+    description: 'Sala de treinamento é diferente de call real com cliente real. Seu time sai motivado e volta ao mesmo comportamento em 48 horas.',
+    color: NEON_PURPLE,
+  },
+]
+
+const TESTIMONIALS = [
+  {
+    quote: 'Meu vendedor mais novo fechou o mesmo volume que o sênior no primeiro mês de uso. A IA basicamente colocou 3 anos de experiência no ouvido dele.',
+    name: 'Rafael B.',
+    role: 'Head de Vendas, SaaS B2B',
+    location: 'São Paulo',
+  },
+  {
+    quote: 'Testei o Gong e o Aircover. Os dois são caros demais pro nosso tamanho e em inglês. O HelpSeller faz tudo que preciso, em português, a um décimo do preço.',
+    name: 'Ana M.',
+    role: 'Diretora Comercial, Scale-up',
+    location: 'BH',
+  },
+  {
+    quote: 'O Whisper mudou tudo pra mim como gestor. Eu entro na call, ouço onde o vendedor está travando e mando a dica certa. Ele responde com confiança. O cliente não sabe de nada.',
+    name: 'Lucas C.',
+    role: 'Gerente de Inside Sales, Consultoria',
+    location: 'Curitiba',
+  },
+]
+
 const PLANS = [
   {
     id: 'starter',
     name: 'Starter',
     price: 'R$ 397',
     period: '/mês',
-    description: 'Para vendedores que querem vender mais.',
-    trial: '7 dias grátis para testar',
+    description: 'Para duplas e trios que querem fechar mais, agora.',
+    trial: '7 dias grátis',
     features: [
       '2 vendedores',
       '15h de calls/mês (compartilhadas)',
@@ -132,7 +185,7 @@ const PLANS = [
       'Dashboard básico',
     ],
     extra: 'R$ 10 por hora adicional',
-    ctaText: 'Testar 7 dias grátis',
+    ctaText: 'Começar agora',
     ctaLink: '/register?plan=starter',
   },
   {
@@ -140,7 +193,7 @@ const PLANS = [
     name: 'Pro',
     price: 'R$ 897',
     period: '/mês',
-    description: 'Para equipes de vendas estruturadas.',
+    description: 'Para times estruturados que querem escalar com dados.',
     popular: true,
     features: [
       '5 vendedores',
@@ -163,7 +216,7 @@ const PLANS = [
     name: 'Team',
     price: 'R$ 1.797',
     period: '/mês',
-    description: 'Para times maiores com visibilidade completa.',
+    description: 'Para times maiores com visibilidade total em tempo real.',
     features: [
       '10 vendedores',
       '200h de calls/mês (compartilhadas)',
@@ -184,7 +237,7 @@ const PLANS = [
     name: 'Enterprise',
     price: 'Personalizado',
     period: '',
-    description: 'Plano 100% adaptado à sua operação.',
+    description: 'Plano 100% adaptado à operação da sua empresa.',
     features: [
       'Vendedores ilimitados',
       'Horas de calls sob demanda',
@@ -203,24 +256,36 @@ const PLANS = [
 
 const FAQ_ITEMS = [
   {
-    question: 'Posso testar antes de assinar?',
-    answer: 'Entre em contato com nosso time para agendar uma demonstração gratuita. Você poderá testar o coaching em tempo real com seu time antes de assinar.',
+    question: 'O cliente vai saber que a IA está na call?',
+    answer: 'Não. A IA processa o áudio localmente e exibe as sugestões apenas na tela do vendedor. Para o cliente, é uma chamada normal. O Whisper do gestor também é invisível.',
   },
   {
-    question: 'Quais formas de pagamento vocês aceitam?',
-    answer: 'Aceitamos cartões de crédito (Visa, Mastercard, Amex), PIX e boleto. Para Enterprise, também trabalhamos com fatura e transferência.',
+    question: 'Funciona com Google Meet, Zoom e telefone?',
+    answer: 'Sim. Basta iniciar uma sessão no dashboard e compartilhar o áudio da aba do Google Meet, Zoom ou Teams. Funciona direto no navegador.',
   },
   {
-    question: 'Posso mudar de plano depois?',
-    answer: 'Sim. Você pode fazer upgrade ou downgrade a qualquer momento. Em upgrades, o valor é proporcional ao restante do período.',
+    question: 'Quanto tempo leva para ver resultados?',
+    answer: 'A maioria dos times reporta melhora na segurança dos vendedores já na primeira semana. Resultados mensuráveis em conversão aparecem entre 3 e 6 semanas.',
   },
   {
-    question: 'Os dados das chamadas são gravados?',
-    answer: 'Você define o que será gravado e por quanto tempo. Tudo é criptografado e pode ser ajustado por política de privacidade da sua empresa.',
+    question: 'Preciso de equipe de TI para instalar?',
+    answer: 'Não. É 100% web — acesse pelo navegador, faça login e comece. Qualquer vendedor configura sozinho em 2 minutos.',
   },
   {
-    question: 'Integra com Google Meet e Zoom?',
-    answer: 'Sim. O HelpSeller se integra com as principais plataformas de reunião e CRMs. O setup é feito em poucos minutos, sem depender de TI.',
+    question: 'As chamadas ficam gravadas? Quem tem acesso?',
+    answer: 'Você decide o que é gravado e por quanto tempo. Os dados são criptografados e segmentados por empresa.',
+  },
+  {
+    question: 'Posso cancelar a qualquer momento?',
+    answer: 'Sim, sem burocracia. Cancele pelo painel com um clique.',
+  },
+  {
+    question: 'Integra com meu CRM?',
+    answer: 'O resumo automático pós-call e os dados de desempenho podem ser exportados. Integrações nativas com Salesforce, HubSpot e Pipedrive estão em roadmap.',
+  },
+  {
+    question: 'O trial de 7 dias é realmente grátis?',
+    answer: 'Sim. Você acessa todos os recursos do plano escolhido por 7 dias. No 8º dia, você decide se quer continuar.',
   },
 ]
 
@@ -365,13 +430,11 @@ export default function LandingPage() {
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[350px] h-[350px] rounded-full pointer-events-none opacity-[0.2] blur-[150px]" style={{ backgroundColor: NEON_BLUE }} />
         <Container className="relative z-10 flex flex-col items-center text-center">
           <h1 className="text-5xl md:text-7xl font-semibold text-white mb-6 max-w-4xl leading-[1.1] tracking-tight">
-            Potencialize suas <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">vendas</span>
-            <br />
-            com coaching em tempo real
+            Enquanto o cliente fala, a IA já sabe o que seu vendedor{' '}
+            <em className="not-italic text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">precisa dizer</em>
           </h1>
           <p className="text-xl text-gray-400 max-w-2xl mb-10 leading-relaxed">
-            A IA escuta a chamada, sugere as melhores respostas na hora e entrega métricas reais.
-            Seu time vende mais. Você acompanha tudo — ao vivo ou no relatório.
+            A IA ouve cada chamada e sussurra a resposta certa no ouvido do seu vendedor — em tempo real, em português, enquanto o cliente ainda está na linha. Sem pausar. Sem improvisar. Sem perder o negócio.
           </p>
           <div className="flex flex-col sm:flex-row items-center gap-6 w-full sm:w-auto">
             <Link
@@ -381,14 +444,14 @@ export default function LandingPage() {
             >
               Criar conta grátis <ArrowRight className="w-4 h-4" />
             </Link>
-            <Link
-              href="/login"
+            <a
+              href="#how"
               className="rounded-full px-8 h-12 text-base font-medium border border-white/10 bg-white/5 hover:bg-white/10 text-white inline-flex items-center justify-center w-full sm:w-auto backdrop-blur-sm transition-all duration-300 hover:scale-[1.02]"
             >
-              Já tenho conta
-            </Link>
+              Ver como funciona
+            </a>
           </div>
-          <p className="mt-8 text-sm text-gray-500 font-medium">Sem cartão de crédito. Configure em minutos.</p>
+          <p className="mt-8 text-sm text-gray-500 font-medium">100% web · Funciona no navegador · Setup em 2 minutos</p>
           {/* Mock: chamada + sugestão IA */}
           <div className="mt-20 w-full max-w-2xl rounded-xl border border-[#2A2A2A] bg-[#0B0C10]/80 backdrop-blur-xl shadow-2xl overflow-hidden ring-1 ring-white/5">
             <div className="h-11 border-b border-[#2A2A2A] bg-[#14151A]/90 flex items-center px-4 gap-2">
@@ -402,13 +465,13 @@ export default function LandingPage() {
             <div className="p-4 space-y-3 bg-[#111216]/50">
               <div className="flex items-start gap-3">
                 <Headphones className="w-5 h-5 text-gray-500 shrink-0 mt-0.5" />
-                <p className="text-sm text-gray-400">Cliente: &quot;O preço está acima do que a gente tinha em mente...&quot;</p>
+                <p className="text-sm text-gray-400">Cliente: &quot;O preço está bem acima do nosso orçamento atual. Eu não sei se conseguimos fechar isso agora...&quot;</p>
               </div>
               <div className="flex items-start gap-3 pl-2 border-l-2 border-neon-pink/50">
                 <Sparkles className="w-4 h-4 text-neon-pink shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-medium text-neon-pink mb-0.5">Sugestão da IA</p>
-                  <p className="text-sm text-white">Mencione o desconto para fidelidade e o ROI em 6 meses.</p>
+                  <p className="text-sm text-white">Entendo, orçamento é uma prioridade real. Posso mostrar o ROI que nossos clientes têm em média nos primeiros 60 dias — geralmente o produto se paga em 2 meses.</p>
                 </div>
               </div>
             </div>
@@ -416,9 +479,18 @@ export default function LandingPage() {
         </Container>
       </section>
 
-      {/* TrustBar — marquee estilo NovaFlow */}
+      {/* TrustBar — stats + marquee estilo NovaFlow */}
       <section className="py-24 overflow-hidden relative border-y border-[#1F2026]">
         <Container>
+          {/* Stats row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-16">
+            {TRUST_STATS.map((stat) => (
+              <div key={stat.label} className="text-center">
+                <p className="text-2xl md:text-3xl font-bold text-white mb-1">{stat.value}</p>
+                <p className="text-sm text-gray-500">{stat.label}</p>
+              </div>
+            ))}
+          </div>
           <p className="text-center text-sm text-gray-500 mb-12 font-medium tracking-[0.2em] uppercase opacity-60">
             Confiado por equipes de vendas em
           </p>
@@ -438,16 +510,78 @@ export default function LandingPage() {
         </Container>
       </section>
 
+      {/* O problema real */}
+      <section className="py-24">
+        <Container>
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <h2 className="text-3xl md:text-5xl font-semibold text-white mb-6 tracking-tight">
+              O treinamento não vai à campo com o vendedor
+            </h2>
+            <p className="text-lg text-gray-500 leading-relaxed mb-4">
+              Você investe em treinamento, cria playbooks, ensina objeções. Mas quando o cliente diz &quot;está caro&quot; ou &quot;preciso pensar&quot;, o vendedor improvisa — e improvisa mal.
+            </p>
+            <p className="text-lg text-gray-500 leading-relaxed">
+              O problema não é o vendedor. É que ninguém estava lá para ajudar no momento exato que importava.
+            </p>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
+            {PAIN_CARDS.map((item) => {
+              const Icon = item.icon
+              return (
+                <div
+                  key={item.title}
+                  className="group p-6 rounded-2xl bg-[#14151A] border border-[#2A2A2A] hover:border-white/10 transition-all duration-300"
+                >
+                  <div
+                    className="flex h-12 w-12 items-center justify-center rounded-xl mb-4 border border-[#2A2A2A] bg-[#1E1F25] group-hover:border-[#2A2A2A] transition-colors"
+                    style={{ color: item.color, boxShadow: `0 0 20px -5px ${item.color}40` }}
+                  >
+                    <Icon className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-2">{item.title}</h3>
+                  <p className="text-sm text-gray-500 leading-relaxed">{item.description}</p>
+                </div>
+              )
+            })}
+          </div>
+        </Container>
+      </section>
+
       {/* How it works */}
       <section id="how" className="py-20">
         <Container>
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-2xl font-bold text-white sm:text-3xl">Como funciona</h2>
+          <div className="max-w-3xl mx-auto text-center mb-16">
+            <h2 className="text-2xl font-bold text-white sm:text-3xl">De zero a coaching na próxima chamada</h2>
             <p className="mt-4 text-gray-500 leading-relaxed">
-              Você cadastra seus scripts e objeções. O vendedor entra na chamada com o app aberto.
-              A IA escuta em tempo real, sugere respostas e dicas no ouvido dele e registra o que importa.
-              No dashboard, você vê métricas, gravações e oportunidades de melhoria.
+              Três etapas. Dois minutos de setup. Nenhuma dependência de TI.
             </p>
+          </div>
+          <div className="grid gap-8 md:grid-cols-3 max-w-5xl mx-auto">
+            {[
+              {
+                step: '1',
+                title: 'Você cadastra seus scripts',
+                description: 'Crie playbooks por etapa do funil, defina as objeções mais comuns do seu mercado e escolha a personalidade da IA — estratégica, empática ou challenger. Leva 15 minutos.',
+              },
+              {
+                step: '2',
+                title: 'O vendedor inicia a sessão',
+                description: 'Acessa o dashboard, clica em "Iniciar Sessão" e compartilha o áudio da reunião. Sem instalar nada, sem integrar CRM, sem depender de TI. 2 minutos.',
+              },
+              {
+                step: '3',
+                title: 'A IA trabalha durante a call',
+                description: 'A IA escuta em tempo real, detecta o momento da objeção e mostra a resposta certa na tela do vendedor. Só ele vê. O cliente não percebe nada. O negócio avança.',
+              },
+            ].map((item) => (
+              <div key={item.step} className="relative p-6 rounded-2xl bg-[#14151A] border border-[#2A2A2A] hover:border-white/10 transition-all duration-300">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full mb-4 text-sm font-bold text-white" style={{ backgroundColor: NEON_PINK, boxShadow: '0 0 20px -5px rgba(255,0,122,0.4)' }}>
+                  {item.step}
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">{item.title}</h3>
+                <p className="text-sm text-gray-500 leading-relaxed">{item.description}</p>
+              </div>
+            ))}
           </div>
         </Container>
       </section>
@@ -458,20 +592,18 @@ export default function LandingPage() {
           <div className="flex items-center gap-4 mb-6 max-w-xs mx-auto">
             <div className="h-px flex-1 bg-linear-to-r from-transparent to-[#2A2A2A]" />
             <span className="text-xs font-semibold text-neon-pink uppercase tracking-widest px-3 py-1 border border-neon-pink/20 rounded-full bg-neon-pink/5 shadow-[0_0_10px_-3px_rgba(255,0,122,0.2)]">
-              Plataforma
+              Recursos
             </span>
             <div className="h-px flex-1 bg-linear-to-l from-transparent to-[#2A2A2A]" />
           </div>
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-4xl md:text-6xl font-semibold text-white mb-6 tracking-tighter leading-[1.1]">
-              Feito para{' '}
+              Tudo que seu time{' '}
               <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">
-                equipes que vendem mais
+                precisa
               </span>
+              . Nada que não usa.
             </h2>
-            <p className="text-xl text-gray-500 leading-relaxed">
-              O kit completo para eliminar treinamento genérico e fechar mais negócios com confiança. Scripts, métricas, whisper e IA no mesmo lugar.
-            </p>
           </div>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((feature) => (
@@ -553,13 +685,63 @@ export default function LandingPage() {
             </div>
             <div className="flex-1 w-full">
               <div className="rounded-xl border border-[#2A2A2A] bg-[#111216] overflow-hidden shadow-2xl ring-1 ring-white/5">
-                <div className="h-10 border-b border-[#2A2A2A] flex items-center bg-[#16171C] px-4">
-                  <span className="text-xs text-gray-500 font-mono">Métricas • Este mês</span>
+                <div className="h-10 border-b border-[#2A2A2A] flex items-center justify-between bg-[#16171C] px-4">
+                  <span className="text-xs text-gray-500 font-mono">Dashboard • Este mês</span>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-neon-green animate-pulse" />
+                    <span className="text-[10px] text-neon-green font-medium">AO VIVO</span>
+                  </div>
                 </div>
-                <div className="p-6 flex items-end gap-2 h-32">
-                  {[65, 80, 45, 90, 70, 85].map((h, i) => (
-                    <div key={i} className="flex-1 rounded-t bg-[#2A2A2A] transition-all hover:bg-neon-green/50" style={{ height: `${h}%` }} />
+                <div className="grid grid-cols-3 gap-px bg-[#2A2A2A]/50">
+                  {[
+                    { label: 'Chamadas hoje', value: '12', change: 'Convertidas: 8', up: true },
+                    { label: 'Horas usadas', value: '42h', change: '18h restantes', up: false },
+                    { label: 'Em negociação', value: '5', change: 'follow-up pendente', up: false },
+                  ].map((kpi) => (
+                    <div key={kpi.label} className="bg-[#111216] p-3">
+                      <p className="text-[10px] text-gray-500 mb-1">{kpi.label}</p>
+                      <p className="text-sm font-semibold text-white">{kpi.value}</p>
+                      <p className={`text-[10px] mt-0.5 ${kpi.up ? 'text-neon-green' : 'text-amber-400'}`}>{kpi.change}</p>
+                    </div>
                   ))}
+                </div>
+                <div className="p-4">
+                  <p className="text-[10px] text-gray-500 mb-3">Chamadas por semana</p>
+                  <div className="flex items-end gap-1.5 h-24">
+                    {[
+                      { h: 35, label: 'S1' }, { h: 48, label: 'S2' }, { h: 42, label: 'S3' }, { h: 65, label: 'S4' },
+                      { h: 58, label: 'S5' }, { h: 72, label: 'S6' }, { h: 68, label: 'S7' }, { h: 85, label: 'S8' },
+                    ].map((bar) => (
+                      <div key={bar.label} className="flex-1 flex flex-col items-center gap-1">
+                        <div
+                          className="w-full rounded-t transition-all duration-500 hover:opacity-80"
+                          style={{
+                            height: `${bar.h}%`,
+                            background: bar.h >= 70 ? 'linear-gradient(to top, #00ff94, #00d4aa)' : bar.h >= 50 ? 'linear-gradient(to top, rgba(0,209,255,0.25), #00d1ff)' : '#2A2A2A',
+                          }}
+                        />
+                        <span className="text-[8px] text-gray-600">{bar.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="border-t border-[#2A2A2A] px-4 py-3">
+                  <p className="text-[10px] text-gray-500 mb-2">Top vendedores</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { name: 'Felipe P.', pct: 82, color: '#00ff94' },
+                      { name: 'Ana M.', pct: 71, color: '#00d1ff' },
+                      { name: 'Lucas C.', pct: 64, color: '#ff007a' },
+                    ].map((seller) => (
+                      <div key={seller.name} className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-400 w-14 shrink-0">{seller.name}</span>
+                        <div className="flex-1 h-1.5 bg-[#1E1F25] rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${seller.pct}%`, backgroundColor: seller.color }} />
+                        </div>
+                        <span className="text-[10px] text-white font-medium w-8 text-right">{seller.pct}%</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -613,10 +795,10 @@ export default function LandingPage() {
         <Container>
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              Planos que cabem no seu time
+              Preço justo para times brasileiros
             </h2>
             <p className="text-lg text-gray-500 max-w-xl mx-auto">
-              Escolha o plano ideal para o tamanho do seu time. Escale quando precisar.
+              Sem surpresa, sem cobrança em dólar, sem call de vendas para saber o preço.
             </p>
           </div>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 max-w-6xl mx-auto">
@@ -683,6 +865,35 @@ export default function LandingPage() {
         </Container>
       </section>
 
+      {/* Testimonials */}
+      <section className="py-24 border-t border-[#2A2A2A] bg-[#0F1014]">
+        <Container>
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              O que nossos clientes dizem
+            </h2>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto">
+            {TESTIMONIALS.map((t) => (
+              <div
+                key={t.name}
+                className="group p-6 rounded-2xl bg-[#14151A] border border-[#2A2A2A] hover:border-white/10 transition-all duration-300"
+              >
+                <Quote className="w-8 h-8 text-neon-pink/30 mb-4" />
+                <p className="text-sm text-gray-400 leading-relaxed mb-6">
+                  &quot;{t.quote}&quot;
+                </p>
+                <div className="border-t border-white/5 pt-4">
+                  <p className="text-sm font-semibold text-white">{t.name}</p>
+                  <p className="text-xs text-gray-500">{t.role}</p>
+                  <p className="text-xs text-gray-500">{t.location}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Container>
+      </section>
+
       {/* FAQ */}
       <section id="faq" className="py-24 border-t border-[#2A2A2A]">
         <Container>
@@ -730,11 +941,11 @@ export default function LandingPage() {
             <div className="landing-grid-bg absolute inset-0 opacity-20" aria-hidden />
             <div className="relative z-10">
               <h2 className="text-3xl font-bold text-white sm:text-4xl">
-                Pronto para <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">vender mais</span>?
+                A resposta certa já está pronta. Seu vendedor só precisa{' '}
+                <span className="text-transparent bg-clip-text bg-linear-to-r from-neon-pink to-neon-blue">usá-la</span>
               </h2>
               <p className="mt-4 text-gray-500 max-w-xl mx-auto leading-relaxed">
-                Crie sua conta em minutos. Sem cartão de crédito.
-                Configure seus primeiros scripts e comece a treinar seu time com IA.
+                Configure hoje. A IA já estará no ouvido do seu time na próxima chamada.
               </p>
               <Link
                 href="/register"
@@ -747,6 +958,9 @@ export default function LandingPage() {
                 Começar agora
                 <ArrowRight className="h-5 w-5" />
               </Link>
+              <p className="mt-6 text-sm text-gray-500 font-medium">
+                +12.000 chamadas analisadas · +38% de conversão em média · Único em português para PMEs
+              </p>
             </div>
           </div>
         </Container>
@@ -760,7 +974,7 @@ export default function LandingPage() {
               <Link href="/" className="flex items-center text-white font-medium mb-6 text-lg">
                 <img src="/logo.svg" alt="HelpSeller" className="h-12 w-auto" />
               </Link>
-              <p className="text-sm text-gray-500 max-w-xs">Coaching de vendas powered by IA. Seu time vende mais.</p>
+              <p className="text-sm text-gray-500 max-w-xs">Coaching de vendas com IA em tempo real. O único produto feito para times brasileiros que querem fechar mais.</p>
             </div>
             <div>
               <h4 className="text-white font-medium mb-4">Produto</h4>

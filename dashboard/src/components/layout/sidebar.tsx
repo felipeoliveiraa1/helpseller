@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { hasFeature, type FeatureKey } from '@/lib/plan-limits'
+import { TourButton } from '@/components/product-tour'
 
 const navSections = [
   {
@@ -96,7 +97,7 @@ export function Sidebar() {
       style={{ borderColor: 'rgba(255,255,255,0.05)' }}
     >
       <div className="p-8 flex items-center" suppressHydrationWarning={true}>
-        <img src="/logo.svg" alt="HelpSeller" className="h-8 w-auto" />
+        <img src="/logo.svg" alt="HelpSeller" className="h-8 w-auto" data-tour="logo" />
       </div>
 
       {/* Navigation: render skeleton or real content based on mounted state */}
@@ -154,6 +155,7 @@ export function Sidebar() {
                         key={item.name}
                         href={item.href}
                         suppressHydrationWarning={true}
+                        data-tour={`nav-${item.href.replace('/', '')}`}
                         className={cn(
                           'flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors',
                           isActive
@@ -204,6 +206,7 @@ export function Sidebar() {
             settings
           </span>
         </Link>
+        <TourButton />
         <button
           type="button"
           onClick={handleLogout}

@@ -1,6 +1,7 @@
 import { Sidebar } from '@/components/layout/sidebar'
 import { MobileNav } from '@/components/layout/mobile-nav'
 import { DashboardContentGuard } from '@/components/dashboard-content-guard'
+import { ProductTour } from '@/components/product-tour'
 
 export default function DashboardLayout({
   children,
@@ -27,6 +28,7 @@ export default function DashboardLayout({
       <main className="flex-1 overflow-y-auto scrollbar-hide p-8 min-h-screen pt-14 md:pt-8 relative z-10">
         <DashboardContentGuard>{children}</DashboardContentGuard>
       </main>
+      <ProductTour />
     </div>
   )
 }

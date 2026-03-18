@@ -23,7 +23,7 @@ export async function routes(fastify: FastifyInstance) {
 
         // ANALYTICS ROUTES
         // GET /api/analytics/overview
-        protectedRoutes.get('/analytics/overview', async (request: any, reply) => {
+        protectedRoutes.get('/analytics/overview', { preHandler: planGuard('advanced_analytics') }, async (request: any, reply) => {
             const { organization_id } = request.user;
 
             // Call Supabase RPC function (assumed created via migration)

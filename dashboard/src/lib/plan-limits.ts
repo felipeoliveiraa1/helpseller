@@ -64,8 +64,8 @@ export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
       coaching_ai: true,
       objection_detection: true,
       spin_indicator: true,
-      call_history: true,
-      post_call_summary: true,
+      call_history: false,
+      post_call_summary: false,
       basic_dashboard: true,
       advanced_analytics: false,
       seller_ranking: false,
@@ -212,8 +212,10 @@ export function getRemainingSellerSlots(plan: string, currentSellers: number): n
  */
 export const ROUTE_FEATURE_MAP: Record<string, FeatureKey | null> = {
   '/dashboard': 'basic_dashboard',
+  '/session': 'coaching_ai',
   '/calls': 'call_history',
   '/analytics': 'advanced_analytics',
+  '/coaches': 'coaching_ai',
   '/team': null, // accessible to all paid plans - seller limit enforced on add
   '/live': 'live_command_center',
   '/settings': null, // always accessible

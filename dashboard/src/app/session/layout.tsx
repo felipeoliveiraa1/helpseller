@@ -1,0 +1,11 @@
+export default function SessionPopupLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <div className="dark bg-[#0a0a0a] text-white min-h-screen" suppressHydrationWarning>
+      {children}
+    </div>
+  )
+}

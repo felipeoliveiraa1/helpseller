@@ -34,11 +34,13 @@ server.register(cors, {
             return;
         }
 
-        // Logic: Exato match, Wildcard (dev only), ou Chrome Extension
+        // Logic: Exato match, Wildcard (dev only), Chrome Extension, ou localhost (dev)
+        const isLocalhost = origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1');
         if (
             allowedOrigins.indexOf(origin) !== -1 ||
             env.CORS_ORIGIN === '*' ||
-            origin.startsWith('chrome-extension://')
+            origin.startsWith('chrome-extension://') ||
+            (!config.isProd && isLocalhost)
         ) {
             cb(null, true);
         } else {

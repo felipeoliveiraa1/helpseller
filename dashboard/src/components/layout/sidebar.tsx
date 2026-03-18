@@ -6,21 +6,23 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
+import { hasFeature, type FeatureKey } from '@/lib/plan-limits'
 
 const navSections = [
   {
     label: 'Home',
-    items: [{ name: 'Dashboard', href: '/dashboard', icon: 'dashboard' }],
+    items: [{ name: 'Dashboard', href: '/dashboard', icon: 'dashboard', requiredFeature: null }],
   },
   {
     label: 'App',
     items: [
-      { name: 'Chamadas', href: '/calls', icon: 'call' },
-      { name: 'Ao Vivo', href: '/live', icon: 'cell_tower' },
-      { name: 'Analytics', href: '/analytics', icon: 'bar_chart' },
-      { name: 'Coaches', href: '/coaches', icon: 'psychology' },
-      { name: 'Equipe', href: '/team', icon: 'people' },
-      { name: 'Planos', href: '/billing', icon: 'credit_card' },
+      { name: 'Sessão', href: '/session', icon: 'videocam', requiredFeature: 'coaching_ai' as FeatureKey },
+      { name: 'Chamadas', href: '/calls', icon: 'call', requiredFeature: 'call_history' as FeatureKey },
+      { name: 'Ao Vivo', href: '/live', icon: 'cell_tower', requiredFeature: 'live_command_center' as FeatureKey },
+      { name: 'Analytics', href: '/analytics', icon: 'bar_chart', requiredFeature: 'advanced_analytics' as FeatureKey },
+      { name: 'Coaches', href: '/coaches', icon: 'psychology', requiredFeature: null },
+      { name: 'Equipe', href: '/team', icon: 'people', requiredFeature: null },
+      { name: 'Planos', href: '/billing', icon: 'credit_card', requiredFeature: null },
     ],
   },
 ] as const
@@ -44,17 +46,31 @@ export function Sidebar() {
     email: string | null
     avatar_url: string | null
   } | null>(null)
+  const [orgPlan, setOrgPlan] = useState<string>('FREE')
 
   useEffect(() => {
     setMounted(true)
     if (user) {
       supabase
         .from('profiles')
-        .select('full_name, role, email, avatar_url')
+        .select('full_name, role, email, avatar_url, organization_id')
         .eq('id', user.id)
         .single()
         .then(({ data }) => {
-          if (data) setProfile(data)
+          if (data) {
+            setProfile(data)
+            const orgId = (data as any).organization_id
+            if (orgId) {
+              supabase
+                .from('organizations')
+                .select('plan')
+                .eq('id', orgId)
+                .single()
+                .then(({ data: org }) => {
+                  if (org) setOrgPlan((org as any).plan ?? 'FREE')
+                })
+            }
+          }
         })
     }
   }, [user, supabase])
@@ -115,6 +131,10 @@ export function Sidebar() {
               if (displayRole === 'SELLER') {
                 if (['Scripts', 'Equipe', 'Ao Vivo', 'Coaches', 'Planos'].includes(item.name))
                   return false
+              }
+              // Hide items that require a feature the current plan doesn't have
+              if (item.requiredFeature && !hasFeature(orgPlan, item.requiredFeature)) {
+                return false
               }
               return true
             })

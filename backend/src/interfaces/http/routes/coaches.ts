@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../../infrastructure/supabase/client.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { openaiClient } from '../../../infrastructure/ai/openai-client.js';
+import { planGuard } from '../middlewares/plan-guard.js';
 
 const CreateCoachSchema = z.object({
     name: z.string().min(1).max(100),
@@ -29,7 +30,7 @@ const UpdateCoachSchema = CreateCoachSchema.partial();
 export async function coachRoutes(fastify: FastifyInstance) {
 
     // POST /api/coaches/parse-script — upload PDF, extract text, organize with AI
-    fastify.post('/parse-script', async (request: any, reply) => {
+    fastify.post('/parse-script', { preHandler: planGuard('coaching_ai') }, async (request: any, reply) => {
         const { role } = request.user;
         if (!['MANAGER', 'ADMIN'].includes(role)) {
             return reply.code(403).send({ error: 'Apenas gestores podem fazer upload de scripts' });
@@ -90,7 +91,7 @@ ${rawText}`;
     });
 
     // POST /api/coaches/parse-product — upload PDF, extract product info with AI
-    fastify.post('/parse-product', async (request: any, reply) => {
+    fastify.post('/parse-product', { preHandler: planGuard('coaching_ai') }, async (request: any, reply) => {
         const { role } = request.user;
         if (!['MANAGER', 'ADMIN'].includes(role)) {
             return reply.code(403).send({ error: 'Apenas gestores podem fazer upload' });
@@ -194,7 +195,7 @@ ${rawText}`;
     });
 
     // POST /api/coaches — create a new coach (MANAGER only)
-    fastify.post('/', async (request: any, reply) => {
+    fastify.post('/', { preHandler: planGuard('coaching_ai') }, async (request: any, reply) => {
         const { role, organization_id } = request.user;
 
         if (!['MANAGER', 'ADMIN'].includes(role)) {
@@ -250,7 +251,7 @@ ${rawText}`;
     });
 
     // PUT /api/coaches/:id — update a coach (MANAGER only)
-    fastify.put('/:id', async (request: any, reply) => {
+    fastify.put('/:id', { preHandler: planGuard('coaching_ai') }, async (request: any, reply) => {
         const { id } = request.params as { id: string };
         const { role, organization_id } = request.user;
 
@@ -307,7 +308,7 @@ ${rawText}`;
     });
 
     // DELETE /api/coaches/:id — delete a coach (MANAGER only)
-    fastify.delete('/:id', async (request: any, reply) => {
+    fastify.delete('/:id', { preHandler: planGuard('coaching_ai') }, async (request: any, reply) => {
         const { id } = request.params as { id: string };
         const { role, organization_id } = request.user;
 

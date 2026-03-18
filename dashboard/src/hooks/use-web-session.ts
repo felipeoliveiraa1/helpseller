@@ -459,7 +459,6 @@ export function useWebSession() {
       if (audioTracks.length === 0) {
         throw new Error('Nenhum áudio capturado. Certifique-se de marcar "Compartilhar áudio" ao selecionar a aba.')
       }
-      const leadStream = new MediaStream(audioTracks)
 
       // Stop video tracks (we only need audio)
       displayStream.getVideoTracks().forEach(t => t.stop())
@@ -471,7 +470,16 @@ export function useWebSession() {
         }
       }
 
-      // 2. Capture microphone (seller)
+      // Downmix stereo → mono via AudioContext (Deepgram expects mono opus)
+      const audioCtx = new AudioContext({ sampleRate: 48000 })
+      const source = audioCtx.createMediaStreamSource(new MediaStream(audioTracks))
+      const dest = audioCtx.createMediaStreamDestination()
+      dest.channelCount = 1
+      dest.channelCountMode = 'explicit'
+      source.connect(dest)
+      const leadStream = dest.stream
+
+      // 2. Capture microphone (seller) — already mono by default
       let micStream: MediaStream | null = null
       try {
         micStream = await navigator.mediaDevices.getUserMedia({
@@ -479,6 +487,7 @@ export function useWebSession() {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
+            channelCount: 1,
           },
         })
         micStreamRef.current = micStream

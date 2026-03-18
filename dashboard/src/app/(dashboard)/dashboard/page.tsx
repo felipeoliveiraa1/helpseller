@@ -125,11 +125,12 @@ export default function DashboardPage() {
   const supabase = createClient()
 
   // Plan limits for call hours KPI - must be called before any conditional returns
-  const { plan, limits, usage, loading: planLoading } = usePlanLimits()
+  const { plan, limits, usage, remaining, extraHoursPurchased, loading: planLoading } = usePlanLimits()
   const hasCallLimit = limits.maxCallHoursPerMonth > 0
   const usedHours = usage.currentCallHoursThisMonth
-  const maxHours = limits.maxCallHoursPerMonth
-  const remainingHours = maxHours === -1 ? Infinity : Math.max(0, maxHours - usedHours)
+  const totalMaxHours = limits.maxCallHoursPerMonth === -1 ? -1 : limits.maxCallHoursPerMonth + extraHoursPurchased
+  const maxHours = totalMaxHours
+  const remainingHours = remaining.callHours === -1 ? Infinity : remaining.callHours
   const usagePercent = maxHours > 0 ? Math.min(100, (usedHours / maxHours) * 100) : 0
   const isNearLimit = usagePercent >= 80
   const isAtLimit = usagePercent >= 100

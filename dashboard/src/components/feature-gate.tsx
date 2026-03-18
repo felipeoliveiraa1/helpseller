@@ -32,6 +32,11 @@ interface PlanContextValue {
     maxSellers: number
     maxCallHoursPerMonth: number
   }
+  remaining: {
+    sellerSlots: number
+    callHours: number
+  }
+  extraHoursPurchased: number
   canStartCall: boolean
   canAddSeller: boolean
   refresh: () => Promise<void>
@@ -52,6 +57,8 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [usage, setUsage] = useState({ currentSellers: 0, currentCallHoursThisMonth: 0 })
   const [limits, setLimits] = useState({ maxSellers: 0, maxCallHoursPerMonth: 0 })
+  const [remaining, setRemaining] = useState({ sellerSlots: 0, callHours: 0 })
+  const [extraHoursPurchased, setExtraHoursPurchased] = useState(0)
   const [canStartCall, setCanStartCall] = useState(false)
   const [canAddSeller, setCanAddSeller] = useState(false)
 
@@ -63,6 +70,8 @@ export function PlanProvider({ children }: { children: ReactNode }) {
         setPlan(data.plan)
         setUsage(data.usage)
         setLimits(data.limits)
+        setRemaining(data.remaining ?? { sellerSlots: 0, callHours: 0 })
+        setExtraHoursPurchased(data.extraHours?.purchased ?? 0)
         setCanStartCall(data.canStartCall)
         setCanAddSeller(data.canAddSeller)
         setLoading(false)
@@ -76,6 +85,8 @@ export function PlanProvider({ children }: { children: ReactNode }) {
         setPlan(data.plan)
         setUsage(data.usage)
         setLimits(data.limits)
+        setRemaining(data.remaining ?? { sellerSlots: 0, callHours: 0 })
+        setExtraHoursPurchased(data.extraHours?.purchased ?? 0)
         setCanStartCall(data.canStartCall)
         setCanAddSeller(data.canAddSeller)
       }
@@ -92,7 +103,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
 
   return (
     <PlanContext.Provider
-      value={{ plan, loading, usage, limits, canStartCall, canAddSeller, refresh }}
+      value={{ plan, loading, usage, limits, remaining, extraHoursPurchased, canStartCall, canAddSeller, refresh }}
     >
       {children}
     </PlanContext.Provider>
@@ -108,12 +119,14 @@ export function useHasFeature(feature: FeatureKey): boolean {
 
 // Hook to check plan limits
 export function usePlanLimits() {
-  const { plan, loading, usage, limits, canStartCall, canAddSeller } = usePlanContext()
+  const { plan, loading, usage, limits, remaining, extraHoursPurchased, canStartCall, canAddSeller } = usePlanContext()
   return {
     plan,
     loading,
     usage,
     limits,
+    remaining,
+    extraHoursPurchased,
     canStartCall,
     canAddSeller,
     planLimits: getPlanLimits(plan),

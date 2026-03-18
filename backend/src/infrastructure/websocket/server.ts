@@ -985,6 +985,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 return;
             }
             callEnded = true;
+            const callEndReceivedAt = new Date(); // Capture end time NOW, before any async processing
             let resolvedCallId = currentCallId ?? (payload?.callId && payload.callId.trim() ? payload.callId.trim() : null);
             if (!resolvedCallId && userId) {
                 const fromRedis = await redis.get<string>(`user:${userId}:current_call`);
@@ -1093,8 +1094,8 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 }));
             }
 
-            // 5. Update DB — compute duration_seconds
-            const endedAt = new Date();
+            // 5. Update DB — compute duration_seconds (use callEndReceivedAt, not now())
+            const endedAt = callEndReceivedAt;
             let durationSeconds: number | undefined;
             if (sessionData.startedAt) {
                 durationSeconds = Math.round((endedAt.getTime() - sessionData.startedAt) / 1000);

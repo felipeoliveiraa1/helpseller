@@ -19,17 +19,23 @@ function ActiveSessionBanner() {
     return () => { clearInterval(interval); window.removeEventListener('storage', check) }
   }, [])
 
-  if (!active || pathname === '/session') return null
+  if (!active) return null
+
+  const isOnSession = pathname === '/session'
 
   return (
     <div className="bg-amber-500/90 text-black px-4 py-2 text-sm font-semibold flex items-center justify-between rounded-lg mb-4">
       <div className="flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-        Sessão ativa — volte para /session antes de navegar, ou a transcrição será interrompida.
+        {isOnSession
+          ? 'Sessão em andamento — não saia desta página enquanto a call estiver ativa.'
+          : 'Sessão ativa — volte para /session ou a transcrição será interrompida.'}
       </div>
-      <a href="/session" className="bg-black/20 hover:bg-black/30 text-white px-3 py-1 rounded-md text-xs font-bold transition-colors">
-        Voltar à sessão
-      </a>
+      {!isOnSession && (
+        <a href="/session" className="bg-black/20 hover:bg-black/30 text-white px-3 py-1 rounded-md text-xs font-bold transition-colors">
+          Voltar à sessão
+        </a>
+      )}
     </div>
   )
 }

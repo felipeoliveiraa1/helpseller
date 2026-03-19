@@ -177,15 +177,58 @@ export async function findAndReprocessPendingCalls(limit = 5): Promise<{ process
 
 let reprocessIntervalId: ReturnType<typeof setInterval> | null = null;
 const REPROCESS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const STALE_CALL_THRESHOLD_HOURS = 2; // Calls ACTIVE for more than 2 hours are considered orphaned
 
 /**
- * Starts the periodic job that reprocesses unprocessed COMPLETED calls.
+ * Auto-close orphaned ACTIVE calls that have been running too long.
+ * This handles cases where the WS disconnected without triggering onclose
+ * (e.g., server restart, network drop, browser crash).
+ */
+async function closeOrphanedCalls(): Promise<number> {
+    const cutoff = new Date(Date.now() - STALE_CALL_THRESHOLD_HOURS * 60 * 60 * 1000).toISOString();
+    const { data: staleCalls, error } = await supabaseAdmin
+        .from('calls')
+        .select('id, started_at')
+        .eq('status', 'ACTIVE')
+        .lt('started_at', cutoff);
+
+    if (error || !staleCalls?.length) return 0;
+
+    let closed = 0;
+    for (const call of staleCalls) {
+        const startedAt = new Date(call.started_at).getTime();
+        const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
+        const { error: updateError } = await supabaseAdmin
+            .from('calls')
+            .update({
+                status: 'COMPLETED',
+                ended_at: new Date().toISOString(),
+                duration_seconds: durationSeconds,
+            })
+            .eq('id', call.id)
+            .eq('status', 'ACTIVE'); // double-check still ACTIVE
+
+        if (!updateError) {
+            closed++;
+            logger.info({ callId: call.id, durationSeconds }, '🧹 Auto-closed orphaned ACTIVE call');
+        }
+    }
+    return closed;
+}
+
+/**
+ * Starts the periodic job that reprocesses unprocessed COMPLETED calls
+ * and auto-closes orphaned ACTIVE calls.
  */
 export function startReprocessJob(): void {
     if (reprocessIntervalId) return;
     reprocessIntervalId = setInterval(async () => {
         try {
             await findAndReprocessPendingCalls(5);
+            const closed = await closeOrphanedCalls();
+            if (closed > 0) {
+                logger.info({ closed }, '🧹 Orphaned ACTIVE calls auto-closed');
+            }
         } catch (err) {
             logger.warn({ err }, 'Job de reprocessamento falhou');
         }

@@ -118,12 +118,21 @@ export function useWebSession() {
   const startMediaStreamingRef = useRef<(s: MediaStream) => void>(() => {})
   const startFullCallRecordingRef = useRef<(d: MediaStream, m: MediaStream | null) => void>(() => {})
 
-  // Get supabase token
+  // Get supabase token (with refresh fallback)
   const getToken = useCallback(async (): Promise<string> => {
     const supabase = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) throw new Error('Sem sessão ativa. Faça login novamente.')
-    return session.access_token
+    if (session?.access_token) {
+      // Check if token expires in less than 60 seconds
+      const expiresAt = session.expires_at ?? 0
+      if (expiresAt * 1000 > Date.now() + 60_000) {
+        return session.access_token
+      }
+    }
+    // Token expired or missing — try refresh
+    const { data: { session: refreshed } } = await supabase.auth.refreshSession()
+    if (!refreshed) throw new Error('Sem sessão ativa. Faça login novamente.')
+    return refreshed.access_token
   }, [])
 
   // Send WS message
@@ -542,7 +551,18 @@ export function useWebSession() {
         setState(prev => ({ ...prev, status: 'idle', error: null }))
         return
       }
-      setState(prev => ({ ...prev, status: 'error', error: err instanceof Error ? err.message : 'Erro ao iniciar sessão' }))
+      // Friendly error messages
+      let message = 'Erro ao iniciar sessão. Tente novamente.'
+      if (err instanceof Error) {
+        if (err.message === 'Invalid state' || err.name === 'InvalidStateError') {
+          message = 'Erro temporário. Recarregue a página e tente novamente.'
+        } else if (err.message.includes('sessão ativa') || err.message.includes('login')) {
+          message = err.message
+        } else if (err.message.includes('áudio')) {
+          message = err.message
+        }
+      }
+      setState(prev => ({ ...prev, status: 'error', error: message }))
     }
   }, [connectWs, startPcmStreaming, startMediaStreaming, startFullCallRecording])
 

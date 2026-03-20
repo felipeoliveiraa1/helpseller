@@ -43,8 +43,10 @@ function calculateDeepgramCost(durationSeconds: number): number {
     return (durationSeconds / 60) * DEEPGRAM_PRICE_PER_MIN;
 }
 
-function calculateLiveKitCost(durationSeconds: number, participants: number): number {
-    return (durationSeconds / 60) * participants * LIVEKIT_PRICE_PER_PARTICIPANT_MIN;
+function calculateLiveKitCost(_durationSeconds: number, _participants: number): number {
+    // LiveKit is not actively used — audio goes through WebSocket directly
+    // Only log real costs when LiveKit rooms are actually created
+    return 0;
 }
 
 // ─── Persistence ─────────────────────────────────────────────

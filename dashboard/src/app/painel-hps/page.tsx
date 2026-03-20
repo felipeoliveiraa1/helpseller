@@ -41,9 +41,10 @@ const COLORS = {
 }
 const BRL_RATE = 5.80
 
-// ─── Admin Credentials ──────────────────────────────────────
-const ADMIN_USER = 'admin'
-const ADMIN_PASS = 'admin'
+// ─── Admin emails (users with these emails can access /admin) ──
+const ADMIN_EMAILS = [
+    'felipeoliveiraa1@hotmail.com',
+]
 
 // ─── Page Component ─────────────────────────────────────────
 export default function AdminPage() {
@@ -57,30 +58,40 @@ export default function AdminPage() {
     // Auth gate
     const [mounted, setMounted] = useState(false)
     const [isAuthenticated, setIsAuthenticated] = useState(false)
+    const [authChecking, setAuthChecking] = useState(true)
     const [loginUser, setLoginUser] = useState('')
     const [loginPass, setLoginPass] = useState('')
     const [loginError, setLoginError] = useState(false)
     const [shaking, setShaking] = useState(false)
 
-    // Check sessionStorage on mount
+    // Check Supabase session on mount — only allow ADMIN_EMAILS
     useEffect(() => {
         setMounted(true)
-        if (sessionStorage.getItem('admin_auth') === 'true') {
-            setIsAuthenticated(true)
+        const checkAdmin = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user && ADMIN_EMAILS.includes(user.email ?? '')) {
+                setIsAuthenticated(true)
+            }
+            setAuthChecking(false)
         }
+        checkAdmin()
     }, [])
 
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault()
-        if (loginUser === ADMIN_USER && loginPass === ADMIN_PASS) {
-            setIsAuthenticated(true)
-            setLoginError(false)
-            sessionStorage.setItem('admin_auth', 'true')
-        } else {
-            setLoginError(true)
-            setShaking(true)
-            setTimeout(() => setShaking(false), 500)
+        const doLogin = async () => {
+            const { error } = await supabase.auth.signInWithPassword({ email: loginUser, password: loginPass })
+            if (error || !ADMIN_EMAILS.includes(loginUser.toLowerCase())) {
+                if (!error) await supabase.auth.signOut()
+                setLoginError(true)
+                setShaking(true)
+                setTimeout(() => setShaking(false), 500)
+            } else {
+                setIsAuthenticated(true)
+                setLoginError(false)
+            }
         }
+        doLogin()
     }
 
     // Fetch data — ALL hooks MUST be before any early return
@@ -265,7 +276,7 @@ export default function AdminPage() {
     }
 
     // ─── SSR-safe: show nothing until mounted ────────────────────
-    if (!mounted) {
+    if (!mounted || authChecking) {
         return null
     }
 
@@ -288,14 +299,14 @@ export default function AdminPage() {
 
                     <div className="space-y-4">
                         <div>
-                            <label className="text-xs font-medium text-gray-400 mb-1.5 block">Usuário</label>
+                            <label className="text-xs font-medium text-gray-400 mb-1.5 block">Email</label>
                             <input
-                                type="text"
+                                type="email"
                                 value={loginUser}
                                 onChange={e => { setLoginUser(e.target.value); setLoginError(false) }}
                                 className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-600 outline-none transition-colors"
                                 style={{ backgroundColor: '#111', border: `1px solid ${loginError ? '#ff4444' : 'rgba(255,255,255,0.08)'}` }}
-                                placeholder="Usuário"
+                                placeholder="admin@helpseller.app"
                                 autoFocus
                             />
                         </div>

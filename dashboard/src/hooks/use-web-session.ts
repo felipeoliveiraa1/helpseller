@@ -196,15 +196,11 @@ export function useWebSession() {
         const p = data.payload || {}
         const meta = p.metadata as Record<string, unknown> | undefined
         const content = (p.content as string) || (p.description as string) || ''
-        // Build clean title from content (first sentence or first 60 chars)
-        const firstLine = content.split(/[.\n]/)[0]?.trim() || ''
-        const title = (p.title as string) || (firstLine.length > 60 ? firstLine.slice(0, 57) + '...' : firstLine)
-        const description = content.length > title.length ? content.slice(title.length).trim().replace(/^[.,\s]+/, '') : ''
         const msg: CoachMessage = {
           id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           type: (p.type as CoachMessage['type']) || 'tip',
-          title,
-          description,
+          title: (p.title as string) || '',
+          description: content,
           metadata: meta,
           timestamp: Date.now(),
         }

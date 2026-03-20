@@ -309,9 +309,11 @@ function PipCoachCard({ msg, onDismiss }: { msg: CoachMessage; onDismiss: (id: s
         </div>
         <button onClick={() => onDismiss(msg.id)} style={{ background: 'none', border: 'none', padding: 2, color: '#374151', cursor: 'pointer' }}><IconX /></button>
       </div>
-      <h4 style={{ fontWeight: 500, fontSize: 12, color: 'white', lineHeight: 1.3 }}>{msg.title}</h4>
+      {msg.title && (
+        <h4 style={{ fontWeight: 500, fontSize: 12, color: 'white', lineHeight: 1.3 }}>{msg.title}</h4>
+      )}
       {msg.description && (
-        <p style={{ fontSize: 11, color: '#9ca3af', lineHeight: 1.5, marginTop: 2 }}>{msg.description}</p>
+        <p style={{ fontSize: 11, color: msg.title ? '#9ca3af' : 'white', lineHeight: 1.5, marginTop: msg.title ? 2 : 0 }}>{msg.description}</p>
       )}
       {msg.type === 'objection' && msg.metadata?.objection ? (
         <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#9ca3af', background: 'rgba(0,0,0,0.3)', borderRadius: 4, padding: '4px 8px', border: '1px solid rgba(255,255,255,0.05)' }}>

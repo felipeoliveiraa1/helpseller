@@ -59,17 +59,21 @@ function CoachCard({ message, onDismiss }: { message: CoachMessage; onDismiss: (
         </button>
       </div>
 
-      <h4 className="font-medium text-[13px] text-white mb-0.5 leading-tight">{message.title}</h4>
+      {message.title && (
+        <h4 className="font-medium text-[13px] text-white mb-0.5 leading-tight">{message.title}</h4>
+      )}
 
-      <p className="text-xs text-gray-400 leading-relaxed">
-        {message.description.split(/(\*\*.*?\*\*)/).map((part, i) =>
-          part.startsWith('**') && part.endsWith('**') ? (
-            <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>
-          ) : (
-            <span key={i}>{part}</span>
-          )
-        )}
-      </p>
+      {message.description && (
+        <p className="text-xs text-gray-400 leading-relaxed">
+          {message.description.split(/(\*\*.*?\*\*)/).map((part, i) =>
+            part.startsWith('**') && part.endsWith('**') ? (
+              <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+            ) : (
+              <span key={i}>{part}</span>
+            )
+          )}
+        </p>
+      )}
 
       {message.type === 'objection' && message.metadata?.objection ? (
         <div className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-400 bg-black/30 rounded px-2 py-1.5 border border-white/5">

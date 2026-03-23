@@ -75,7 +75,8 @@ export async function middleware(request: NextRequest) {
             pathname.startsWith('/privacy') ||
             pathname.startsWith('/terms') ||
             pathname.startsWith('/billing/success') ||
-            pathname.startsWith('/billing/cancel')
+            pathname.startsWith('/billing/cancel') ||
+            pathname.startsWith('/conheca-helpseller')
 
         if (!isPublic && !session) {
             return NextResponse.redirect(new URL('/login', request.url))

@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { MobileNav } from '@/components/layout/mobile-nav'
 import { DashboardContentGuard } from '@/components/dashboard-content-guard'
 import { ProductTour } from '@/components/product-tour'
+import { FeedbackWidget } from '@/components/feedback-widget'
 
 function ActiveSessionBanner() {
   const [active, setActive] = useState(false)
@@ -67,6 +68,7 @@ export default function DashboardLayout({
         <DashboardContentGuard>{children}</DashboardContentGuard>
       </main>
       <ProductTour />
+      <FeedbackWidget />
     </div>
   )
 }

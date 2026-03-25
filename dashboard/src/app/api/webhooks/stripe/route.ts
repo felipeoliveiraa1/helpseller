@@ -169,6 +169,9 @@ async function handleCheckoutCompleted(
       })
       .eq('id', organizationId);
     console.log('[WEBHOOK_STRIPE] Organization update:', { organizationId, planSlug, error: orgError });
+
+    // Calculate affiliate commission if org was referred
+    await calculateAffiliateCommission(supabase, organizationId, session);
   }
 }
 
@@ -294,6 +297,95 @@ async function handleSubscriptionDeleted(
   }
 }
 
+async function calculateAffiliateCommission(
+  supabase: SupabaseAdmin,
+  organizationId: string,
+  session: Stripe.Checkout.Session
+): Promise<void> {
+  try {
+    // Check if this org was referred by an affiliate
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('referred_by')
+      .eq('id', organizationId)
+      .maybeSingle();
+
+    if (!org?.referred_by) return;
+
+    const affiliateId = org.referred_by;
+
+    // Get affiliate info
+    const { data: affiliate } = await supabase
+      .from('affiliates')
+      .select('id, commission_percent, status')
+      .eq('id', affiliateId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!affiliate) return;
+
+    // Get the referral record
+    const { data: referral } = await supabase
+      .from('affiliate_referrals')
+      .select('id')
+      .eq('affiliate_id', affiliateId)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+
+    if (!referral) return;
+
+    // Calculate commission from payment amount
+    const amountPaid = session.amount_total || 0; // in cents
+    const commissionCents = Math.round(amountPaid * (Number(affiliate.commission_percent) / 100));
+
+    if (commissionCents <= 0) return;
+
+    const sourceType = session.metadata?.type === 'extra_hours' ? 'extra_hours' : 'subscription';
+    const sourceId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : session.payment_intent?.id ?? session.id;
+
+    // Check for duplicate commission (same source_id)
+    const { data: existingCommission } = await supabase
+      .from('affiliate_commissions')
+      .select('id')
+      .eq('source_id', sourceId)
+      .maybeSingle();
+
+    if (existingCommission) return; // Already processed
+
+    // Insert commission (available after 30 days)
+    const availableAt = new Date();
+    availableAt.setDate(availableAt.getDate() + 30);
+
+    await supabase.from('affiliate_commissions').insert({
+      affiliate_id: affiliateId,
+      referral_id: referral.id,
+      amount_cents: commissionCents,
+      source_type: sourceType,
+      source_id: sourceId,
+      status: 'pending',
+      available_at: availableAt.toISOString(),
+    });
+
+    // Update referral status to active
+    await supabase
+      .from('affiliate_referrals')
+      .update({ status: 'active' })
+      .eq('id', referral.id);
+
+    console.log('[WEBHOOK_STRIPE] Affiliate commission created:', {
+      affiliateId,
+      organizationId,
+      commissionCents,
+      commissionPercent: affiliate.commission_percent,
+      sourceType,
+    });
+  } catch (err) {
+    console.error('[WEBHOOK_STRIPE] Failed to calculate affiliate commission:', err);
+  }
+}
+
 async function handleExtraHoursPurchase(
   supabase: SupabaseAdmin,
   session: Stripe.Checkout.Session
@@ -327,5 +419,11 @@ async function handleExtraHoursPurchase(
       hours: session.metadata?.hours,
       plan: session.metadata?.plan,
     });
+
+    // Calculate affiliate commission for extra hours too
+    const orgId = session.metadata?.organization_id;
+    if (orgId) {
+      await calculateAffiliateCommission(supabase, orgId, session);
+    }
   }
 }

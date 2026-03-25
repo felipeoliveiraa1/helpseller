@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
@@ -19,7 +19,16 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
+
+  // Capture referral code from URL (?ref=CODE) and persist in localStorage
+  useEffect(() => {
+    const ref = searchParams.get('ref')
+    if (ref) {
+      localStorage.setItem('helpseller_ref', ref.toUpperCase().trim())
+    }
+  }, [searchParams])
 
   const formatDocument = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 14)
@@ -71,6 +80,7 @@ export default function RegisterPage() {
           organization_phone: orgPhone.trim() || null,
           organization_email: orgEmail.trim() || null,
           organization_address: orgAddress.trim() || null,
+          referral_code: localStorage.getItem('helpseller_ref') || null,
         },
       },
     })

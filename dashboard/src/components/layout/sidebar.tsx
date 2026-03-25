@@ -48,6 +48,7 @@ export function Sidebar() {
     avatar_url: string | null
   } | null>(null)
   const [orgPlan, setOrgPlan] = useState<string>('FREE')
+  const [isAffiliate, setIsAffiliate] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -72,6 +73,16 @@ export function Sidebar() {
                 })
             }
           }
+        })
+      // Check if user is an affiliate
+      supabase
+        .from('affiliates')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setIsAffiliate(true)
         })
     }
   }, [user, supabase])
@@ -176,6 +187,24 @@ export function Sidebar() {
           })
         )}
       </nav>
+
+      {/* Affiliate link (only for active affiliates) */}
+      {mounted && isAffiliate && (
+        <div className="px-4 pb-2">
+          <Link
+            href="/afiliado"
+            className={cn(
+              'flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors',
+              isActivePath(pathname, '/afiliado')
+                ? 'bg-neon-pink/10 text-neon-pink'
+                : 'text-gray-400 hover:text-white'
+            )}
+          >
+            <span className="material-icons-outlined text-[20px]">handshake</span>
+            Afiliado
+          </Link>
+        </div>
+      )}
 
       {/* User footer */}
       <div className="p-4 border-t border-white/5 space-y-1" suppressHydrationWarning={true}>

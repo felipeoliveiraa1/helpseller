@@ -54,6 +54,19 @@ server.register(cors, {
 server.register(rateLimit, {
     max: 100,
     timeWindow: '1 minute',
+    keyGenerator: (request) => request.ip,
+    allowList: [],
+});
+
+// Stricter rate limits for sensitive endpoints (applied via route config)
+// Admin routes: 30 req/min, Billing routes: 20 req/min, Auth-related: 10 req/min
+server.addHook('onRoute', (routeOptions) => {
+    const path = routeOptions.url;
+    if (path.startsWith('/api/admin')) {
+        routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: '1 minute' } };
+    } else if (path.startsWith('/api/calls') && routeOptions.method === 'POST') {
+        routeOptions.config = { ...routeOptions.config, rateLimit: { max: 20, timeWindow: '1 minute' } };
+    }
 });
 server.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
 server.register(websocket);

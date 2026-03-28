@@ -4,8 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { z } from 'zod'
 
-const ADMIN_EMAILS = ['felipeoliveiraa1@hotmail.com']
-
 const ActionSchema = z.object({
   affiliate_id: z.string().uuid('ID de afiliado inválido'),
   action: z.enum(['approve', 'reject'] as const),
@@ -14,7 +12,13 @@ const ActionSchema = z.object({
 async function verifyAdmin(supabase: ReturnType<typeof createClient>) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-  if (!ADMIN_EMAILS.includes(user.email ?? '')) return null
+  const adminDb = createAdminClient()
+  const { data: adminRow } = await adminDb
+    .from('admin_users')
+    .select('id')
+    .eq('email', user.email ?? '')
+    .maybeSingle()
+  if (!adminRow) return null
   return user
 }
 
@@ -175,12 +179,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // TODO: Send invite email with temp password
+    // TODO: Send invite email with temp password via secure channel (e.g. Resend, SES)
+    // The temp password should NEVER be returned in the API response
 
     return NextResponse.json({
-      message: 'Afiliado aprovado com sucesso',
+      message: 'Afiliado aprovado com sucesso. Envie a senha temporária por canal seguro.',
       user_id: authData.user.id,
-      temp_password: tempPassword, // Return to admin so they can share
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'

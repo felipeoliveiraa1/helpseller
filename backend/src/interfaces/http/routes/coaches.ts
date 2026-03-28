@@ -48,6 +48,13 @@ export async function coachRoutes(fastify: FastifyInstance) {
 
         try {
             const buffer = await file.toBuffer();
+
+            // Security: validate PDF magic bytes (file signature), not just MIME type
+            const PDF_MAGIC = Buffer.from('%PDF-');
+            if (buffer.length < 5 || !buffer.subarray(0, 5).equals(PDF_MAGIC)) {
+                return reply.code(400).send({ error: 'Arquivo inválido: não é um PDF válido' });
+            }
+
             logger.info({ size: buffer.length }, 'Coaches: PDF buffer received');
 
             // Extract text from PDF (pdf-parse v2 API)
@@ -108,6 +115,13 @@ ${rawText}`;
 
         try {
             const buffer = await file.toBuffer();
+
+            // Security: validate PDF magic bytes
+            const PDF_MAGIC_PRODUCT = Buffer.from('%PDF-');
+            if (buffer.length < 5 || !buffer.subarray(0, 5).equals(PDF_MAGIC_PRODUCT)) {
+                return reply.code(400).send({ error: 'Arquivo inválido: não é um PDF válido' });
+            }
+
             const { PDFParse: PDFParseProduct } = await import('pdf-parse');
             const parserProduct = new PDFParseProduct({ data: buffer });
             const resultProduct = await parserProduct.getText();

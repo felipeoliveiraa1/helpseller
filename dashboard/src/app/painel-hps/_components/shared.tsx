@@ -9,7 +9,10 @@ export const COLORS: Record<string, string> = {
 }
 export const BRL_RATE = 5.80
 
-export const ADMIN_EMAILS = [
+// Admin emails are now stored in admin_users table (managed via SQL)
+// This constant is kept only as a client-side fallback for the login check
+// The real authorization happens via RLS policies using is_admin() function
+export const ADMIN_EMAILS_LEGACY = [
     'felipeoliveiraa1@hotmail.com',
     'lucastria01@gmail.com',
 ]

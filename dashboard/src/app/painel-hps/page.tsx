@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { NEON_PINK, ADMIN_EMAILS, AdminTabBar, type AdminTab, type EnvMode } from './_components/shared'
+import { NEON_PINK, AdminTabBar, type AdminTab, type EnvMode } from './_components/shared'
 import TabVisaoGeral from './_components/tab-visao-geral'
 import TabCustos from './_components/tab-custos'
 import TabUsuarios from './_components/tab-usuarios'
@@ -28,8 +28,16 @@ export default function AdminPage() {
         setMounted(true)
         const checkAdmin = async () => {
             const { data: { user } } = await supabase.auth.getUser()
-            if (user && ADMIN_EMAILS.includes(user.email ?? '')) {
-                setIsAuthenticated(true)
+            if (user) {
+                // Check admin_users table (RLS policy allows self-check)
+                const { data: adminRow } = await supabase
+                    .from('admin_users')
+                    .select('id')
+                    .eq('email', user.email ?? '')
+                    .maybeSingle()
+                if (adminRow) {
+                    setIsAuthenticated(true)
+                }
             }
             setAuthChecking(false)
         }
@@ -40,7 +48,11 @@ export default function AdminPage() {
         e.preventDefault()
         const doLogin = async () => {
             const { error } = await supabase.auth.signInWithPassword({ email: loginUser, password: loginPass })
-            if (error || !ADMIN_EMAILS.includes(loginUser.toLowerCase())) {
+            // After login, check admin_users table
+            const { data: adminCheck } = !error
+                ? await supabase.from('admin_users').select('id').eq('email', loginUser.toLowerCase()).maybeSingle()
+                : { data: null }
+            if (error || !adminCheck) {
                 if (!error) await supabase.auth.signOut()
                 setLoginError(true)
                 setShaking(true)

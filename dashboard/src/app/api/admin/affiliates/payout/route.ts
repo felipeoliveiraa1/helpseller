@@ -4,8 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { z } from 'zod'
 
-const ADMIN_EMAILS = ['felipeoliveiraa1@hotmail.com']
-
 const PayoutActionSchema = z.object({
   payout_id: z.string().uuid('ID de pagamento inválido'),
   action: z.enum(['approve', 'reject'] as const),
@@ -15,7 +13,13 @@ const PayoutActionSchema = z.object({
 async function verifyAdmin(supabase: ReturnType<typeof createClient>) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-  if (!ADMIN_EMAILS.includes(user.email ?? '')) return null
+  const adminDb = createAdminClient()
+  const { data: adminRow } = await adminDb
+    .from('admin_users')
+    .select('id')
+    .eq('email', user.email ?? '')
+    .maybeSingle()
+  if (!adminRow) return null
   return user
 }
 

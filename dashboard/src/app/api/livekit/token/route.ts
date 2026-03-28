@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { AccessToken, type VideoGrant } from 'livekit-server-sdk';
 import { z } from 'zod';
 
@@ -12,17 +13,23 @@ const BodySchema = z.object({
 
 export type LiveKitTokenBody = z.infer<typeof BodySchema>;
 
-/** CORS: use * so Chrome extension (and any origin) can call this API; auth is via Bearer token. */
-const CORS_HEADERS: Record<string, string> = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Max-Age': '86400',
-};
+/** Allowed origins for CORS - dashboard + chrome extension */
+const ALLOWED_ORIGINS = (process.env.LIVEKIT_CORS_ORIGINS ?? 'chrome-extension://').split(',').map(o => o.trim());
+
+function getCorsHeaders(request: NextRequest): Record<string, string> {
+    const origin = request.headers.get('origin') ?? '';
+    const isAllowed = ALLOWED_ORIGINS.some(ao => origin.startsWith(ao) || origin === ao);
+    return {
+        'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400',
+    };
+}
 
 /** OPTIONS for preflight when extension calls from chrome-extension:// origin */
-export async function OPTIONS() {
-    return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+export async function OPTIONS(request: NextRequest) {
+    return new NextResponse(null, { status: 204, headers: getCorsHeaders(request) });
 }
 
 /**
@@ -31,13 +38,14 @@ export async function OPTIONS() {
  * Requires authenticated user (Supabase session). Token is never generated on the client.
  */
 export async function POST(request: NextRequest) {
+    const corsHeaders = getCorsHeaders(request);
     try {
         const apiKey = process.env.LIVEKIT_API_KEY;
         const apiSecret = process.env.LIVEKIT_API_SECRET;
         if (!apiKey || !apiSecret) {
             return NextResponse.json(
                 { error: 'LiveKit is not configured (missing LIVEKIT_API_KEY or LIVEKIT_API_SECRET)' },
-                { status: 503, headers: CORS_HEADERS }
+                { status: 503, headers: corsHeaders }
             );
         }
 
@@ -61,7 +69,7 @@ export async function POST(request: NextRequest) {
             user = u;
         }
         if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS });
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
         }
 
         const body = await request.json();
@@ -69,12 +77,36 @@ export async function POST(request: NextRequest) {
         if (!parsed.success) {
             return NextResponse.json(
                 { error: 'Invalid request', details: parsed.error.flatten() },
-                { status: 400, headers: CORS_HEADERS }
+                { status: 400, headers: corsHeaders }
             );
         }
 
         const { roomName, identity: requestedIdentity, role } = parsed.data;
         const identity = requestedIdentity.trim();
+
+        // Security: verify the room (call) belongs to user's organization
+        const adminDb = createAdminClient();
+        const { data: profile } = await adminDb
+            .from('profiles')
+            .select('organization_id')
+            .eq('id', user.id)
+            .single();
+
+        if (profile?.organization_id) {
+            const { data: call } = await adminDb
+                .from('calls')
+                .select('id')
+                .eq('id', roomName)
+                .eq('organization_id', profile.organization_id)
+                .maybeSingle();
+
+            if (!call) {
+                return NextResponse.json(
+                    { error: 'Room not found or access denied' },
+                    { status: 403, headers: corsHeaders }
+                );
+            }
+        }
 
         const at = new AccessToken(apiKey, apiSecret, {
             identity,
@@ -95,12 +127,12 @@ export async function POST(request: NextRequest) {
         if (!serverUrl) {
             console.warn('[LIVEKIT_TOKEN] NEXT_PUBLIC_LIVEKIT_URL is not set; extension will not publish to LiveKit');
         }
-        return NextResponse.json({ token, serverUrl }, { headers: CORS_HEADERS });
+        return NextResponse.json({ token, serverUrl }, { headers: corsHeaders });
     } catch (err) {
         console.error('[LIVEKIT_TOKEN] Error generating token:', err);
         return NextResponse.json(
             { error: 'Failed to generate token' },
-            { status: 500, headers: CORS_HEADERS }
+            { status: 500, headers: corsHeaders }
         );
     }
 }

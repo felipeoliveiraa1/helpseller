@@ -83,8 +83,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
     }
 
-    const ADMIN_EMAILS = ['felipeoliveiraa1@hotmail.com']
-    if (!ADMIN_EMAILS.includes(user.email ?? '')) {
+    const adminCheck = createAdminClient()
+    const { data: adminRow } = await adminCheck
+      .from('admin_users')
+      .select('id')
+      .eq('email', user.email ?? '')
+      .maybeSingle()
+    if (!adminRow) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 
@@ -119,8 +124,13 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
     }
 
-    const ADMIN_EMAILS = ['felipeoliveiraa1@hotmail.com']
-    if (!ADMIN_EMAILS.includes(user.email ?? '')) {
+    const adminCheck = createAdminClient()
+    const { data: adminRow } = await adminCheck
+      .from('admin_users')
+      .select('id')
+      .eq('email', user.email ?? '')
+      .maybeSingle()
+    if (!adminRow) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 

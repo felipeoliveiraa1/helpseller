@@ -78,6 +78,18 @@ export async function routes(fastify: FastifyInstance) {
             const { outcome } = parsed.data;
             const { organization_id } = request.user;
 
+            // Security: verify call belongs to user's organization before any update
+            const { data: call } = await supabaseAdmin
+                .from('calls')
+                .select('id, script_id, organization_id')
+                .eq('id', id)
+                .eq('organization_id', organization_id)
+                .single();
+
+            if (!call) {
+                return reply.code(404).send({ error: 'Call not found' });
+            }
+
             // 1. Update Call Summary
             const { data: summary, error } = await supabaseAdmin
                 .from('call_summaries')
@@ -87,14 +99,6 @@ export async function routes(fastify: FastifyInstance) {
                 .single();
 
             if (error) return reply.code(500).send({ error: 'Failed to update outcome' });
-
-            // 2. Trigger Learning Loop
-            // Fetch necessary data to track objection success
-            const { data: call } = await supabaseAdmin
-                .from('calls')
-                .select('script_id')
-                .eq('id', id)
-                .single();
 
             if (call && call.script_id) {
                 // We need to know which objections were faced. 

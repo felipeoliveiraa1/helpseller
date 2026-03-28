@@ -139,7 +139,7 @@ export function DashboardContentGuard({ children }: DashboardContentGuardProps) 
     return <OrgNullForm onSuccess={loadProfile} />
   }
 
-  const isFreePlan = organizationPlan === 'FREE' || !organizationPlan
+  const isFreePlan = (organizationPlan === 'FREE' || !organizationPlan) && organizationPlan !== 'TRIAL'
   if (isFreePlan && !isRouteAllowedForFree(pathname)) {
     return <PaywallScreen />
   }

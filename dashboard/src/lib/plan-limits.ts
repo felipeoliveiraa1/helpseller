@@ -3,7 +3,7 @@
  * Centralized configuration for plan-based access control.
  */
 
-export type PlanSlug = 'FREE' | 'STARTER' | 'PRO' | 'TEAM' | 'ENTERPRISE';
+export type PlanSlug = 'FREE' | 'TRIAL' | 'STARTER' | 'PRO' | 'TEAM' | 'ENTERPRISE';
 
 export type FeatureKey =
   | 'coaching_ai'
@@ -43,6 +43,30 @@ export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
       call_history: false,
       post_call_summary: false,
       basic_dashboard: false,
+      advanced_analytics: false,
+      seller_ranking: false,
+      manager_dashboard: false,
+      reprocess_analysis: false,
+      live_command_center: false,
+      manager_whisper: false,
+      advanced_kpis: false,
+      team_management: false,
+      custom_integrations: false,
+      priority_support: false,
+      dedicated_sla: false,
+    },
+  },
+  TRIAL: {
+    maxSellers: 1,
+    maxCallHoursPerMonth: 1, // 1 hora grátis (não renova por mês — é total)
+    extraHourCents: 0,
+    features: {
+      coaching_ai: true,
+      objection_detection: true,
+      spin_indicator: true,
+      call_history: true,
+      post_call_summary: true,
+      basic_dashboard: true,
       advanced_analytics: false,
       seller_ranking: false,
       manager_dashboard: false,

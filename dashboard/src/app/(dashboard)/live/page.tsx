@@ -148,52 +148,66 @@ export default function LivePage() {
     }, [isMounted]);
 
     // WebSocket: transcript + live summary (vídeo usa MediaStreamPlayer com sua própria conexão)
+    const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
+
     useEffect(() => {
         if (!isMounted || !selectedCall) return;
 
         setTranscripts([]);
         setLiveSummary(null);
+        setWsStatus('connecting');
 
         let socket: WebSocket | null = null;
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        let reconnectAttempt = 0;
+        let destroyed = false;
+        let sessionToken: string | null = null;
+        const MAX_RECONNECT_DELAY = 15000;
+        const callId = selectedCall.id;
 
         const connectWS = async () => {
-            const { data: callData } = await supabase
-                .from('calls')
-                .select('transcript')
-                .eq('id', selectedCall!.id)
-                .single();
+            if (destroyed) return;
 
-            if ((callData as any)?.transcript) {
-                setTranscripts((callData as any).transcript as any[]);
+            // Fetch existing transcript on first connect
+            if (reconnectAttempt === 0) {
+                const { data: callData } = await supabase
+                    .from('calls')
+                    .select('transcript')
+                    .eq('id', callId)
+                    .single();
+
+                if ((callData as any)?.transcript) {
+                    setTranscripts((callData as any).transcript as any[]);
+                }
             }
 
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session) return;
-            setToken(session.access_token);
+            if (!session || destroyed) return;
+            sessionToken = session.access_token;
+            setToken(sessionToken);
             if (session.user?.id) setManagerUserId(session.user.id);
 
+            setWsStatus('connecting');
             socket = new WebSocket(WS_URL);
 
             socket.onopen = () => {
-                // Auth challenge: send token as first message
-                socket!.send(JSON.stringify({ type: 'auth', payload: { token: session.access_token } }));
+                if (destroyed) { socket?.close(); return; }
+                reconnectAttempt = 0;
+                socket!.send(JSON.stringify({ type: 'auth', payload: { token: sessionToken } }));
             };
 
-            // Track auth state
             let wsAuthenticated = false;
 
             socket.onmessage = (event) => {
-                if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
-                    return;
-                }
+                if (event.data instanceof Blob || event.data instanceof ArrayBuffer) return;
                 const msg = JSON.parse(event.data as string);
 
-                // Handle auth challenge response
                 if (msg.type === 'auth:ok' && !wsAuthenticated) {
                     wsAuthenticated = true;
+                    setWsStatus('connected');
                     socket!.send(JSON.stringify({
                         type: 'manager:join',
-                        payload: { callId: selectedCall!.id }
+                        payload: { callId }
                     }));
                     return;
                 }
@@ -207,14 +221,31 @@ export default function LivePage() {
                 }
             };
 
+            socket.onerror = () => {
+                console.warn('[LIVE] WebSocket error');
+            };
+
+            socket.onclose = () => {
+                setWsStatus('disconnected');
+                if (destroyed) return;
+                // Exponential backoff reconnect
+                const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY);
+                reconnectAttempt++;
+                console.log(`[LIVE] WebSocket closed, reconnecting in ${delay}ms (attempt ${reconnectAttempt})`);
+                reconnectTimeout = setTimeout(connectWS, delay);
+            };
+
             setWs(socket);
         };
 
         connectWS();
 
         return () => {
+            destroyed = true;
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
             if (socket) socket.close();
             setWs(null);
+            setWsStatus('disconnected');
         };
     }, [selectedCall, isMounted]);
 
@@ -365,8 +396,17 @@ export default function LivePage() {
                                 <CardHeader className="py-4 border-b border-white/10">
                                     <div className="flex items-center justify-between gap-2 flex-wrap">
                                         <CardTitle className="text-base font-bold text-white flex items-center gap-2">
-                                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+                                            <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                                wsStatus === 'connected' ? 'bg-green-500 animate-pulse' :
+                                                wsStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                                                'bg-red-500'
+                                            }`} />
                                             <span className="truncate">Monitorando: {selectedCall.user?.full_name}</span>
+                                            {wsStatus === 'disconnected' && (
+                                                <span className="text-[10px] font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
+                                                    Reconectando...
+                                                </span>
+                                            )}
                                         </CardTitle>
                                         <span className="text-xs px-2 py-1 rounded-lg bg-white/10 text-gray-400">
                                             {selectedCall.platform}

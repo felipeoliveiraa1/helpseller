@@ -62,6 +62,10 @@ interface CoachingState {
     currentSpinPhase: string | null;
     setSpinPhase: (phase: string) => void;
 
+    // Font Size Scale (0 = default, -2 to +4 range)
+    fontSizeOffset: number;
+    setFontSizeOffset: (offset: number) => void;
+
     // Actions
     toggleMinimize: () => void;
     toggleTheme: () => void;
@@ -104,6 +108,8 @@ export const useCoachingStore = create<CoachingState>((set, get) => ({
     activeSpeaker: 'lead',
 
     currentSpinPhase: null,
+    fontSizeOffset: 0,
+    setFontSizeOffset: (offset) => set({ fontSizeOffset: Math.max(-2, Math.min(4, offset)) }),
 
     cards: [],
 

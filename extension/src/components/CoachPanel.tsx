@@ -13,6 +13,8 @@ const SPIN_PHASES: Record<string, { label: string; description: string; dot: str
 export function CoachPanel() {
     const cards = useCoachingStore(state => state.cards);
     const currentSpinPhase = useCoachingStore(state => state.currentSpinPhase);
+    const fontSizeOffset = useCoachingStore(state => state.fontSizeOffset);
+    const fs = (base: number) => base + fontSizeOffset;
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const latestPhase = useMemo(() => {
@@ -33,8 +35,8 @@ export function CoachPanel() {
                 >
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: TEXT_MUTED }}>SPIN:{latestPhase}</span>
-                            <span className="text-[13px] font-medium" style={{ color: TEXT_SECONDARY }}>{phaseInfo.label}</span>
+                            <span className="font-semibold uppercase tracking-wider" style={{ fontSize: fs(10), color: TEXT_MUTED }}>SPIN:{latestPhase}</span>
+                            <span className="font-medium" style={{ fontSize: fs(13), color: TEXT_SECONDARY }}>{phaseInfo.label}</span>
                         </div>
                         <div className="flex gap-1">
                             {['S', 'P', 'I', 'N'].map(p => (
@@ -46,7 +48,7 @@ export function CoachPanel() {
                             ))}
                         </div>
                     </div>
-                    <p className="text-[11px] mt-1" style={{ color: TEXT_MUTED }}>{phaseInfo.description}</p>
+                    <p className="mt-1" style={{ fontSize: fs(11), color: TEXT_MUTED }}>{phaseInfo.description}</p>
                 </div>
             )}
             <div className="p-3 space-y-1">
@@ -55,7 +57,7 @@ export function CoachPanel() {
                 ))}
                 {activeCards.length === 0 && (
                     <div className="py-8 flex flex-col items-center justify-center" style={{ color: TEXT_MUTED }}>
-                        <p className="text-[13px]">{phaseInfo ? 'Analisando conversa...' : 'Aguardando conversa...'}</p>
+                        <p style={{ fontSize: fs(13) }}>{phaseInfo ? 'Analisando conversa...' : 'Aguardando conversa...'}</p>
                     </div>
                 )}
             </div>

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useCoachingStore } from '../stores/coaching-store';
-import { Minimize2, Radio } from 'lucide-react';
-import { BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, ACCENT_ACTIVE, ACCENT_DANGER } from '../lib/theme';
+import { Minimize2, Radio, Minus, Plus } from 'lucide-react';
+import { BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED, ACCENT_ACTIVE, ACCENT_DANGER } from '../lib/theme';
 
 const logoUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('logo.svg') : '';
 
 export function SidebarHeader() {
-    const { isMinimized, toggleMinimize, connectionStatus, startTime } = useCoachingStore();
+    const { isMinimized, toggleMinimize, connectionStatus, startTime, fontSizeOffset, setFontSizeOffset } = useCoachingStore();
     const [elapsed, setElapsed] = useState('00:00');
 
     useEffect(() => {
@@ -34,8 +34,31 @@ export function SidebarHeader() {
                 <span className="font-semibold text-[13px] tracking-tight" style={{ color: TEXT }}>HelpSeller</span>
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: dotColor }} />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
                 <span className="font-mono text-[11px]" style={{ color: TEXT_SECONDARY }}>{elapsed}</span>
+                <div className="flex items-center gap-0.5 ml-1 px-1 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                    <button
+                        onClick={() => setFontSizeOffset(fontSizeOffset - 1)}
+                        disabled={fontSizeOffset <= -2}
+                        className="p-0.5 rounded hover:bg-white/10 transition-colors disabled:opacity-30"
+                        style={{ color: TEXT_MUTED }}
+                        aria-label="Diminuir fonte"
+                    >
+                        <Minus size={10} />
+                    </button>
+                    <span className="text-[9px] font-mono w-4 text-center" style={{ color: TEXT_MUTED }}>
+                        {fontSizeOffset === 0 ? 'A' : fontSizeOffset > 0 ? `+${fontSizeOffset}` : fontSizeOffset}
+                    </span>
+                    <button
+                        onClick={() => setFontSizeOffset(fontSizeOffset + 1)}
+                        disabled={fontSizeOffset >= 4}
+                        className="p-0.5 rounded hover:bg-white/10 transition-colors disabled:opacity-30"
+                        style={{ color: TEXT_MUTED }}
+                        aria-label="Aumentar fonte"
+                    >
+                        <Plus size={10} />
+                    </button>
+                </div>
                 <button onClick={toggleMinimize} className="p-1 rounded hover:bg-white/5 transition-colors" style={{ color: TEXT_SECONDARY }} aria-label="Minimizar">
                     <Minimize2 size={14} />
                 </button>

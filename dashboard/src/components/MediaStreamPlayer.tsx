@@ -234,13 +234,52 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                 });
 
                 sourceBuffer.addEventListener('error', () => {
+                    console.warn('[LIVE_DEBUG] SourceBuffer error — attempting recovery');
                     sourceBufferDeadRef.current = true;
                     sourceBufferRef.current = null;
                     try {
                         if (mediaSource.readyState === 'open') mediaSource.endOfStream();
-                    } catch (_) { /* allow playback of already buffered range */ }
-                    console.warn('[LIVE_DEBUG] SourceBuffer error — buffer removed');
-                    setError('Playback error');
+                    } catch (_) { /* ignore */ }
+
+                    // Auto-recover: recreate MediaSource after brief pause
+                    setTimeout(() => {
+                        if (!videoRef.current) return;
+                        console.log('[LIVE_DEBUG] Recreating MediaSource after error');
+                        sourceBufferDeadRef.current = false;
+                        hasAppendedInitRef.current = false;
+                        queueRef.current = [];
+                        setError(null);
+
+                        const newMS = new MediaSource();
+                        mediaSourceRef.current = newMS;
+                        videoRef.current!.src = URL.createObjectURL(newMS);
+                        newMS.addEventListener('sourceopen', () => {
+                            URL.revokeObjectURL(videoRef.current!.src);
+                            try {
+                                const webmTypes = [
+                                    'video/webm;codecs=opus,vp9',
+                                    'video/webm;codecs=vp9,opus',
+                                    'video/webm;codecs=opus,vp8',
+                                    'video/webm;codecs=vp8,opus',
+                                    'video/webm;codecs=vp8,vorbis',
+                                    'video/webm;codecs=vp9',
+                                    'video/webm;codecs=vp8'
+                                ];
+                                const mimeType = webmTypes.find((t) => MediaSource.isTypeSupported(t)) ?? webmTypes[0];
+                                const newSB = newMS.addSourceBuffer(mimeType);
+                                sourceBufferRef.current = newSB;
+                                newSB.mode = 'segments';
+                                newSB.addEventListener('updateend', () => processQueue());
+                                newSB.addEventListener('error', () => {
+                                    sourceBufferDeadRef.current = true;
+                                    sourceBufferRef.current = null;
+                                    setError('Playback error');
+                                });
+                            } catch (e) {
+                                setError('Playback error');
+                            }
+                        });
+                    }, 1500);
                 });
 
                 trimIntervalRef.current = setInterval(() => {
@@ -336,12 +375,36 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                     }
                 };
 
+                let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+                let reconnectAttempt = 0;
+                const MAX_RECONNECT_DELAY = 10000;
+
+                const reconnectWS = () => {
+                    if (reconnectTimer) return;
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY);
+                    reconnectAttempt++;
+                    console.log(`[LIVE_DEBUG] MediaStreamPlayer WS reconnecting in ${delay}ms (attempt ${reconnectAttempt})`);
+                    reconnectTimer = setTimeout(() => {
+                        reconnectTimer = null;
+                        if (!wsRef.current || wsRef.current.readyState >= WebSocket.CLOSING) {
+                            const newWs = new WebSocket(wsUrl);
+                            newWs.binaryType = 'arraybuffer';
+                            wsRef.current = newWs;
+                            newWs.onopen = ws.onopen;
+                            newWs.onmessage = ws.onmessage;
+                            newWs.onerror = ws.onerror;
+                            newWs.onclose = ws.onclose;
+                        }
+                    }, delay);
+                };
+
                 ws.onerror = () => {
-                    setError('Connection error');
+                    console.warn('[LIVE_DEBUG] MediaStreamPlayer WS error');
                 };
 
                 ws.onclose = () => {
                     setIsPlaying(false);
+                    reconnectWS();
                 };
 
             } catch (err: unknown) {

@@ -9,8 +9,80 @@ import { PaywallScreen } from '@/components/paywall-screen'
 import { PlanProvider, FeatureGate, LimitWarning, useLimitWarnings, usePlanContext } from '@/components/feature-gate'
 import { getRequiredFeature, type FeatureKey } from '@/lib/plan-limits'
 import { Loader2 } from 'lucide-react'
+import Link from 'next/link'
 
 const FREE_ALLOWED_ROUTES = ['/billing', '/billing/success', '/billing/cancel', '/settings'] as const
+
+function TrialBanner({ organizationId }: { organizationId: string }) {
+  const [usage, setUsage] = useState<{ usedMinutes: number; totalMinutes: number } | null>(null)
+  const supabase = createClient()
+
+  useEffect(() => {
+    async function fetchUsage() {
+      // Get total call minutes for this org (all time for TRIAL, not monthly)
+      const { data } = await supabase
+        .from('calls')
+        .select('duration_seconds')
+        .eq('organization_id', organizationId)
+        .eq('status', 'COMPLETED')
+
+      const totalSeconds = (data || []).reduce((sum: number, c: any) => sum + (c.duration_seconds || 0), 0)
+      setUsage({ usedMinutes: Math.round(totalSeconds / 60), totalMinutes: 60 })
+    }
+    fetchUsage()
+  }, [organizationId, supabase])
+
+  if (!usage) return null
+
+  const remaining = Math.max(0, usage.totalMinutes - usage.usedMinutes)
+  const percentage = Math.min(100, (usage.usedMinutes / usage.totalMinutes) * 100)
+  const isLow = remaining <= 15
+  const isExhausted = remaining <= 0
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 mb-4 ${
+      isExhausted ? 'border-red-500/30 bg-red-500/10' :
+      isLow ? 'border-amber-500/30 bg-amber-500/10' :
+      'border-blue-500/20 bg-blue-500/5'
+    }`}>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className={`material-icons-outlined text-lg ${
+            isExhausted ? 'text-red-400' : isLow ? 'text-amber-400' : 'text-blue-400'
+          }`}>
+            {isExhausted ? 'error' : isLow ? 'warning' : 'rocket_launch'}
+          </span>
+          <div>
+            <p className={`text-sm font-medium ${
+              isExhausted ? 'text-red-200' : isLow ? 'text-amber-200' : 'text-blue-200'
+            }`}>
+              {isExhausted
+                ? 'Seu trial gratuito acabou'
+                : `Plano Trial — ${remaining} min restantes de 1h gratuita`}
+            </p>
+            {!isExhausted && (
+              <div className="mt-1.5 w-48 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    isLow ? 'bg-amber-400' : 'bg-blue-400'
+                  }`}
+                  style={{ width: `${percentage}%` }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+        <Link
+          href="/billing"
+          className="shrink-0 px-4 py-2 rounded-lg text-xs font-bold text-white transition-all hover:brightness-110"
+          style={{ backgroundColor: '#ff007a' }}
+        >
+          {isExhausted ? 'Assinar agora' : 'Fazer upgrade'}
+        </Link>
+      </div>
+    </div>
+  )
+}
 
 function isRouteAllowedForFree(pathname: string): boolean {
   return FREE_ALLOWED_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
@@ -146,6 +218,9 @@ export function DashboardContentGuard({ children }: DashboardContentGuardProps) 
 
   return (
     <PlanProvider>
+      {organizationPlan === 'TRIAL' && organizationId && (
+        <TrialBanner organizationId={organizationId} />
+      )}
       <div className="mb-4">
         <OrgCompleteBanner />
       </div>

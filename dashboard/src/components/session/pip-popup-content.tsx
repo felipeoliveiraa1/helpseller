@@ -114,12 +114,16 @@ export function PipPopupContent({ state, onDismiss, onStop }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '2px 4px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
             <button
-              onClick={() => setFontSizeOffset(Math.max(-2, fontSizeOffset - 1))}
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); setFontSizeOffset(Math.max(-2, fontSizeOffset - 1)); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
               disabled={fontSizeOffset <= -2}
               style={{ padding: '0 3px', background: 'none', border: 'none', fontSize: 10, fontWeight: 700, color: fontSizeOffset <= -2 ? '#333' : '#666', cursor: fontSizeOffset <= -2 ? 'default' : 'pointer' }}
             >A-</button>
             <button
-              onClick={() => setFontSizeOffset(Math.min(4, fontSizeOffset + 1))}
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); setFontSizeOffset(Math.min(4, fontSizeOffset + 1)); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
               disabled={fontSizeOffset >= 4}
               style={{ padding: '0 3px', background: 'none', border: 'none', fontSize: 10, fontWeight: 700, color: fontSizeOffset >= 4 ? '#333' : '#666', cursor: fontSizeOffset >= 4 ? 'default' : 'pointer' }}
             >A+</button>

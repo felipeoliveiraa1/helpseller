@@ -116,7 +116,7 @@ export function SessionPanel({ state, onStop, onDismissCoachMessage, onReset }: 
       <div className="flex justify-end mb-1">
         <div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-white/10 bg-white/[0.03]">
           <button
-            onClick={() => setFontSizeOffset(Math.max(-2, fontSizeOffset - 1))}
+            onClick={(e) => { e.stopPropagation(); setFontSizeOffset(Math.max(-2, fontSizeOffset - 1)); }}
             disabled={fontSizeOffset <= -2}
             className="px-1.5 py-0.5 text-xs font-bold text-gray-500 hover:text-white disabled:opacity-30 transition-colors rounded"
           >A-</button>
@@ -124,7 +124,7 @@ export function SessionPanel({ state, onStop, onDismissCoachMessage, onReset }: 
             {fontSizeOffset === 0 ? 'A' : fontSizeOffset > 0 ? `+${fontSizeOffset}` : fontSizeOffset}
           </span>
           <button
-            onClick={() => setFontSizeOffset(Math.min(4, fontSizeOffset + 1))}
+            onClick={(e) => { e.stopPropagation(); setFontSizeOffset(Math.min(4, fontSizeOffset + 1)); }}
             disabled={fontSizeOffset >= 4}
             className="px-1.5 py-0.5 text-xs font-bold text-gray-500 hover:text-white disabled:opacity-30 transition-colors rounded"
           >A+</button>

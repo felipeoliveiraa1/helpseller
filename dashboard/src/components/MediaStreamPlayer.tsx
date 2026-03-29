@@ -90,33 +90,20 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         const { bytes, isHeader } = item;
         if (bytes.length === 0) { processQueue(); return; }
 
-        // Skip clearly invalid headers (too small)
-        if (isHeader && !isLikelyInitSegment(bytes)) {
-            console.warn('[LIVE_DEBUG] Skipping too-small header chunk, size=', bytes.length);
+        // Skip clearly invalid chunks (too small)
+        if (bytes.length < 2) {
             processQueue();
             return;
         }
 
-        // Wait for init segment before appending data
+        // Wait for first init segment before appending data
         if (!isHeader && !hasAppendedInitRef.current) {
-            // Drop data chunks that arrive before header instead of re-queuing (prevents infinite loop)
-            return;
+            return; // Drop data before header
         }
 
         try {
-            // On new header after init: reset timestampOffset to continue from current duration
-            if (isHeader && hasAppendedInitRef.current) {
-                const duration = mediaSource.duration;
-                const offset = Number.isFinite(duration) && duration > 0 ? duration : 0;
-                try {
-                    sourceBuffer.timestampOffset = offset;
-                } catch {
-                    // If we can't set offset, just append anyway
-                }
-            }
-
-            if (isHeader) {
-                // Detect codec from init segment and check if SourceBuffer matches
+            if (isHeader && !hasAppendedInitRef.current) {
+                // FIRST header: detect codec and switch SourceBuffer if needed
                 const detectedCodec = detectCodecFromInit(bytes);
                 const currentMime = (sourceBuffer as any).mimeType || '';
                 const needsSwitch = (detectedCodec === 'vp8' && currentMime.includes('vp9')) ||
@@ -127,6 +114,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                     try {
                         mediaSource.removeSourceBuffer(sourceBuffer);
                         const newSB = mediaSource.addSourceBuffer(newMime);
+                        (newSB as any).mimeType = newMime;
                         sourceBufferRef.current = newSB;
                         newSB.mode = 'segments';
                         newSB.addEventListener('updateend', () => processQueue());
@@ -135,7 +123,6 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                             sourceBufferRef.current = null;
                             setError('Playback error');
                         });
-                        hasAppendedInitRef.current = false;
                         // Re-queue this header for the new SourceBuffer
                         queueRef.current.unshift(item!);
                         return;
@@ -145,6 +132,9 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                 }
                 hasAppendedInitRef.current = true;
                 console.log('[LIVE_DEBUG] Init segment appended, size=', bytes.byteLength, 'codec=', detectedCodec);
+            } else if (isHeader && hasAppendedInitRef.current) {
+                // SUBSEQUENT headers: skip — just append as data to avoid resetting playback
+                // The backend often flags regular chunks as isHeader incorrectly
             }
 
             const copy = new Uint8Array(bytes.byteLength);

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { WebSessionState, CallResult } from '@/hooks/use-web-session'
 import { TranscriptPanel } from './transcript-panel'
 import { CoachingPanel } from './coaching-panel'
@@ -15,6 +16,8 @@ interface SessionPanelProps {
 }
 
 export function SessionPanel({ state, onStop, onDismissCoachMessage, onReset }: SessionPanelProps) {
+  const [fontSizeOffset, setFontSizeOffset] = useState(0)
+  const fs = (base: number) => base + fontSizeOffset
   // Connecting state
   if (state.status === 'connecting' || state.status === 'configuring') {
     return (
@@ -109,11 +112,30 @@ export function SessionPanel({ state, onStop, onDismissCoachMessage, onReset }: 
   // Active session
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
+      {/* Font size controls */}
+      <div className="flex justify-end mb-1">
+        <div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-white/10 bg-white/[0.03]">
+          <button
+            onClick={() => setFontSizeOffset(Math.max(-2, fontSizeOffset - 1))}
+            disabled={fontSizeOffset <= -2}
+            className="px-1.5 py-0.5 text-xs font-bold text-gray-500 hover:text-white disabled:opacity-30 transition-colors rounded"
+          >A-</button>
+          <span className="text-[10px] font-mono text-gray-600 w-5 text-center">
+            {fontSizeOffset === 0 ? 'A' : fontSizeOffset > 0 ? `+${fontSizeOffset}` : fontSizeOffset}
+          </span>
+          <button
+            onClick={() => setFontSizeOffset(Math.min(4, fontSizeOffset + 1))}
+            disabled={fontSizeOffset >= 4}
+            className="px-1.5 py-0.5 text-xs font-bold text-gray-500 hover:text-white disabled:opacity-30 transition-colors rounded"
+          >A+</button>
+        </div>
+      </div>
+
       {/* Main content: 2-column layout */}
       <div className="flex-1 flex gap-0 overflow-hidden rounded-xl border border-white/5" style={{ backgroundColor: '#1e1e1e' }}>
         {/* Left: Transcript */}
         <div className="flex-1 border-r border-white/5">
-          <TranscriptPanel transcript={state.transcript} />
+          <TranscriptPanel transcript={state.transcript} fs={fs} />
         </div>
 
         {/* Right: Coaching */}
@@ -122,6 +144,7 @@ export function SessionPanel({ state, onStop, onDismissCoachMessage, onReset }: 
             messages={state.coachMessages}
             currentSpinPhase={state.currentSpinPhase}
             onDismiss={onDismissCoachMessage}
+            fs={fs}
           />
         </div>
       </div>

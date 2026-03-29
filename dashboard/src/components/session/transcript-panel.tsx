@@ -5,11 +5,13 @@ import type { TranscriptChunk } from '@/hooks/use-web-session'
 
 interface TranscriptPanelProps {
   transcript: TranscriptChunk[]
+  fs?: (base: number) => number
 }
 
 const NEON_PINK = '#ff007a'
 
-export function TranscriptPanel({ transcript }: TranscriptPanelProps) {
+export function TranscriptPanel({ transcript, fs: fsProp }: TranscriptPanelProps) {
+  const fs = fsProp ?? ((b: number) => b)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on new messages
@@ -58,12 +60,13 @@ export function TranscriptPanel({ transcript }: TranscriptPanelProps) {
                   : 'bg-white/5 border border-white/5'
               }`}
             >
-              <p className="text-xs font-semibold mb-0.5" style={{
+              <p className="font-semibold mb-0.5" style={{
+                fontSize: fs(12),
                 color: chunk.role === 'seller' ? NEON_PINK : '#888',
               }}>
                 {chunk.speaker}
               </p>
-              <p className="text-sm text-gray-200 leading-relaxed">{chunk.text}</p>
+              <p className="text-gray-200 leading-relaxed" style={{ fontSize: fs(14) }}>{chunk.text}</p>
             </div>
           </div>
         ))}

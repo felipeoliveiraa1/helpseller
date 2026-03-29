@@ -9,6 +9,7 @@ interface CoachingPanelProps {
   messages: CoachMessage[]
   currentSpinPhase: string | null
   onDismiss: (id: string) => void
+  fs?: (base: number) => number
 }
 
 const NEON_PINK = '#ff007a'
@@ -25,7 +26,7 @@ function getIcon(type: string, metadata?: Record<string, unknown>) {
   }
 }
 
-function CoachCard({ message, onDismiss }: { message: CoachMessage; onDismiss: (id: string) => void }) {
+function CoachCard({ message, onDismiss, fs }: { message: CoachMessage; onDismiss: (id: string) => void; fs: (base: number) => number }) {
   const typeLabel = message.type === 'manager-whisper' || message.metadata?.source === 'manager'
     ? 'Gestor'
     : message.type.replace('-', ' ')
@@ -36,16 +37,16 @@ function CoachCard({ message, onDismiss }: { message: CoachMessage; onDismiss: (
       <div className="flex items-start justify-between gap-2 mb-1">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {getIcon(message.type, message.metadata)}
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 truncate">
+          <span className="font-semibold uppercase tracking-wider text-gray-500 truncate" style={{ fontSize: fs(10) }}>
             {typeLabel}
           </span>
           {isUrgent && (
-            <span className="text-[9px] font-semibold text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded shrink-0">
+            <span className="font-semibold text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded shrink-0" style={{ fontSize: fs(9) }}>
               Urgente
             </span>
           )}
           {message.metadata?.phase ? (
-            <span className="text-[9px] font-semibold text-gray-500 bg-white/5 px-1.5 py-0.5 rounded shrink-0">
+            <span className="font-semibold text-gray-500 bg-white/5 px-1.5 py-0.5 rounded shrink-0" style={{ fontSize: fs(9) }}>
               SPIN:{String(message.metadata.phase)}
             </span>
           ) : null}
@@ -60,11 +61,11 @@ function CoachCard({ message, onDismiss }: { message: CoachMessage; onDismiss: (
       </div>
 
       {message.title && (
-        <h4 className="font-medium text-[13px] text-white mb-0.5 leading-tight">{message.title}</h4>
+        <h4 className="font-medium text-white mb-0.5 leading-tight" style={{ fontSize: fs(13) }}>{message.title}</h4>
       )}
 
       {message.description && (
-        <p className="text-xs text-gray-400 leading-relaxed">
+        <p className="text-gray-400 leading-relaxed" style={{ fontSize: fs(12) }}>
           {message.description.split(/(\*\*.*?\*\*)/).map((part, i) =>
             part.startsWith('**') && part.endsWith('**') ? (
               <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>
@@ -76,7 +77,7 @@ function CoachCard({ message, onDismiss }: { message: CoachMessage; onDismiss: (
       )}
 
       {message.type === 'objection' && message.metadata?.objection ? (
-        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-400 bg-black/30 rounded px-2 py-1.5 border border-white/5">
+        <div className="mt-2 flex items-center gap-1.5 text-gray-400 bg-black/30 rounded px-2 py-1.5 border border-white/5" style={{ fontSize: fs(11) }}>
           <Target size={10} className="shrink-0 text-yellow-400" />
           <span className="font-medium text-gray-500">Objeção:</span>
           <span>{String(message.metadata.objection)}</span>
@@ -84,7 +85,7 @@ function CoachCard({ message, onDismiss }: { message: CoachMessage; onDismiss: (
       ) : null}
 
       {message.metadata?.suggested_response ? (
-        <div className="mt-2 text-[11px] bg-green-500/[0.08] rounded px-2 py-1.5 border border-green-500/20">
+        <div className="mt-2 bg-green-500/[0.08] rounded px-2 py-1.5 border border-green-500/20" style={{ fontSize: fs(11) }}>
           <div className="flex items-center gap-1.5 mb-1 font-semibold text-green-400">
             <MessageCircle size={10} className="shrink-0" />
             Resposta ao cliente
@@ -94,7 +95,7 @@ function CoachCard({ message, onDismiss }: { message: CoachMessage; onDismiss: (
       ) : null}
 
       {message.metadata?.suggested_question ? (
-        <div className="mt-2 text-[11px] bg-white/[0.03] rounded px-2 py-1.5 border border-white/5">
+        <div className="mt-2 bg-white/[0.03] rounded px-2 py-1.5 border border-white/5" style={{ fontSize: fs(11) }}>
           <div className="flex items-center gap-1.5 mb-1 font-semibold text-gray-500">
             <Lightbulb size={10} className="shrink-0" />
             Pergunta sugerida
@@ -106,7 +107,8 @@ function CoachCard({ message, onDismiss }: { message: CoachMessage; onDismiss: (
   )
 }
 
-export function CoachingPanel({ messages, currentSpinPhase, onDismiss }: CoachingPanelProps) {
+export function CoachingPanel({ messages, currentSpinPhase, onDismiss, fs: fsProp }: CoachingPanelProps) {
+  const fs = fsProp ?? ((b: number) => b)
   const scrollRef = useRef<HTMLDivElement>(null)
   const activeMessages = messages.filter(m => !m.isDismissed)
 
@@ -128,7 +130,7 @@ export function CoachingPanel({ messages, currentSpinPhase, onDismiss }: Coachin
         <SpinIndicator currentPhase={currentSpinPhase} />
 
         {activeMessages.map(msg => (
-          <CoachCard key={msg.id} message={msg} onDismiss={onDismiss} />
+          <CoachCard key={msg.id} message={msg} onDismiss={onDismiss} fs={fs} />
         ))}
 
         {activeMessages.length === 0 && (

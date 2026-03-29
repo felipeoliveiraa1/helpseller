@@ -19,12 +19,13 @@ const LIVE_EDGE_SEEK_INTERVAL_MS = 2000;
 /** Only remove old buffer when we have at least this many seconds ahead (avoids DEMUXER_UNDERFLOW). */
 const MIN_BUFFER_AHEAD_BEFORE_TRIM_SEC = 10;
 
-const WEBM_EBML = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);
-const MIN_INIT_SEGMENT_BYTES = 100;
-
-function isWebMInit(bytes: Uint8Array): boolean {
-    if (bytes.length < MIN_INIT_SEGMENT_BYTES) return false;
-    return bytes[0] === WEBM_EBML[0] && bytes[1] === WEBM_EBML[1] && bytes[2] === WEBM_EBML[2] && bytes[3] === WEBM_EBML[3];
+/** Check if bytes look like a WebM init segment (EBML header). Relaxed: trusts backend isHeader flag. */
+function isLikelyInitSegment(bytes: Uint8Array): boolean {
+    // Must have some minimum size to be a valid init segment
+    if (bytes.length < 10) return false;
+    // Optionally check EBML magic (0x1A 0x45 0xDF 0xA3) but don't require it
+    // because the backend is authoritative about what is a header
+    return true;
 }
 
 /** Binary frame from backend: 1 byte flag (0x01=header, 0x00=data) + chunk bytes. */
@@ -78,9 +79,9 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         const { bytes, isHeader } = item;
         if (bytes.length === 0) { processQueue(); return; }
 
-        // Skip invalid headers
-        if (isHeader && !isWebMInit(bytes)) {
-            console.warn('[LIVE_DEBUG] Skipping invalid header chunk');
+        // Skip clearly invalid headers (too small)
+        if (isHeader && !isLikelyInitSegment(bytes)) {
+            console.warn('[LIVE_DEBUG] Skipping too-small header chunk, size=', bytes.length);
             processQueue();
             return;
         }

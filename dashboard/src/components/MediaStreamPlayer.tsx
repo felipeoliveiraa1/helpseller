@@ -118,7 +118,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
             if (isHeader) {
                 // Detect codec from init segment and check if SourceBuffer matches
                 const detectedCodec = detectCodecFromInit(bytes);
-                const currentMime = sourceBuffer.mimeType || '';
+                const currentMime = (sourceBuffer as any).mimeType || '';
                 const needsSwitch = (detectedCodec === 'vp8' && currentMime.includes('vp9')) ||
                                     (detectedCodec === 'vp9' && currentMime.includes('vp8'));
                 if (needsSwitch && mediaSource.readyState === 'open') {

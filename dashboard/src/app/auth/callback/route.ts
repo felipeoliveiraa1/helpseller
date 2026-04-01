@@ -14,15 +14,19 @@ export async function GET(request: Request) {
     if (code) {
         const cookieStore = await cookies()
         const supabase = createClient(cookieStore)
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
         if (error) {
             return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error.message)}`, requestUrl.origin))
         }
-    }
 
-    // Password recovery flow -> redirect to reset password page
-    if (type === 'recovery') {
-        return NextResponse.redirect(new URL('/reset-password', requestUrl.origin))
+        // Check if this is a password recovery flow
+        // Supabase sets the session type to 'recovery' in the AMR claims
+        const isRecovery = type === 'recovery' ||
+            (data?.session as any)?.amr?.some((a: { method: string }) => a.method === 'recovery')
+
+        if (isRecovery) {
+            return NextResponse.redirect(new URL('/reset-password', requestUrl.origin))
+        }
     }
 
     return NextResponse.redirect(new URL('/dashboard', requestUrl.origin))

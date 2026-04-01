@@ -25,20 +25,13 @@ export default function SessionLivePopup() {
   const coachEndRef = useRef<HTMLDivElement>(null)
   const transcriptEndRef = useRef<HTMLDivElement>(null)
 
-  // Keep channel ref stable — never close it while popup is alive
-  if (!channelRef.current) {
-    channelRef.current = new BroadcastChannel(BROADCAST_CHANNEL)
-  }
-
   useEffect(() => {
-    const ch = channelRef.current!
+    const ch = new BroadcastChannel(BROADCAST_CHANNEL)
+    channelRef.current = ch
     ch.onmessage = (e) => {
       if (e.data?.type === 'state') setState(e.data.payload)
     }
-    // Only close on actual page unload, not React re-render
-    const handleUnload = () => ch.close()
-    window.addEventListener('beforeunload', handleUnload)
-    return () => window.removeEventListener('beforeunload', handleUnload)
+    return () => ch.close()
   }, [])
 
   // Auto-scroll
@@ -50,16 +43,7 @@ export default function SessionLivePopup() {
   }, [state?.transcript, activeTab])
 
   const sendCmd = (type: string, data?: Record<string, unknown>) => {
-    const ch = channelRef.current
-    if (!ch) return
-    try {
-      ch.postMessage({ type, ...data })
-    } catch {
-      // Channel was closed — recreate
-      const newCh = new BroadcastChannel(BROADCAST_CHANNEL)
-      channelRef.current = newCh
-      newCh.postMessage({ type, ...data })
-    }
+    channelRef.current?.postMessage({ type, ...data })
   }
 
   const dismiss = (id: string) => sendCmd('dismiss', { id })

@@ -113,11 +113,14 @@ async function handleCheckoutCompleted(
     : session.customer?.id ?? null;
 
   if (orderCode) {
+    // Only mark as 'paid' if there was an actual payment (not a trial signup)
+    const hasPayment = session.payment_status === 'paid' && session.amount_total && session.amount_total > 0;
+    const orderStatus = hasPayment ? 'paid' : 'trial';
     const { error: orderUpdateError } = await supabase
       .from('billing_orders')
       .update({
-        status: 'paid',
-        paid_at: new Date().toISOString(),
+        status: orderStatus,
+        ...(hasPayment ? { paid_at: new Date().toISOString() } : {}),
         stripe_payment_intent_id: typeof session.payment_intent === 'string'
           ? session.payment_intent
           : session.payment_intent?.id ?? null,
@@ -125,7 +128,7 @@ async function handleCheckoutCompleted(
       })
       .eq('order_code', orderCode)
       .in('status', ['draft', 'pending']);
-    console.log('[WEBHOOK_STRIPE] Order update:', { orderCode, error: orderUpdateError });
+    console.log('[WEBHOOK_STRIPE] Order update:', { orderCode, status: orderStatus, amount: session.amount_total, error: orderUpdateError });
   }
 
   if (session.mode === 'subscription' && session.subscription) {

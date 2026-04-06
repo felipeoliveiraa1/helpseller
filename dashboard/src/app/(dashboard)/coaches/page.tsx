@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { Plus, Loader2, Trash2, BrainCircuit, X, Upload, FileText, ChevronDown, ChevronUp } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { api } from '@/lib/api'
 
 const NEON_PINK = '#ff007a'
@@ -65,6 +66,7 @@ export default function CoachesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
@@ -154,8 +156,14 @@ export default function CoachesPage() {
     setSaving(false)
   }
 
-  async function handleDelete(id: string, name: string) {
-    if (!confirm(`Tem certeza que deseja deletar o coach "${name}"?`)) return
+  function handleDelete(id: string, name: string) {
+    setDeleteConfirm({ id, name })
+  }
+
+  async function doDelete() {
+    if (!deleteConfirm) return
+    const { id } = deleteConfirm
+    setDeleteConfirm(null)
     try {
       await api.delete(`/api/coaches/${id}`)
       setFeedback({ type: 'success', message: 'Coach deletado.' })
@@ -512,6 +520,16 @@ export default function CoachesPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        title="Deletar coach?"
+        description={`O coach "${deleteConfirm?.name}" será removido permanentemente. Os dados de calls e análises anteriores serão mantidos.`}
+        variant="danger"
+        confirmLabel="Deletar"
+        onConfirm={doDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   )
 }

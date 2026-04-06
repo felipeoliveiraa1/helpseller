@@ -196,7 +196,7 @@ export default function TeamPage() {
       await api.post('/api/admin/delete-user', { user_id: memberId })
 
       setMembers(prev => prev.filter(m => m.id !== memberId))
-      setFeedback({ type: 'success', message: `${member?.full_name || 'Membro'} excluído com sucesso.` })
+      setFeedback({ type: 'success', message: 'Membro excluído com sucesso.' })
     } catch (err: any) {
       console.error('removeMember error:', err)
       setFeedback({ type: 'error', message: `Erro ao remover: ${err.message}` })

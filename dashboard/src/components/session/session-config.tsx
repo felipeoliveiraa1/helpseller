@@ -85,11 +85,12 @@ export function SessionConfigForm({ onStart }: SessionConfigFormProps) {
       if (coachesRes.data) {
         setCoaches(coachesRes.data)
         // Auto-select: 1) default coach, 2) first coach if only one, 3) first coach always
-        const defaultCoach = coachesRes.data.find((c: any) => c.is_default)
+        const coachList = coachesRes.data as Coach[]
+        const defaultCoach = coachList.find(c => c.is_default)
         if (defaultCoach) {
           setCoachId(defaultCoach.id)
-        } else if (coachesRes.data.length > 0) {
-          setCoachId(coachesRes.data[0].id)
+        } else if (coachList.length > 0) {
+          setCoachId(coachList[0].id)
         }
       }
     }

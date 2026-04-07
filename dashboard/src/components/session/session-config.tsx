@@ -84,11 +84,11 @@ export function SessionConfigForm({ onStart }: SessionConfigFormProps) {
       if (scriptsRes.data) setScripts(scriptsRes.data)
       if (coachesRes.data) {
         setCoaches(coachesRes.data)
-        // Auto-select: default coach, or first coach if only one exists
+        // Auto-select: 1) default coach, 2) first coach if only one, 3) first coach always
         const defaultCoach = coachesRes.data.find((c: any) => c.is_default)
         if (defaultCoach) {
           setCoachId(defaultCoach.id)
-        } else if (coachesRes.data.length === 1) {
+        } else if (coachesRes.data.length > 0) {
           setCoachId(coachesRes.data[0].id)
         }
       }
@@ -149,14 +149,13 @@ export function SessionConfigForm({ onStart }: SessionConfigFormProps) {
 
             {coaches.length > 0 && (
               <div className="space-y-2">
-                <Label htmlFor="coach" className="text-gray-300 text-sm">Coach IA (opcional)</Label>
+                <Label htmlFor="coach" className="text-gray-300 text-sm">Coach IA</Label>
                 <select
                   id="coach"
                   value={coachId}
                   onChange={(e) => setCoachId(e.target.value)}
                   className="w-full h-10 rounded-md bg-black/40 border border-white/10 text-white px-3 text-sm focus:outline-none focus:border-pink-500"
                 >
-                  <option value="">Selecione um coach</option>
                   {coaches.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}

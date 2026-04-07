@@ -576,16 +576,64 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 const externalIdRaw = event.payload?.externalId ?? event.payload?.external_id;
                 const externalId = typeof externalIdRaw === 'string' ? externalIdRaw.trim() || null : null;
 
-                // Fetch coach data if coachId provided
+                // Fetch coach data: use provided coachId, or fallback to org's default coach
                 let coachData: CoachData | undefined;
-                if (payloadCoachId) {
+                let resolvedCoachId = payloadCoachId;
+
+                const coachSelect = 'id, name, persona, methodology, tone, intervention_level, product_name, product_description, product_differentials, product_pricing_info, product_target_audience, script_name, script_steps, script_objections, script_content';
+
+                if (resolvedCoachId) {
                     const { data: coach } = await supabaseAdmin
                         .from('coaches')
-                        .select('name, persona, methodology, tone, intervention_level, product_name, product_description, product_differentials, product_pricing_info, product_target_audience, script_name, script_steps, script_objections, script_content')
-                        .eq('id', payloadCoachId)
+                        .select(coachSelect)
+                        .eq('id', resolvedCoachId)
                         .maybeSingle();
                     if (coach) {
                         coachData = coach as CoachData;
+                    }
+                }
+
+                // Fallback: if no coach loaded, try org's default coach or first active coach
+                if (!coachData) {
+                    const { data: orgProfile } = await supabaseAdmin
+                        .from('profiles')
+                        .select('organization_id')
+                        .eq('id', userId)
+                        .single();
+                    const orgId = (orgProfile as any)?.organization_id;
+                    if (orgId) {
+                        // Try default coach first
+                        const { data: defaultCoach } = await supabaseAdmin
+                            .from('coaches')
+                            .select(coachSelect)
+                            .eq('organization_id', orgId)
+                            .eq('is_active', true)
+                            .eq('is_default', true)
+                            .maybeSingle();
+
+                        if (defaultCoach) {
+                            coachData = defaultCoach as CoachData;
+                            resolvedCoachId = (defaultCoach as any).id;
+                            logger.info({ coachId: resolvedCoachId, coachName: (defaultCoach as any).name }, '🤖 Using default coach (fallback)');
+                        } else {
+                            // Try first active coach
+                            const { data: firstCoach } = await supabaseAdmin
+                                .from('coaches')
+                                .select(coachSelect)
+                                .eq('organization_id', orgId)
+                                .eq('is_active', true)
+                                .order('created_at', { ascending: true })
+                                .limit(1)
+                                .maybeSingle();
+
+                            if (firstCoach) {
+                                coachData = firstCoach as CoachData;
+                                resolvedCoachId = (firstCoach as any).id;
+                                logger.info({ coachId: resolvedCoachId, coachName: (firstCoach as any).name }, '🤖 Using first active coach (fallback)');
+                            } else {
+                                logger.warn({ orgId }, '⚠️ No coaches found for organization — coaching will use generic SPIN prompt');
+                            }
+                        }
                     }
                 }
                 logger.info({ externalIdReceived: externalId, payloadKeys: Object.keys(event.payload || {}) }, '📞 call:start payload (externalId for re-record)');
@@ -865,7 +913,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     started_at: new Date().toISOString(),
                     external_id: externalId,
                     ...(safeOrgId != null && safeOrgId !== '' && { organization_id: safeOrgId }),
-                    ...(payloadCoachId && { coach_id: payloadCoachId })
+                    ...(resolvedCoachId && { coach_id: resolvedCoachId })
                 };
                 logger.info({ rawOrgId, safeOrgId, userId, hasOrgInPayload: 'organization_id' in insertPayload }, '📞 call:insert payload org');
                 const { data: call, error: insertError } = await supabaseAdmin
@@ -903,7 +951,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     callId: call.id ?? '',
                     userId: userId ?? '',
                     scriptId: finalScriptId ?? '',
-                    coachId: payloadCoachId || undefined,
+                    coachId: resolvedCoachId || undefined,
                     coachData: coachData || undefined,
                     platform: platform ?? undefined,
                     startedAt: new Date().getTime(),

@@ -16,6 +16,7 @@ interface Script {
 interface Coach {
   id: string
   name: string
+  is_default?: boolean
 }
 
 interface SessionConfigFormProps {
@@ -77,11 +78,20 @@ export function SessionConfigForm({ onStart }: SessionConfigFormProps) {
 
       const [scriptsRes, coachesRes] = await Promise.all([
         supabase.from('scripts').select('id, name').eq('organization_id', orgId).order('name'),
-        supabase.from('coaches').select('id, name').eq('organization_id', orgId).order('name'),
+        supabase.from('coaches').select('id, name, is_default').eq('organization_id', orgId).order('name'),
       ])
 
       if (scriptsRes.data) setScripts(scriptsRes.data)
-      if (coachesRes.data) setCoaches(coachesRes.data)
+      if (coachesRes.data) {
+        setCoaches(coachesRes.data)
+        // Auto-select: default coach, or first coach if only one exists
+        const defaultCoach = coachesRes.data.find((c: any) => c.is_default)
+        if (defaultCoach) {
+          setCoachId(defaultCoach.id)
+        } else if (coachesRes.data.length === 1) {
+          setCoachId(coachesRes.data[0].id)
+        }
+      }
     }
     loadData()
   }, [supabase])
@@ -146,7 +156,7 @@ export function SessionConfigForm({ onStart }: SessionConfigFormProps) {
                   onChange={(e) => setCoachId(e.target.value)}
                   className="w-full h-10 rounded-md bg-black/40 border border-white/10 text-white px-3 text-sm focus:outline-none focus:border-pink-500"
                 >
-                  <option value="">Coach padrão</option>
+                  <option value="">Selecione um coach</option>
                   {coaches.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}

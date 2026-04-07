@@ -83,15 +83,14 @@ export function SessionConfigForm({ onStart }: SessionConfigFormProps) {
 
       if (scriptsRes.data) setScripts(scriptsRes.data)
       if (coachesRes.data) {
-        setCoaches(coachesRes.data)
-        // Auto-select: 1) default coach, 2) first coach if only one, 3) first coach always
+        setCoaches(coachesRes.data as Coach[])
+        // Auto-select: default coach if marked, otherwise SPIN Selling (empty = generic)
         const coachList = coachesRes.data as Coach[]
         const defaultCoach = coachList.find(c => c.is_default)
         if (defaultCoach) {
           setCoachId(defaultCoach.id)
-        } else if (coachList.length > 0) {
-          setCoachId(coachList[0].id)
         }
+        // If no default marked, coachId stays '' = SPIN Selling generico
       }
     }
     loadData()
@@ -148,21 +147,23 @@ export function SessionConfigForm({ onStart }: SessionConfigFormProps) {
               </div>
             )}
 
-            {coaches.length > 0 && (
-              <div className="space-y-2">
-                <Label htmlFor="coach" className="text-gray-300 text-sm">Coach IA</Label>
-                <select
-                  id="coach"
-                  value={coachId}
-                  onChange={(e) => setCoachId(e.target.value)}
-                  className="w-full h-10 rounded-md bg-black/40 border border-white/10 text-white px-3 text-sm focus:outline-none focus:border-pink-500"
-                >
-                  {coaches.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="coach" className="text-gray-300 text-sm">Coach IA</Label>
+              <select
+                id="coach"
+                value={coachId}
+                onChange={(e) => setCoachId(e.target.value)}
+                className="w-full h-10 rounded-md bg-black/40 border border-white/10 text-white px-3 text-sm focus:outline-none focus:border-pink-500"
+              >
+                <option value="">SPIN Selling (Padrão)</option>
+                {coaches.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}{c.is_default ? ' ★' : ''}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-600">
+                {coachId ? 'Coach personalizado com seu produto e script' : 'Coaching genérico baseado na metodologia SPIN'}
+              </p>
+            </div>
 
             <div className="pt-2 space-y-3">
               {/* Mic permission alert */}

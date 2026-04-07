@@ -593,48 +593,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     }
                 }
 
-                // Fallback: if no coach loaded, try org's default coach or first active coach
-                if (!coachData) {
-                    const { data: orgProfile } = await supabaseAdmin
-                        .from('profiles')
-                        .select('organization_id')
-                        .eq('id', userId)
-                        .single();
-                    const orgId = (orgProfile as any)?.organization_id;
-                    if (orgId) {
-                        // Try default coach first
-                        const { data: defaultCoach } = await supabaseAdmin
-                            .from('coaches')
-                            .select(coachSelect)
-                            .eq('organization_id', orgId)
-                            .eq('is_active', true)
-                            .eq('is_default', true)
-                            .maybeSingle();
-
-                        if (defaultCoach) {
-                            coachData = defaultCoach as CoachData;
-                            resolvedCoachId = (defaultCoach as any).id;
-                            logger.info({ coachId: resolvedCoachId, coachName: (defaultCoach as any).name }, '🤖 Using default coach (fallback)');
-                        } else {
-                            // Try first active coach
-                            const { data: firstCoach } = await supabaseAdmin
-                                .from('coaches')
-                                .select(coachSelect)
-                                .eq('organization_id', orgId)
-                                .eq('is_active', true)
-                                .order('created_at', { ascending: true })
-                                .limit(1)
-                                .maybeSingle();
-
-                            if (firstCoach) {
-                                coachData = firstCoach as CoachData;
-                                resolvedCoachId = (firstCoach as any).id;
-                                logger.info({ coachId: resolvedCoachId, coachName: (firstCoach as any).name }, '🤖 Using first active coach (fallback)');
-                            } else {
-                                logger.warn({ orgId }, '⚠️ No coaches found for organization — coaching will use generic SPIN prompt');
-                            }
-                        }
-                    }
+                // If coachId was provided but coach not found, log warning
+                // If no coachId at all, user chose SPIN Selling (generic) intentionally
+                if (resolvedCoachId && !coachData) {
+                    logger.warn({ coachId: resolvedCoachId }, '⚠️ Coach not found — falling back to generic SPIN prompt');
+                } else if (!resolvedCoachId) {
+                    logger.info('🤖 No coach selected — using generic SPIN Selling prompt');
                 }
                 logger.info({ externalIdReceived: externalId, payloadKeys: Object.keys(event.payload || {}) }, '📞 call:start payload (externalId for re-record)');
 

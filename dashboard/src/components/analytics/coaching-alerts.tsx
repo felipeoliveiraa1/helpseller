@@ -59,7 +59,14 @@ export function CoachingAlerts({ alerts }: { alerts: CoachingAlert[] }) {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-white truncate">{alert.fullName}</p>
                   <p className="text-xs text-gray-400 mt-0.5">{alert.reason}</p>
-                  <p className="text-xs font-bold mt-1" style={{ color }}>{alert.metric}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs font-bold" style={{ color }}>{alert.metric}</span>
+                    {alert.coachName && (
+                      <span className="text-[10px] text-gray-500 px-1.5 py-0.5 rounded bg-white/5 truncate max-w-[140px]">
+                        Coach: {alert.coachName}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             )

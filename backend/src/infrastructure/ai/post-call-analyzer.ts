@@ -2,6 +2,54 @@ import { CallSession, CoachData } from "../websocket/server.js";
 import { OpenAIClient } from "./openai-client.js";
 import { logger } from '../../shared/utils/logger.js';
 
+type AdherenceStep = {
+  nome?: string;
+  status?: 'CUMPRIDA' | 'PARCIAL' | 'NAO_CUMPRIDA' | 'NAO_APLICAVEL' | string;
+  peso?: number;
+};
+
+const STATUS_SCORE: Record<string, number> = {
+  CUMPRIDA: 1,
+  PARCIAL: 0.5,
+  NAO_CUMPRIDA: 0,
+};
+
+export function recomputeAdherence(
+  etapas: unknown,
+  onInvalidPeso?: (original: unknown, normalized: 1 | 2) => void
+): number | null {
+  if (!Array.isArray(etapas) || etapas.length === 0) return null;
+  let num = 0;
+  let den = 0;
+  for (const step of etapas as AdherenceStep[]) {
+    const status = String(step?.status || '').toUpperCase();
+    if (status === 'NAO_APLICAVEL') continue;
+    if (!(status in STATUS_SCORE)) continue;
+    const rawPeso = step?.peso;
+    let peso: 1 | 2;
+    if (rawPeso === 1 || rawPeso === 2) {
+      peso = rawPeso;
+    } else {
+      peso = Number.isFinite(rawPeso) && (rawPeso as number) >= 1.5 ? 2 : 1;
+      if (onInvalidPeso) onInvalidPeso(rawPeso, peso);
+    }
+    num += STATUS_SCORE[status] * peso;
+    den += peso;
+  }
+  if (den === 0) return 0;
+  return Math.round((num / den) * 100);
+}
+
+function sanitizeScriptStep(step: string, idx: number): string {
+  const cleaned = String(step ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/```/g, "'''")
+    .replace(/<\/?(aderencia_calculo|dados_script|formato|ação|acao|persona|passos|dados|contexto|exemplo|linguagem_e_tom)>/gi, '')
+    .trim()
+    .slice(0, 200);
+  return cleaned || `Etapa ${idx + 1}`;
+}
+
 export class PostCallAnalyzer {
   constructor(private openaiClient: OpenAIClient) { }
 
@@ -59,7 +107,9 @@ TODAS as chaves DEVEM seguir EXATAMENTE este formato (flat, sem nesting profundo
   "lead_data_call": "string ISO date-time",
   "resultado": "Venda realizada | Venda não realizada | Em negociação | Qualificado | Desqualificado",
   "sentimento": "POSITIVE | NEUTRAL | NEGATIVE",
-  "aderencia_percentual": number (0-100),
+  "aderencia_etapas": [{ "nome": "string — nome EXATO da etapa informada em <dados_script>", "status": "CUMPRIDA | PARCIAL | NAO_CUMPRIDA | NAO_APLICAVEL", "peso": number (1 padrão; 2 para etapas críticas como Abertura, Diagnóstico, Fechamento), "evidencia": "string — trecho literal da transcrição que comprova (ou ausência de evidência se NAO_CUMPRIDA)", "justificativa": "string curta — por que esse status" }],
+  "aderencia_percentual": number (0-100) — DEVE ser calculado pela fórmula em <aderencia_calculo>, NÃO chutado,
+  "aderencia_justificativa_geral": "string — 1-2 frases resumindo por que esse percentual",
   "termometro_classificacao": "FRIO | MORNO | QUENTE | FECHANDO",
   "termometro_justificativa": "string",
   "pontos_acertos": ["string"],
@@ -193,6 +243,32 @@ O conteúdo que vai DENTRO DA STRING \`ai_notes\` deve ser EXATAMENTE assim (em 
   - “[Nome], pelo que você disse...”
 </exemplo>
 
+<aderencia_calculo>
+REGRAS OBRIGATÓRIAS para o campo \`aderencia_percentual\` (o backend vai auditar e recalcular — valores chutados serão sobrescritos).
+
+1) FONTE DAS ETAPAS: use EXATAMENTE a lista de etapas passada no bloco <dados_script> do userPrompt (na mesma ordem e com os mesmos nomes). NÃO invente etapas. Se a lista vier vazia, retorne \`aderencia_etapas: []\`, \`aderencia_percentual: 0\` e explique em \`aderencia_justificativa_geral\` que o script não tem etapas cadastradas.
+
+2) CLASSIFICAÇÃO POR ETAPA — para cada etapa, atribua UM status baseado em evidência textual da transcrição:
+   - CUMPRIDA (score 1.0): o vendedor executou a etapa de forma clara e objetiva. É OBRIGATÓRIO citar em \`evidencia\` pelo menos um trecho literal (entre aspas) que prove isso.
+   - PARCIAL (score 0.5): a etapa foi tangenciada, apressada, incompleta ou executada fora de ordem. Cite o trecho e explique o que faltou.
+   - NAO_CUMPRIDA (score 0.0): não há evidência de que a etapa foi feita. \`evidencia\` deve ser \"—\" e \`justificativa\` deve dizer o que estava faltando.
+   - NAO_APLICAVEL: a etapa objetivamente não cabia na call (ex.: \"Fechamento\" numa call que foi só descoberta). Essa etapa é REMOVIDA do denominador. Use com parcimônia.
+
+3) PESOS: por padrão, \`peso = 1\`. Etapas críticas (identificáveis pelo nome: Abertura/Rapport, Diagnóstico/SPIN, Apresentação de Solução, Quebra de Objeções, Fechamento/Call-to-Action) devem ter \`peso = 2\`. Nunca use outros valores.
+
+4) FÓRMULA (aplicar MATEMATICAMENTE, sem arredondar antes do final):
+   numerador   = Σ (score_da_etapa × peso_da_etapa) para etapas com status ∈ {CUMPRIDA, PARCIAL, NAO_CUMPRIDA}
+   denominador = Σ (peso_da_etapa)                   para as MESMAS etapas (NAO_APLICAVEL é excluída de ambos)
+   aderencia_percentual = round( numerador / denominador × 100 )
+   Se denominador == 0 → aderencia_percentual = 0.
+
+5) CONSISTÊNCIA: o \`aderencia_percentual\` retornado DEVE bater exatamente com o resultado da fórmula acima aplicada ao array \`aderencia_etapas\`. Divergências serão corrigidas pelo backend.
+
+6) ANTI-VIÉS: não arredonde para múltiplos de 10 nem escolha valores \"redondos\" por estética. Se a fórmula der 63, retorne 63 — não 60 nem 65.
+
+7) EVIDÊNCIA OBRIGATÓRIA: toda etapa marcada como CUMPRIDA ou PARCIAL precisa ter \`evidencia\` preenchida com uma citação literal da transcrição. Sem citação, rebaixar para NAO_CUMPRIDA.
+</aderencia_calculo>
+
 <linguagem_e_tom>
 Orientações 80/20 de linguagem e framing:
 - **Usar:** termos de validação (“evidência”, “métrica”, “critério”), redução de risco, clareza, controle, ROI, piloto, roadmap.
@@ -223,8 +299,16 @@ Orientações 80/20 de linguagem e framing:
       }
     }
 
+    const stepsBlock = (steps && steps.length > 0)
+      ? steps.map((s, i) => `  ${i + 1}. ${sanitizeScriptStep(s, i)}`).join('\n')
+      : '  (NENHUMA ETAPA CADASTRADA — retornar aderencia_etapas: [] e aderencia_percentual: 0)';
+
     const userPrompt = `Script: ${scriptName}
-Etapas: ${steps.join(' → ')}${productContext}
+
+<dados_script>
+Etapas do script (nesta ordem e com estes nomes exatos):
+${stepsBlock}
+</dados_script>${productContext}
 
 Transcrição completa:
 ${transcriptText}`;
@@ -232,6 +316,26 @@ ${transcriptText}`;
     const raw = await this.openaiClient.analyzePostCall(systemPrompt, userPrompt, callId);
     try {
       const data = JSON.parse(raw);
+
+      // Deterministic recompute of adherence from aderencia_etapas — source of truth is the array.
+      // Prevents the model from returning an "aesthetic" percentage that doesn't match its own per-step scoring.
+      const invalidPesos: Array<{ original: unknown; normalized: number }> = [];
+      const recomputedAdherence = recomputeAdherence(
+        data.aderencia_etapas,
+        (original, normalized) => invalidPesos.push({ original, normalized })
+      );
+      if (invalidPesos.length > 0) {
+        logger.warn({ callId, invalidPesos }, 'Adherence: pesos fora de {1,2} normalizados');
+      }
+      if (recomputedAdherence !== null) {
+        if (typeof data.aderencia_percentual === 'number' && data.aderencia_percentual !== recomputedAdherence) {
+          logger.warn(
+            { callId, modelValue: data.aderencia_percentual, recomputed: recomputedAdherence, pesoIssues: invalidPesos.length },
+            'Adherence percentual divergiu das etapas — usando valor recalculado'
+          );
+        }
+        data.aderencia_percentual = recomputedAdherence;
+      }
       // Compatibility mapping for existing database schema
       let mappedResult = data.resultado;
       if (mappedResult === 'Venda realizada') mappedResult = 'CONVERTED';
@@ -272,7 +376,7 @@ ${transcriptText}`;
 
       return {
         ...data,
-        script_adherence_score: data.aderencia_percentual || 0,
+        script_adherence_score: typeof data.aderencia_percentual === 'number' ? data.aderencia_percentual : null,
         strengths: data.pontos_acertos || [],
         improvements: data.pontos_melhorias || [],
         ai_notes: data.resumo_ia || 'Nenhum resumo gerado pela IA.',

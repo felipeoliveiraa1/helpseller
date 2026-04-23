@@ -71,8 +71,9 @@ export function useManagerAnalytics(orgId: string | null, period: AnalyticsPerio
         supabase
           .from('calls')
           .select(`
-            id, user_id, started_at, ended_at, duration_seconds,
+            id, user_id, started_at, ended_at, duration_seconds, coach_id,
             user:profiles!user_id(full_name),
+            coach:coaches!coach_id(name),
             summary:call_summaries(
               script_adherence_score, lead_sentiment, result, raw_analysis
             )
@@ -173,6 +174,7 @@ export function useManagerAnalytics(orgId: string | null, period: AnalyticsPerio
         hotLeads: number
         durSec: number
         durCount: number
+        coachFreq: Record<string, number>
       }> = {}
 
       for (const call of calls) {
@@ -241,10 +243,13 @@ export function useManagerAnalytics(orgId: string | null, period: AnalyticsPerio
             adherenceSum: 0, adherenceCount: 0,
             sentimentSum: 0, sentimentCount: 0,
             hotLeads: 0, durSec: 0, durCount: 0,
+            coachFreq: {},
           }
         }
         const u = byUser[uid]
         u.calls++
+        const coachName = (call.coach as any)?.name as string | undefined
+        if (coachName) u.coachFreq[coachName] = (u.coachFreq[coachName] ?? 0) + 1
         if (summary?.result === 'CONVERTED') u.converted++
         else if (summary?.result === 'FOLLOW_UP') u.followUp++
         else if (summary?.result === 'LOST') u.lost++
@@ -270,6 +275,11 @@ export function useManagerAnalytics(orgId: string | null, period: AnalyticsPerio
         const negativeRate = u.sentimentCount > 0 ? (u.sentimentCount - Math.round(u.sentimentSum / 3 * u.sentimentCount)) / u.sentimentCount : 0
         const avgDur = u.durCount > 0 ? Math.round(u.durSec / u.durCount / 60 * 10) / 10 : 0
 
+        // Most used coach — ties broken alphabetically for stable UI
+        const coachEntries = Object.entries(u.coachFreq)
+        coachEntries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        const topCoach: string | null = coachEntries[0]?.[0] ?? null
+
         return {
           userId: uid,
           fullName: u.fullName,
@@ -281,6 +291,7 @@ export function useManagerAnalytics(orgId: string | null, period: AnalyticsPerio
           avgDurationMin: avgDur,
           isActive: activeUserIds.has(uid),
           needsCoaching: (adh > 0 && adh < 40) || negativeRate > 0.5,
+          topCoach,
         }
       })
 
@@ -294,6 +305,7 @@ export function useManagerAnalytics(orgId: string | null, period: AnalyticsPerio
             reason: 'Aderência ao script muito baixa',
             metric: `${s.avgAdherence}%`,
             severity: s.avgAdherence < 25 ? 'high' : 'medium',
+            coachName: s.topCoach,
           })
         } else if (s.avgSentimentScore > 0 && s.avgSentimentScore < 1.5 && s.totalCalls >= 3) {
           coachingAlerts.push({
@@ -302,6 +314,7 @@ export function useManagerAnalytics(orgId: string | null, period: AnalyticsPerio
             reason: 'Maioria dos leads com sentimento negativo',
             metric: `${s.totalCalls} calls`,
             severity: 'medium',
+            coachName: s.topCoach,
           })
         }
       }

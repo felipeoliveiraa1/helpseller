@@ -65,6 +65,14 @@ export interface FlatAnalysis {
     resultado?: string;
     sentimento?: string;
     aderencia_percentual?: number;
+    aderencia_etapas?: {
+        nome?: string;
+        status?: 'CUMPRIDA' | 'PARCIAL' | 'NAO_CUMPRIDA' | 'NAO_APLICAVEL' | string;
+        peso?: number;
+        evidencia?: string;
+        justificativa?: string;
+    }[];
+    aderencia_justificativa_geral?: string;
     termometro_classificacao?: string;
     termometro_justificativa?: string;
     pontos_acertos?: string[];
@@ -277,6 +285,63 @@ function PontosOuro({ d }: { d: FlatAnalysis }) {
                 <Card title="Melhorias" icon={<AlertCircle className="w-4 h-4" />} accentColor="rgba(245,158,11,0.5)">
                     <BulletList items={d.pontos_melhorias} colorClass="text-amber-300" />
                 </Card>
+            </div>
+        </Section>
+    );
+}
+
+function AderenciaBreakdown({ d }: { d: FlatAnalysis }) {
+    const etapas = d.aderencia_etapas;
+    if (!etapas || etapas.length === 0) return null;
+
+    const STATUS_META: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+        CUMPRIDA: { label: 'Cumprida', color: '#22c55e', bg: 'rgba(34,197,94,0.12)', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
+        PARCIAL: { label: 'Parcial', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', icon: <AlertCircle className="w-3.5 h-3.5" /> },
+        NAO_CUMPRIDA: { label: 'Não cumprida', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', icon: <XCircle className="w-3.5 h-3.5" /> },
+        NAO_APLICAVEL: { label: 'N/A', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', icon: <Ban className="w-3.5 h-3.5" /> },
+    };
+
+    return (
+        <Section title="Aderência ao Script (detalhada)" id="aderencia" icon={<BarChart3 className="w-4 h-4" />}>
+            {d.aderencia_justificativa_geral && (
+                <p className="text-xs text-gray-400 italic mb-2">{d.aderencia_justificativa_geral}</p>
+            )}
+            <div className="space-y-2">
+                {etapas.map((etapa, i) => {
+                    const status = String(etapa.status || '').toUpperCase();
+                    const meta = STATUS_META[status] ?? { label: status || '—', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', icon: <Ghost className="w-3.5 h-3.5" /> };
+                    const peso = etapa.peso === 2 ? 2 : 1;
+                    return (
+                        <div key={i} className="rounded-lg p-3 border" style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}>
+                            <div className="flex items-start justify-between gap-3 mb-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-[10px] text-gray-500 font-mono shrink-0">#{i + 1}</span>
+                                    <span className="text-sm font-semibold text-white truncate">{etapa.nome || `Etapa ${i + 1}`}</span>
+                                    {peso === 2 && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0" style={{ backgroundColor: 'rgba(255,0,122,0.12)', color: NEON_PINK }}>
+                                            crítica
+                                        </span>
+                                    )}
+                                </div>
+                                <span
+                                    className="text-[10px] px-2 py-0.5 rounded font-bold flex items-center gap-1 shrink-0"
+                                    style={{ backgroundColor: meta.bg, color: meta.color }}
+                                >
+                                    {meta.icon}
+                                    {meta.label}
+                                </span>
+                            </div>
+                            {etapa.evidencia && etapa.evidencia !== '—' && (
+                                <p className="text-xs text-gray-300 italic border-l-2 pl-2 mt-1" style={{ borderColor: meta.color }}>
+                                    “{etapa.evidencia}”
+                                </p>
+                            )}
+                            {etapa.justificativa && (
+                                <p className="text-[11px] text-gray-500 mt-1">{etapa.justificativa}</p>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </Section>
     );
@@ -508,6 +573,7 @@ export function CallRaioXTabs({ data }: { data: FlatAnalysis }) {
     return (
         <div className="space-y-4">
             <HeaderSection d={d} />
+            <AderenciaBreakdown d={d} />
             <PontosOuro d={d} />
             <PerfilPsicologico d={d} />
             <ImpactoFinanceiro d={d} />

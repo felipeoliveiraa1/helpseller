@@ -41,6 +41,7 @@ export interface SellerPerformanceRow {
   avgDurationMin: number
   isActive: boolean
   needsCoaching: boolean
+  topCoach: string | null
 }
 
 export interface CoachingAlert {
@@ -49,6 +50,7 @@ export interface CoachingAlert {
   reason: string
   metric: string
   severity: 'high' | 'medium'
+  coachName: string | null
 }
 
 export interface FinancialImpact {

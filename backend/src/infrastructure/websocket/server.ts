@@ -576,17 +576,29 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                 const externalIdRaw = event.payload?.externalId ?? event.payload?.external_id;
                 const externalId = typeof externalIdRaw === 'string' ? externalIdRaw.trim() || null : null;
 
-                // Fetch coach data if coachId provided
+                // Fetch coach data: use provided coachId, or fallback to org's default coach
                 let coachData: CoachData | undefined;
-                if (payloadCoachId) {
+                let resolvedCoachId = payloadCoachId;
+
+                const coachSelect = 'id, name, persona, methodology, tone, intervention_level, product_name, product_description, product_differentials, product_pricing_info, product_target_audience, script_name, script_steps, script_objections, script_content';
+
+                if (resolvedCoachId) {
                     const { data: coach } = await supabaseAdmin
                         .from('coaches')
-                        .select('name, persona, methodology, tone, intervention_level, product_name, product_description, product_differentials, product_pricing_info, product_target_audience, script_name, script_steps, script_objections, script_content')
-                        .eq('id', payloadCoachId)
+                        .select(coachSelect)
+                        .eq('id', resolvedCoachId)
                         .maybeSingle();
                     if (coach) {
                         coachData = coach as CoachData;
                     }
+                }
+
+                // If coachId was provided but coach not found, log warning
+                // If no coachId at all, user chose SPIN Selling (generic) intentionally
+                if (resolvedCoachId && !coachData) {
+                    logger.warn({ coachId: resolvedCoachId }, '⚠️ Coach not found — falling back to generic SPIN prompt');
+                } else if (!resolvedCoachId) {
+                    logger.info('🤖 No coach selected — using generic SPIN Selling prompt');
                 }
                 logger.info({ externalIdReceived: externalId, payloadKeys: Object.keys(event.payload || {}) }, '📞 call:start payload (externalId for re-record)');
 
@@ -865,7 +877,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     started_at: new Date().toISOString(),
                     external_id: externalId,
                     ...(safeOrgId != null && safeOrgId !== '' && { organization_id: safeOrgId }),
-                    ...(payloadCoachId && { coach_id: payloadCoachId })
+                    ...(resolvedCoachId && { coach_id: resolvedCoachId })
                 };
                 logger.info({ rawOrgId, safeOrgId, userId, hasOrgInPayload: 'organization_id' in insertPayload }, '📞 call:insert payload org');
                 const { data: call, error: insertError } = await supabaseAdmin
@@ -903,7 +915,7 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                     callId: call.id ?? '',
                     userId: userId ?? '',
                     scriptId: finalScriptId ?? '',
-                    coachId: payloadCoachId || undefined,
+                    coachId: resolvedCoachId || undefined,
                     coachData: coachData || undefined,
                     platform: platform ?? undefined,
                     startedAt: new Date().getTime(),

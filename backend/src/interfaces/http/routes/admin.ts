@@ -126,7 +126,18 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
             logger.info({ userId: user.id }, 'Admin: User created');
 
-            // 2. Garantir perfil na organização do gerente e role SELLER (trigger pode ter criado org errada + MANAGER)
+            // 2. The handle_new_user trigger creates a phantom org "My Organization" + profile with MANAGER role.
+            //    We need to: fix the profile, then delete the phantom org.
+
+            // Get the phantom org created by the trigger (profile points to it)
+            const { data: triggerProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('organization_id')
+                .eq('id', user.id)
+                .single();
+            const phantomOrgId = (triggerProfile as any)?.organization_id;
+
+            // Fix profile: set correct org + role
             const profilePayload = {
                 email,
                 full_name: name,
@@ -148,10 +159,22 @@ export async function adminRoutes(fastify: FastifyInstance) {
                     .single();
                 if (insertError) {
                     logger.error({ err: updateError || insertError }, 'Admin: Profile update/insert error');
-                    request.log.warn({ updateError, insertError }, 'Profile fix failed');
                 }
             } else {
                 logger.info({ organization_id: managerOrgId }, 'Admin: Profile updated to org, role SELLER');
+            }
+
+            // Delete the phantom org created by trigger (if it's not the manager's org)
+            if (phantomOrgId && phantomOrgId !== managerOrgId) {
+                const { error: deleteOrgError } = await supabaseAdmin
+                    .from('organizations')
+                    .delete()
+                    .eq('id', phantomOrgId);
+                if (deleteOrgError) {
+                    logger.warn({ phantomOrgId, error: deleteOrgError }, 'Admin: Failed to delete phantom org');
+                } else {
+                    logger.info({ phantomOrgId }, 'Admin: Phantom org deleted');
+                }
             }
 
             return { success: true, user: { id: user.id, email: user.email } };
@@ -254,8 +277,11 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 return reply.code(403).send({ error: 'Você só pode excluir membros da sua organização.' });
             }
 
+            // 0. Check if user has a phantom org (created by trigger, different from manager's org)
+            const userOrgId = (targetProfile as any).organization_id;
+            const hasPhantomOrg = userOrgId && userOrgId !== organization_id;
+
             // 1. Delete related records that reference this user
-            // Get call IDs first to clean up call_summaries
             const { data: userCalls } = await supabaseAdmin
                 .from('calls')
                 .select('id')
@@ -267,6 +293,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
             }
             await supabaseAdmin.from('ai_usage_logs').delete().eq('user_id', targetUserId);
             await supabaseAdmin.from('calls').delete().eq('user_id', targetUserId);
+            await supabaseAdmin.from('feedback').delete().eq('user_id', targetUserId);
 
             // 2. Delete profile row
             const { error: deleteProfileError } = await supabaseAdmin
@@ -277,7 +304,20 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 logger.error({ err: deleteProfileError }, 'Admin: Failed to delete profile');
             }
 
-            // 3. Delete auth user completely
+            // 3. Delete phantom org if it exists (empty org created by trigger)
+            if (hasPhantomOrg) {
+                // Only delete if no other profiles reference this org
+                const { count } = await supabaseAdmin
+                    .from('profiles')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('organization_id', userOrgId);
+                if ((count ?? 0) === 0) {
+                    await supabaseAdmin.from('organizations').delete().eq('id', userOrgId);
+                    logger.info({ phantomOrgId: userOrgId }, 'Admin: Phantom org cleaned up on delete');
+                }
+            }
+
+            // 4. Delete auth user completely
             const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
             if (deleteAuthError) {
                 logger.error({ err: deleteAuthError }, 'Admin: Failed to delete auth user');

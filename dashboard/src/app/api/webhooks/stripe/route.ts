@@ -30,12 +30,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
-    // Security: reject events older than 5 minutes to prevent replay attacks
-    const eventAge = Math.floor(Date.now() / 1000) - event.created;
-    if (eventAge > 300) {
-      console.warn(`[WEBHOOK_STRIPE] Rejected stale event ${event.id} (age: ${eventAge}s)`);
-      return NextResponse.json({ error: 'Event too old' }, { status: 400 });
-    }
+    // Note: replay protection is handled by Stripe's signature verification
+    // (timestamp tolerance) + our event deduplication by event ID below.
+    // No additional age check needed — Stripe legitimately retries old events.
 
     const supabase = createAdminClient();
     const eventId = event.id;
@@ -116,11 +113,14 @@ async function handleCheckoutCompleted(
     : session.customer?.id ?? null;
 
   if (orderCode) {
+    // Only mark as 'paid' if there was an actual payment (not a trial signup)
+    const hasPayment = session.payment_status === 'paid' && session.amount_total && session.amount_total > 0;
+    const orderStatus = hasPayment ? 'paid' : 'trial';
     const { error: orderUpdateError } = await supabase
       .from('billing_orders')
       .update({
-        status: 'paid',
-        paid_at: new Date().toISOString(),
+        status: orderStatus,
+        ...(hasPayment ? { paid_at: new Date().toISOString() } : {}),
         stripe_payment_intent_id: typeof session.payment_intent === 'string'
           ? session.payment_intent
           : session.payment_intent?.id ?? null,
@@ -128,7 +128,7 @@ async function handleCheckoutCompleted(
       })
       .eq('order_code', orderCode)
       .in('status', ['draft', 'pending']);
-    console.log('[WEBHOOK_STRIPE] Order update:', { orderCode, error: orderUpdateError });
+    console.log('[WEBHOOK_STRIPE] Order update:', { orderCode, status: orderStatus, amount: session.amount_total, error: orderUpdateError });
   }
 
   if (session.mode === 'subscription' && session.subscription) {

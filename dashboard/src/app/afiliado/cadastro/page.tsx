@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { Loader2, Gift, Link2, Banknote, CheckCircle } from 'lucide-react'
+import { AlertDialog } from '@/components/ui/confirm-dialog'
 
 const NEON_PINK = '#ff007a'
 
@@ -29,6 +30,7 @@ const PIX_TYPES = ['CPF', 'Email', 'Telefone', 'Aleatoria'] as const
 export default function AffiliateCadastroPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -57,7 +59,7 @@ export default function AffiliateCadastroPage() {
       }
       setSuccess(true)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao enviar cadastro')
+      setErrorMsg(err instanceof Error ? err.message : 'Erro ao enviar cadastro')
     } finally {
       setLoading(false)
     }
@@ -232,6 +234,14 @@ export default function AffiliateCadastroPage() {
           &copy; 2026 HelpCloser &middot; helpcloser.app
         </p>
       </footer>
+
+      <AlertDialog
+        open={!!errorMsg}
+        title="Erro no cadastro"
+        description={errorMsg ?? ''}
+        variant="error"
+        onClose={() => setErrorMsg(null)}
+      />
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { Users, UserPlus, ShieldAlert, Loader2, Trash2, ArrowUpDown, Shield, Use
 import { createClient } from '@/lib/supabase/client'
 import { api } from '@/lib/api'
 import { usePlanLimits } from '@/components/feature-gate'
+import { ConfirmDialog, AlertDialog } from '@/components/ui/confirm-dialog'
 
 const CARD_STYLE = { backgroundColor: '#1e1e1e', borderColor: 'rgba(255,255,255,0.05)' }
 const NEON_PINK = '#ff007a'
@@ -40,13 +41,16 @@ export default function TeamPage() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordLoading, setPasswordLoading] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{ title: string; description: string; variant: 'danger' | 'warning'; onConfirm: () => void } | null>(null)
+  const [alertDialog, setAlertDialog] = useState<{ title: string; description: string; variant: 'error' | 'success' | 'info' } | null>(null)
   const supabase = createClient()
 
   // Plan limits
   const { plan, limits, usage, canAddSeller, loading: planLoading } = usePlanLimits()
-  const sellerCount = members.filter(m => m.role === 'SELLER').length
-  const isAtSellerLimit = limits.maxSellers !== -1 && sellerCount >= limits.maxSellers
-  const isNearSellerLimit = limits.maxSellers !== -1 && sellerCount >= limits.maxSellers - 1 && sellerCount < limits.maxSellers
+  // Count all members except the current user (owner) — prevents bypass by promoting sellers to manager
+  const memberCount = members.filter(m => m.id !== currentUserId).length
+  const isAtSellerLimit = limits.maxSellers !== -1 && memberCount >= limits.maxSellers
+  const isNearSellerLimit = limits.maxSellers !== -1 && memberCount >= limits.maxSellers - 1 && memberCount < limits.maxSellers
 
   // Clear feedback after 4s
   useEffect(() => {
@@ -110,7 +114,7 @@ export default function TeamPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        alert("Erro de autenticação: Sua sessão expirou.")
+        setAlertDialog({ title: 'Sessão expirada', description: 'Sua sessão expirou. Faça login novamente.', variant: 'error' })
         return
       }
 
@@ -135,12 +139,20 @@ export default function TeamPage() {
     }
 
     const member = members.find(m => m.id === memberId)
-    const confirmMsg = newRole === 'MANAGER'
-      ? `Promover ${member?.full_name || 'este membro'} para Gestor?`
-      : `Rebaixar ${member?.full_name || 'este membro'} para Vendedor?`
+    const memberName = member?.full_name || 'este membro'
 
-    if (!confirm(confirmMsg)) return
+    setConfirmDialog({
+      title: newRole === 'MANAGER' ? 'Promover para Gestor?' : 'Rebaixar para Vendedor?',
+      description: newRole === 'MANAGER'
+        ? `${memberName} terá acesso a todas as funcionalidades de gestão, incluindo equipe, analytics e coaches.`
+        : `${memberName} terá acesso apenas às funcionalidades de vendedor.`,
+      variant: 'warning',
+      onConfirm: () => doUpdateRole(memberId, newRole),
+    })
+  }
 
+  const doUpdateRole = async (memberId: string, newRole: string) => {
+    setConfirmDialog(null)
     setActionLoading(memberId)
     try {
       const { error } = await supabase
@@ -168,15 +180,23 @@ export default function TeamPage() {
     }
 
     const member = members.find(m => m.id === memberId)
-    if (!confirm(`Tem certeza que deseja remover ${member?.full_name || 'este vendedor'}? Esta ação não pode ser desfeita.`)) return
+    setConfirmDialog({
+      title: 'Remover membro?',
+      description: `${member?.full_name || 'Este vendedor'} será removido permanentemente da equipe. Todas as chamadas e dados serão mantidos, mas o acesso será revogado. Esta ação não pode ser desfeita.`,
+      variant: 'danger',
+      onConfirm: () => doRemoveMember(memberId),
+    })
+  }
 
+  const doRemoveMember = async (memberId: string) => {
+    setConfirmDialog(null)
     setActionLoading(memberId)
     try {
       // Fully delete user (profile + auth) via backend admin API
       await api.post('/api/admin/delete-user', { user_id: memberId })
 
       setMembers(prev => prev.filter(m => m.id !== memberId))
-      setFeedback({ type: 'success', message: `${member?.full_name || 'Membro'} excluído com sucesso.` })
+      setFeedback({ type: 'success', message: 'Membro excluído com sucesso.' })
     } catch (err: any) {
       console.error('removeMember error:', err)
       setFeedback({ type: 'error', message: `Erro ao remover: ${err.message}` })
@@ -313,8 +333,8 @@ export default function TeamPage() {
               }
             </p>
             <p className="text-xs text-gray-500">
-              {sellerCount} de {limits.maxSellers} vendedores no plano {plan}
-              {!isAtSellerLimit && ` (${limits.maxSellers - sellerCount} restante${limits.maxSellers - sellerCount > 1 ? 's' : ''})`}
+              {memberCount} de {limits.maxSellers} membros no plano {plan}
+              {!isAtSellerLimit && ` (${limits.maxSellers - memberCount} restante${limits.maxSellers - memberCount > 1 ? 's' : ''})`}
             </p>
           </div>
           {isAtSellerLimit && (
@@ -559,6 +579,25 @@ export default function TeamPage() {
           )}
         </CardContent>
       </Card>
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title ?? ''}
+        description={confirmDialog?.description}
+        variant={confirmDialog?.variant ?? 'warning'}
+        confirmLabel={confirmDialog?.variant === 'danger' ? 'Remover' : 'Confirmar'}
+        onConfirm={() => confirmDialog?.onConfirm()}
+        onCancel={() => setConfirmDialog(null)}
+      />
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        open={!!alertDialog}
+        title={alertDialog?.title ?? ''}
+        description={alertDialog?.description}
+        variant={alertDialog?.variant ?? 'error'}
+        onClose={() => setAlertDialog(null)}
+      />
     </div>
   )
 }

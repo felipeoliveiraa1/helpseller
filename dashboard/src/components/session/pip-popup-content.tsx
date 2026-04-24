@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { WebSessionState, CoachMessage, CallResult } from '@/hooks/use-web-session'
 import { useSmartAutoscroll } from '@/hooks/use-smart-autoscroll'
 
@@ -25,9 +25,28 @@ export function PipPopupContent({ state, onDismiss, onStop }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('coach')
   const [fontSizeOffset, setFontSizeOffset] = useState(0)
   const fs = (base: number) => base + fontSizeOffset
+  const [showFontHint, setShowFontHint] = useState(false)
 
   const activeCoach = useMemo(() => (state.coachMessages || []).filter(m => !m.isDismissed), [state.coachMessages])
   const finalTranscript = useMemo(() => (state.transcript || []).filter(t => t.isFinal), [state.transcript])
+
+  const dismissFontHint = () => {
+    setShowFontHint(false)
+  }
+
+  // Show the font-size hint at the start of every session (when the call becomes
+  // active). Auto-dismisses after 8s or when the seller changes the font size.
+  useEffect(() => {
+    if (state.status !== 'active') return
+    setShowFontHint(true)
+    const timer = setTimeout(() => setShowFontHint(false), 8000)
+    return () => clearTimeout(timer)
+  }, [state.status])
+
+  useEffect(() => {
+    if (fontSizeOffset !== 0) dismissFontHint()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSizeOffset])
 
   const scrollDep = activeTab === 'coach'
     ? `coach:${activeCoach.length}`
@@ -109,7 +128,7 @@ export function PipPopupContent({ state, onDismiss, onStop }: Props) {
           </svg>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '2px 4px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, padding: '2px 4px', borderRadius: 4, border: showFontHint ? `1px solid ${NEON_PINK}` : '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)', boxShadow: showFontHint ? `0 0 0 2px ${NEON_PINK}33` : 'none', transition: 'box-shadow 0.2s, border-color 0.2s' }}>
             <button
               onClick={(e) => { e.stopPropagation(); e.preventDefault(); setFontSizeOffset(Math.max(-2, fontSizeOffset - 1)); }}
               onMouseDown={(e) => e.stopPropagation()}
@@ -124,10 +143,44 @@ export function PipPopupContent({ state, onDismiss, onStop }: Props) {
               disabled={fontSizeOffset >= 4}
               style={{ padding: '0 3px', background: 'none', border: 'none', fontSize: 10, fontWeight: 700, color: fontSizeOffset >= 4 ? '#333' : '#666', cursor: fontSizeOffset >= 4 ? 'default' : 'pointer' }}
             >A+</button>
+            {showFontHint && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 8px)', right: -4, zIndex: 50,
+                background: NEON_PINK, color: 'white',
+                padding: '6px 10px', borderRadius: 8,
+                fontSize: 11, fontWeight: 600, lineHeight: 1.3,
+                whiteSpace: 'nowrap',
+                boxShadow: '0 6px 16px rgba(0,0,0,0.4)',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <span>Aumente a letra se precisar</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); dismissFontHint(); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  aria-label="Fechar dica"
+                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', width: 16, height: 16, borderRadius: '50%', fontSize: 11, lineHeight: '16px', cursor: 'pointer', padding: 0 }}
+                >×</button>
+                <span style={{
+                  position: 'absolute', top: -4, right: 14,
+                  width: 8, height: 8, background: NEON_PINK,
+                  transform: 'rotate(45deg)',
+                }} />
+              </div>
+            )}
           </div>
           <span style={{ fontSize: 11, color: '#444', fontWeight: 600 }}>HelpCloser</span>
         </div>
       </div>
+
+      {/* Screen-share ended banner */}
+      {state.screenShareEnded && (
+        <div style={{ padding: '8px 12px', background: 'rgba(245,158,11,0.15)', borderBottom: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
+          <span style={{ fontSize: fs(11), color: '#fef3c7', flex: 1, lineHeight: 1.3 }}>
+            Compartilhamento parou. Clique em <strong>Encerrar</strong> abaixo para finalizar a call e salvar a análise.
+          </span>
+        </div>
+      )}
 
       {/* SPIN */}
       {state.currentSpinPhase && SPIN_PHASES[state.currentSpinPhase] && (

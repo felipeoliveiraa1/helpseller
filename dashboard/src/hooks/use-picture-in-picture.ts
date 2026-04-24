@@ -126,7 +126,21 @@ export function usePictureInPicture() {
                 container.style.height = '100%'
                 pipWindow.document.body.appendChild(container)
 
-                pipWindow.addEventListener('pagehide', cleanup, { once: true })
+                // Only cleanup when the PiP window is really closed. `pagehide` can fire
+                // on navigation-like events (rapid focus switches, transient state changes)
+                // while the window stays open — double-check `pipWindow.closed` on a short
+                // delay before tearing the React portal down.
+                const handleHide = () => {
+                    setTimeout(() => {
+                        if (pipWindow.closed) cleanup()
+                    }, 150)
+                }
+                pipWindow.addEventListener('pagehide', handleHide)
+                // Fallback watchdog: some browsers don't emit pagehide reliably.
+                if (pollRef.current) clearInterval(pollRef.current)
+                pollRef.current = setInterval(() => {
+                    if (pipWindow.closed) cleanup()
+                }, 500)
 
                 pipWindowRef.current = pipWindow
                 setState({ container, isOpen: true, supportsDocumentPip: true })

@@ -213,7 +213,8 @@ export function SessionConfigForm({ onStart }: SessionConfigFormProps) {
                 <span className="material-icons-outlined text-sm text-gray-500 mt-0.5">info</span>
                 <p className="text-xs text-gray-500 leading-relaxed">
                   A sessão abre nesta aba e em um <strong className="text-gray-400">popup flutuante</strong> ao lado do Meet.
-                  Selecione a aba da reunião e marque <strong className="text-gray-400">&quot;Compartilhar áudio&quot;</strong>.
+                  No seletor do Chrome, escolha a <strong className="text-gray-400">aba do Meet</strong> (não &quot;Tela inteira&quot;) e marque <strong className="text-gray-400">&quot;Compartilhar áudio&quot;</strong>.
+                  Compartilhar &quot;Guia&quot; evita que o popup flutuante apareça na tela capturada.
                 </p>
               </div>
             </div>

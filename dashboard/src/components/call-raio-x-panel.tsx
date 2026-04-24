@@ -187,6 +187,12 @@ export function CallRaioXPanel({ call, objections, loading, error }: CallRaioXPa
                 // Native DB overrides AI JSON (since older AI runs generated dummy dates like 30/09/2023 without context)
                 lead_data_call: call.started_at || call.summary.raw_analysis.lead_data_call,
                 lead_duracao_segundos: call.duration_seconds || call.summary.raw_analysis.lead_duracao_segundos || 0,
+                // The seller's manual outcome (CONVERTED/LOST/FOLLOW_UP) is the source of truth.
+                // The AI may hallucinate 'Qualificado' / 'Desqualificado' which confuses the manager.
+                resultado: call.summary.result === 'CONVERTED' ? 'Venda realizada'
+                    : call.summary.result === 'FOLLOW_UP' ? 'Em negociação'
+                        : call.summary.result === 'LOST' ? 'Venda não realizada'
+                            : call.summary.raw_analysis.resultado ?? 'A definir',
             };
         } else {
             // Legacy mapping

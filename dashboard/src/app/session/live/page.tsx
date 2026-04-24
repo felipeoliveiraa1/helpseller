@@ -22,7 +22,12 @@ export default function SessionLivePopup() {
   const [activeTab, setActiveTab] = useState<Tab>('coach')
   const [fontSizeOffset, setFontSizeOffset] = useState(0)
   const fs = (base: number) => base + fontSizeOffset
+  const [showFontHint, setShowFontHint] = useState(false)
   const channelRef = useRef<BroadcastChannel | null>(null)
+
+  const dismissFontHint = () => {
+    setShowFontHint(false)
+  }
 
   useEffect(() => {
     const ch = new BroadcastChannel(BROADCAST_CHANNEL)
@@ -42,6 +47,18 @@ export default function SessionLivePopup() {
 
   const activeCoach = useMemo(() => (state?.coachMessages || []).filter(m => !m.isDismissed), [state?.coachMessages])
   const finalTranscript = useMemo(() => (state?.transcript || []).filter(t => t.isFinal), [state?.transcript])
+
+  useEffect(() => {
+    if (state?.status !== 'active') return
+    setShowFontHint(true)
+    const timer = setTimeout(() => setShowFontHint(false), 8000)
+    return () => clearTimeout(timer)
+  }, [state?.status])
+
+  useEffect(() => {
+    if (fontSizeOffset !== 0) dismissFontHint()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSizeOffset])
 
   const scrollDep = activeTab === 'coach'
     ? `coach:${activeCoach.length}`
@@ -125,7 +142,11 @@ export default function SessionLivePopup() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-white/10 bg-white/[0.03]">
+          <div
+            className={`relative flex items-center gap-0.5 px-1.5 py-0.5 rounded border bg-white/[0.03] transition-all ${
+              showFontHint ? 'border-pink-500 shadow-[0_0_0_2px_rgba(255,0,122,0.2)]' : 'border-white/10'
+            }`}
+          >
             <button
               onClick={() => setFontSizeOffset(Math.max(-2, fontSizeOffset - 1))}
               disabled={fontSizeOffset <= -2}
@@ -136,6 +157,23 @@ export default function SessionLivePopup() {
               disabled={fontSizeOffset >= 4}
               className="px-1 text-[10px] font-bold text-gray-500 hover:text-white disabled:opacity-30 transition-colors"
             >A+</button>
+            {showFontHint && (
+              <div
+                className="absolute right-[-4px] top-[calc(100%+8px)] z-50 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-white whitespace-nowrap shadow-lg"
+                style={{ backgroundColor: NEON_PINK }}
+              >
+                <span>Aumente a letra se precisar</span>
+                <button
+                  onClick={dismissFontHint}
+                  aria-label="Fechar dica"
+                  className="flex h-4 w-4 items-center justify-center rounded-full bg-white/20 text-[11px] leading-none"
+                >×</button>
+                <span
+                  className="absolute right-3 top-[-3px] h-2 w-2 rotate-45"
+                  style={{ backgroundColor: NEON_PINK }}
+                />
+              </div>
+            )}
           </div>
           <img src="/logo-closer-white.png" alt="" className="h-4 opacity-50" />
         </div>

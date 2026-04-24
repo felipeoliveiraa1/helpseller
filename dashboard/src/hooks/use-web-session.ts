@@ -48,6 +48,11 @@ export interface WebSessionState {
   error: string | null
   micAvailable: boolean
   isStreaming: boolean
+  /** True when the screen share ended mid-call (seller clicked "Stop sharing" or
+   * switched to another surface). The call is NOT auto-closed — the seller can
+   * either click "Retomar compartilhamento" to pick a new source, or "Encerrar"
+   * to finalize manually. */
+  screenShareEnded: boolean
 }
 
 const MAX_RECORDING_CHUNKS = 3600
@@ -66,6 +71,7 @@ export function useWebSession() {
     error: null,
     micAvailable: false,
     isStreaming: false,
+    screenShareEnded: false,
   })
 
   // BroadcastChannel to sync with popup
@@ -481,6 +487,7 @@ export function useWebSession() {
     setState(prev => ({
       ...prev, status: 'configuring', error: null, transcript: [], coachMessages: [],
       callId: null, currentSpinPhase: null, duration: 0, micAvailable: false, isStreaming: false,
+      screenShareEnded: false,
     }))
 
     try {
@@ -500,9 +507,16 @@ export function useWebSession() {
         throw new Error('Nenhum áudio capturado. Marque "Compartilhar áudio" ao selecionar a aba.')
       }
 
-      // Listen for user stopping share
+      // Listen for user stopping share. We do NOT auto-close the call anymore —
+      // the seller may have clicked "Share a different screen" in the browser's
+      // sharing bar (which ends the OLD track but doesn't mean the call is over),
+      // or just released the share to switch to a different surface. Forcing the
+      // call to close as FOLLOW_UP was losing the manual outcome the seller wanted
+      // to set. Instead, surface a flag so the UI can offer "Retomar compartilhamento"
+      // or let the seller press "Encerrar" with the correct outcome.
       audioTracks[0].onended = () => {
-        if (isActiveRef.current) stopRef.current('FOLLOW_UP')
+        if (!isActiveRef.current) return
+        setState(prev => ({ ...prev, screenShareEnded: true, isStreaming: false }))
       }
 
       // 2. Capture microphone (seller)
@@ -631,7 +645,7 @@ export function useWebSession() {
   const reset = useCallback(() => {
     setState({
       status: 'idle', callId: null, transcript: [], coachMessages: [], currentSpinPhase: null,
-      duration: 0, error: null, micAvailable: false, isStreaming: false,
+      duration: 0, error: null, micAvailable: false, isStreaming: false, screenShareEnded: false,
     })
   }, [])
 

@@ -1688,9 +1688,15 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                 switch (event.type) {
                     case 'manager:join': {
-                        // Manager wants to join/monitor a specific call
-                        const { callId } = event.payload || {};
-                        logger.info(`[LIVE_DEBUG] manager:join received callId=${callId ?? 'undefined'}`);
+                        // Manager wants to join/monitor a specific call.
+                        // subscribeMedia (default true) controls whether this socket receives
+                        // binary media chunks via the direct broadcast path. The /live page
+                        // opens TWO WebSockets per manager (page.tsx for transcript/summary,
+                        // MediaStreamPlayer for video); only the second needs media. The
+                        // transcript-only socket passes subscribeMedia: false so it stops
+                        // receiving a duplicate stream of ~500KB/s of video bytes it doesn't use.
+                        const { callId, subscribeMedia = true } = event.payload || {};
+                        logger.info(`[LIVE_DEBUG] manager:join received callId=${callId ?? 'undefined'} subscribeMedia=${subscribeMedia}`);
 
                         if (!callId) {
                             socket.send(JSON.stringify({
@@ -1735,13 +1741,17 @@ export async function websocketRoutes(fastify: FastifyInstance) {
 
                         // Subscribe to new call's transcript stream
                         subscribedCallId = callId;
-                        let set = managerSocketsByCallId.get(callId);
-                        if (!set) {
-                            set = new Set();
-                            managerSocketsByCallId.set(callId, set);
+                        if (subscribeMedia) {
+                            let set = managerSocketsByCallId.get(callId);
+                            if (!set) {
+                                set = new Set();
+                                managerSocketsByCallId.set(callId, set);
+                            }
+                            set.add(socket);
+                            logger.info(`[LIVE_DEBUG] manager subscribed (media) to callId=${callId} totalManagersForCall=${set.size}`);
+                        } else {
+                            logger.info(`[LIVE_DEBUG] manager subscribed (transcript only) to callId=${callId}`);
                         }
-                        set.add(socket);
-                        logger.info(`[LIVE_DEBUG] manager subscribed to callId=${callId} totalManagersForCall=${set.size}`);
 
                         streamHandler = (transcriptData: any) => {
                             if (socket.readyState !== WebSocket.OPEN) return;

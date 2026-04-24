@@ -232,7 +232,12 @@ export default function LivePage() {
                     setWsStatus('connected');
                     socket!.send(JSON.stringify({
                         type: 'manager:join',
-                        payload: { callId }
+                        // This socket only consumes transcript + live summary.
+                        // MediaStreamPlayer opens a separate WS for the video feed.
+                        // subscribeMedia:false tells the backend not to add us to the
+                        // media broadcast set (saves ~500KB/s of duplicated bytes per
+                        // manager, which is what made the /live page feel slow to open).
+                        payload: { callId, subscribeMedia: false }
                     }));
                     return;
                 }

@@ -97,12 +97,19 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
     const liveEdgeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const playbackFallbackScheduledRef = useRef(false);
     const appendCountRef = useRef(0);
+    const decodeErrorRetryCountRef = useRef(0);
+    const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const MAX_DECODE_ERROR_RETRIES = 3;
     const [isPlaying, setIsPlaying] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showWaitingHint, setShowWaitingHint] = useState(false);
     const [resetCounter, setResetCounter] = useState(0);
 
     const handleRetry = () => {
+        if (autoRetryTimerRef.current) {
+            clearTimeout(autoRetryTimerRef.current);
+            autoRetryTimerRef.current = null;
+        }
         setError(null);
         setIsPlaying(false);
         setShowWaitingHint(false);
@@ -113,6 +120,8 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         timestampOffsetRetryCountRef.current = 0;
         playbackFallbackScheduledRef.current = false;
         appendCountRef.current = 0;
+        // Manual retry resets the auto-retry budget.
+        decodeErrorRetryCountRef.current = 0;
         setResetCounter(c => c + 1);
     };
 
@@ -128,6 +137,22 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         if (video?.error) {
             verror('video.error in processQueue', { code: video.error.code, msg: video.error.message });
             sourceBufferDeadRef.current = true;
+
+            // Auto-recover from PIPELINE_ERROR_DECODE (code 3): the Chrome decoder
+            // hit a bad frame. We give up the current MediaSource and rebuild from
+            // the next init segment. Budget is capped so we don't loop forever on
+            // a genuinely broken stream — after that, show the manual retry card.
+            const isDecodeError = video.error.code === 3;
+            if (isDecodeError && decodeErrorRetryCountRef.current < MAX_DECODE_ERROR_RETRIES) {
+                decodeErrorRetryCountRef.current++;
+                vwarn(`AUTO_RETRY (${decodeErrorRetryCountRef.current}/${MAX_DECODE_ERROR_RETRIES}) after decode error`);
+                if (autoRetryTimerRef.current) clearTimeout(autoRetryTimerRef.current);
+                autoRetryTimerRef.current = setTimeout(() => {
+                    handleRetry();
+                }, 1500);
+                return;
+            }
+
             setError('Playback error');
             return;
         }
@@ -565,6 +590,10 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         return () => {
             vlog('UNMOUNT_OR_DEP_CHANGE', { totalChunks: chunkStats.totalChunks, totalKB: Math.round(chunkStats.totalBytes / 1024) });
             if (healthCheck) clearInterval(healthCheck);
+            if (autoRetryTimerRef.current) {
+                clearTimeout(autoRetryTimerRef.current);
+                autoRetryTimerRef.current = null;
+            }
             videoListeners.forEach(({ ev, fn }) => {
                 try { videoEl.removeEventListener(ev, fn); } catch {}
             });

@@ -13,6 +13,27 @@ import Link from 'next/link'
 
 const FREE_ALLOWED_ROUTES = ['/billing', '/billing/success', '/billing/cancel', '/settings'] as const
 
+// Module-level cache to skip guard queries between navigations within the dashboard
+type CachedProfile = {
+  organizationId: string | null
+  organizationPlan: string
+  isDeactivated: boolean
+  fetchedAt: number
+}
+let _profileCache: CachedProfile | null = null
+let _profileInflight: Promise<CachedProfile> | null = null
+const PROFILE_CACHE_TTL = 60_000
+const PROFILE_LOAD_TIMEOUT = 8000
+
+/**
+ * Clears the in-memory profile cache. Call this on sign-out so a new user
+ * signing in from the same tab doesn't inherit the previous account's org/plan.
+ */
+export function clearProfileCache(): void {
+  _profileCache = null
+  _profileInflight = null
+}
+
 function TrialBanner({ organizationId }: { organizationId: string }) {
   const [usage, setUsage] = useState<{ usedMinutes: number; totalMinutes: number } | null>(null)
   const supabase = createClient()
@@ -140,43 +161,71 @@ export function DashboardContentGuard({ children }: DashboardContentGuardProps) 
   const supabase = createClient()
   const router = typeof window !== 'undefined' ? require('next/navigation').useRouter() : null
 
-  const loadProfile = useCallback(async () => {
-    try {
+  const applyCached = useCallback((cached: CachedProfile) => {
+    setOrganizationId(cached.organizationId)
+    setOrganizationPlan(cached.organizationPlan)
+    setIsDeactivated(cached.isDeactivated)
+    setLoading(false)
+  }, [])
+
+  const loadProfile = useCallback(async (opts: { force?: boolean } = {}) => {
+    if (!opts.force && _profileCache && Date.now() - _profileCache.fetchedAt < PROFILE_CACHE_TTL) {
+      applyCached(_profileCache)
+      return
+    }
+
+    const doFetch = async (): Promise<CachedProfile> => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
-        setOrganizationId(null)
-        return
+        return { organizationId: null, organizationPlan: 'FREE', isDeactivated: false, fetchedAt: Date.now() }
       }
+      // Single round-trip: profile + organization via Supabase join
       const { data: profile } = await supabase
         .from('profiles')
-        .select('organization_id, is_active')
+        .select('organization_id, is_active, organizations(plan)')
         .eq('id', user.id)
         .single()
 
-      // Block deactivated users
       const isActive = (profile as any)?.is_active
       if (isActive === false) {
-        setIsDeactivated(true)
         await supabase.auth.signOut()
-        return
+        return { organizationId: null, organizationPlan: 'FREE', isDeactivated: true, fetchedAt: Date.now() }
       }
 
-      const orgId = (profile as { organization_id: string | null } | null)?.organization_id ?? null
-      setOrganizationId(orgId)
-      if (orgId) {
-        const { data: org } = await supabase
-          .from('organizations')
-          .select('plan')
-          .eq('id', orgId)
-          .single()
-        setOrganizationPlan((org as { plan?: string } | null)?.plan ?? 'FREE')
-      } else {
-        setOrganizationPlan('FREE')
+      const p = profile as { organization_id: string | null; organizations?: { plan?: string } | { plan?: string }[] } | null
+      const orgRel = Array.isArray(p?.organizations) ? p?.organizations[0] : p?.organizations
+      return {
+        organizationId: p?.organization_id ?? null,
+        organizationPlan: orgRel?.plan ?? 'FREE',
+        isDeactivated: false,
+        fetchedAt: Date.now(),
       }
+    }
+
+    try {
+      if (!_profileInflight) {
+        _profileInflight = doFetch()
+          .then((result) => { _profileCache = result; return result })
+          .finally(() => { _profileInflight = null })
+      }
+
+      const timeout = new Promise<CachedProfile>((resolve) => {
+        setTimeout(() => resolve({
+          organizationId: _profileCache?.organizationId ?? null,
+          organizationPlan: _profileCache?.organizationPlan ?? 'FREE',
+          isDeactivated: false,
+          fetchedAt: Date.now(),
+        }), PROFILE_LOAD_TIMEOUT)
+      })
+
+      const result = await Promise.race([_profileInflight, timeout])
+      applyCached(result)
+    } catch {
+      applyCached({ organizationId: null, organizationPlan: 'FREE', isDeactivated: false, fetchedAt: Date.now() })
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [applyCached])
 
   useEffect(() => {
     setMounted(true)

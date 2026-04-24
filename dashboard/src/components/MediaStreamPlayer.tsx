@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { parseBinaryMediaChunk, detectCodecFromInit } from '@/lib/webm-parser';
 
 interface MediaStreamPlayerProps {
     callId: string;
@@ -19,35 +20,65 @@ const LIVE_EDGE_SEEK_INTERVAL_MS = 2000;
 /** Only remove old buffer when we have at least this many seconds ahead (avoids DEMUXER_UNDERFLOW). */
 const MIN_BUFFER_AHEAD_BEFORE_TRIM_SEC = 10;
 
-/** Check if bytes are large enough to be a valid init segment */
-function isLikelyInitSegment(bytes: Uint8Array): boolean {
-    return bytes.length >= 10;
+
+/**
+ * Debug logging gated on env. Enable in prod by setting
+ *   NEXT_PUBLIC_DEBUG_VIDEO=1
+ * in the browser environment. `verror` always runs because it's
+ * meant for visible failures (rare + actionable).
+ */
+const DEBUG_VIDEO =
+    process.env.NODE_ENV !== 'production' ||
+    (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_VIDEO === '1');
+
+function vlog(stage: string, data?: Record<string, unknown>) {
+    if (!DEBUG_VIDEO) return;
+    const ts = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
+    // eslint-disable-next-line no-console
+    console.log(`[VIDEO ${ts}] ${stage}`, data ?? '');
+}
+function vwarn(stage: string, data?: Record<string, unknown>) {
+    if (!DEBUG_VIDEO) return;
+    const ts = new Date().toISOString().slice(11, 23);
+    // eslint-disable-next-line no-console
+    console.warn(`[VIDEO ${ts}] ⚠ ${stage}`, data ?? '');
+}
+function verror(stage: string, data?: Record<string, unknown>) {
+    // Always log real errors — these are rare and indicate a playback failure the user can see.
+    const ts = new Date().toISOString().slice(11, 23);
+    // eslint-disable-next-line no-console
+    console.error(`[VIDEO ${ts}] ✖ ${stage}`, data ?? '');
 }
 
-/** Detect codec from WebM init segment by searching for codec IDs in the binary */
-function detectCodecFromInit(bytes: Uint8Array): string {
-    const str = new TextDecoder('ascii', { fatal: false }).decode(bytes);
-    if (str.includes('V_VP9')) return 'vp9';
-    if (str.includes('V_VP8')) return 'vp8';
-    // Fallback: check for binary codec ID patterns
-    for (let i = 0; i < bytes.length - 4; i++) {
-        // VP9 codec ID: 0x56 0x5F 0x56 0x50 0x39
-        if (bytes[i] === 0x56 && bytes[i+1] === 0x5F && bytes[i+2] === 0x56 && bytes[i+3] === 0x50 && bytes[i+4] === 0x39) return 'vp9';
-        // VP8 codec ID: 0x56 0x5F 0x56 0x50 0x38
-        if (bytes[i] === 0x56 && bytes[i+1] === 0x5F && bytes[i+2] === 0x56 && bytes[i+3] === 0x50 && bytes[i+4] === 0x38) return 'vp8';
-    }
-    return 'vp8'; // default to vp8
-}
-
-/** Binary frame from backend: 1 byte flag (0x01=header, 0x00=data) + chunk bytes. */
-function parseBinaryMediaChunk(data: ArrayBuffer): { bytes: Uint8Array; isHeader: boolean } | null {
-    if (data.byteLength < 2) return null;
-    const view = new Uint8Array(data);
-    const isHeader = view[0] === 0x01;
-    const chunkLen = view.length - 1;
-    const chunk = new Uint8Array(chunkLen);
-    for (let i = 0; i < chunkLen; i++) chunk[i] = view[i + 1];
-    return { bytes: chunk, isHeader };
+/** Summarize current video + MSE state for logs. */
+function snapshotVideo(video: HTMLVideoElement | null, mediaSource: MediaSource | null, sourceBuffer: SourceBuffer | null) {
+    if (!video) return { video: 'null' };
+    const bufferedRanges: Array<[number, number]> = [];
+    try {
+        if (sourceBuffer?.buffered) {
+            for (let i = 0; i < sourceBuffer.buffered.length; i++) {
+                bufferedRanges.push([sourceBuffer.buffered.start(i), sourceBuffer.buffered.end(i)]);
+            }
+        }
+    } catch {}
+    const videoBufferedRanges: Array<[number, number]> = [];
+    try {
+        for (let i = 0; i < video.buffered.length; i++) {
+            videoBufferedRanges.push([video.buffered.start(i), video.buffered.end(i)]);
+        }
+    } catch {}
+    return {
+        currentTime: +video.currentTime.toFixed(2),
+        paused: video.paused,
+        ended: video.ended,
+        readyState: video.readyState, // 0=NOTHING 1=METADATA 2=CURRENT 3=FUTURE 4=ENOUGH
+        networkState: video.networkState, // 0=EMPTY 1=IDLE 2=LOADING 3=NO_SOURCE
+        videoError: video.error ? `code=${video.error.code} msg=${video.error.message}` : null,
+        msReadyState: mediaSource?.readyState ?? 'null',
+        sbUpdating: sourceBuffer?.updating ?? null,
+        sbBuffered: bufferedRanges.map(([s, e]) => `${s.toFixed(2)}-${e.toFixed(2)}`).join('|') || '(empty)',
+        videoBuffered: videoBufferedRanges.map(([s, e]) => `${s.toFixed(2)}-${e.toFixed(2)}`).join('|') || '(empty)',
+    };
 }
 
 export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerProps) {
@@ -65,9 +96,25 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
     const trimIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const liveEdgeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const playbackFallbackScheduledRef = useRef(false);
+    const appendCountRef = useRef(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showWaitingHint, setShowWaitingHint] = useState(false);
+    const [resetCounter, setResetCounter] = useState(0);
+
+    const handleRetry = () => {
+        setError(null);
+        setIsPlaying(false);
+        setShowWaitingHint(false);
+        sourceBufferDeadRef.current = false;
+        hasReceivedChunkRef.current = false;
+        hasAppendedInitRef.current = false;
+        queueRef.current = [];
+        timestampOffsetRetryCountRef.current = 0;
+        playbackFallbackScheduledRef.current = false;
+        appendCountRef.current = 0;
+        setResetCounter(c => c + 1);
+    };
 
     // Process the queue when SourceBuffer is ready
     const processQueue = () => {
@@ -79,7 +126,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
 
         if (!sourceBuffer || !mediaSource || sourceBuffer.updating || queue.length === 0) return;
         if (video?.error) {
-            console.warn('[LIVE_DEBUG] Video element error:', video.error.code, video.error.message);
+            verror('video.error in processQueue', { code: video.error.code, msg: video.error.message });
             sourceBufferDeadRef.current = true;
             setError('Playback error');
             return;
@@ -110,36 +157,70 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                                     (detectedCodec === 'vp9' && currentMime.includes('vp8'));
                 if (needsSwitch && mediaSource.readyState === 'open') {
                     const newMime = `video/webm;codecs=${detectedCodec},opus`;
-                    console.log('[LIVE_DEBUG] Codec mismatch! Switching from', currentMime, 'to', newMime);
+                    vwarn('CODEC_MISMATCH_SWITCH', { from: currentMime, to: newMime });
                     try {
                         mediaSource.removeSourceBuffer(sourceBuffer);
                         const newSB = mediaSource.addSourceBuffer(newMime);
                         (newSB as any).mimeType = newMime;
                         sourceBufferRef.current = newSB;
-                        newSB.mode = 'segments';
+                        newSB.mode = 'sequence';
                         newSB.addEventListener('updateend', () => processQueue());
                         newSB.addEventListener('error', () => {
                             sourceBufferDeadRef.current = true;
                             sourceBufferRef.current = null;
                             setError('Playback error');
                         });
-                        // Re-queue this header for the new SourceBuffer
+                        // Re-queue this header for the new SourceBuffer, then force re-processing
+                        // on next tick so the header is appended to the NEW SourceBuffer.
+                        // Without this setTimeout the queue stalls: data chunks keep arriving
+                        // but are rejected (no init yet), so processQueue is never re-invoked
+                        // and the re-queued header sits there forever.
                         queueRef.current.unshift(item!);
+                        setTimeout(() => processQueue(), 0);
                         return;
                     } catch (switchErr) {
-                        console.warn('[LIVE_DEBUG] Codec switch failed:', switchErr);
+                        vwarn('CODEC_SWITCH_FAILED', { err: String(switchErr) });
                     }
                 }
                 hasAppendedInitRef.current = true;
-                console.log('[LIVE_DEBUG] Init segment appended, size=', bytes.byteLength, 'codec=', detectedCodec);
+                vlog('INIT_APPENDED', { size: bytes.byteLength, codec: detectedCodec });
             } else if (isHeader && hasAppendedInitRef.current) {
-                // SUBSEQUENT headers: skip — just append as data to avoid resetting playback
-                // The backend often flags regular chunks as isHeader incorrectly
+                // Detect a fresh EBML init segment (starts with 0x1A 0x45 0xDF 0xA3).
+                // The MediaRecorder in the seller re-emits a new init segment every few seconds
+                // when it resets. In MSE 'segments' mode we APPEND it so the WebM demuxer
+                // reinitializes for the new Segment; otherwise the next data chunks (which belong
+                // to the new segment) fail with "RunSegmentParserLoop: stream parsing failed".
+                const looksLikeEBML = bytes.length > 64
+                    && bytes[0] === 0x1a && bytes[1] === 0x45
+                    && bytes[2] === 0xdf && bytes[3] === 0xa3;
+                if (looksLikeEBML) {
+                    vlog('NEW_SEGMENT_INIT_APPEND', { size: bytes.byteLength });
+                    // Fall through to appendBuffer — MSE will re-init the parser
+                } else if (bytes.length < 8) {
+                    // tiny heartbeat/control chunk — ignore
+                    processQueue();
+                    return;
+                } else {
+                    // Mislabelled header that is not a real init segment — treat as data
+                }
             }
 
+            const bufBefore = sourceBuffer.buffered.length > 0
+                ? `${sourceBuffer.buffered.start(0).toFixed(2)}-${sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1).toFixed(2)}`
+                : '(empty)';
             const copy = new Uint8Array(bytes.byteLength);
             copy.set(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
-            sourceBuffer.appendBuffer(copy.buffer);
+            try {
+                sourceBuffer.appendBuffer(copy.buffer);
+                appendCountRef.current++;
+                // Log every 5th append so we can see what's flowing into the SourceBuffer
+                if (appendCountRef.current <= 3 || appendCountRef.current % 5 === 0) {
+                    vlog('APPEND_CALLED', { seq: appendCountRef.current, size: bytes.byteLength, isHeader, bufBefore });
+                }
+            } catch (appendErr) {
+                vwarn('APPEND_SYNC_THROW', { msg: String(appendErr), size: bytes.byteLength, isHeader });
+                throw appendErr;
+            }
 
             // Try to play
             if (video?.paused && video.readyState >= 2 && !video.error) {
@@ -157,7 +238,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
             }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            console.warn('[LIVE_DEBUG] appendBuffer error:', msg);
+            vwarn('appendBuffer_ERROR', { msg, ...snapshotVideo(video, mediaSource, sourceBuffer) });
 
             if (msg.includes('removed from the parent') || msg.includes('error attribute')) {
                 sourceBufferDeadRef.current = true;
@@ -188,7 +269,8 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
     useEffect(() => {
         if (!videoRef.current) return;
 
-        console.log('[LIVE_DEBUG] MediaStreamPlayer mount callId=', callId, 'wsUrl=', wsUrl);
+        const instanceId = `MSP-${Math.random().toString(36).slice(2, 8)}`;
+        vlog('MOUNT', { instanceId, callId, resetCounter });
 
         queueRef.current = [];
         hasReceivedChunkRef.current = false;
@@ -197,19 +279,53 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         deferHeaderProcessRef.current = false;
         timestampOffsetRetryCountRef.current = 0;
         playbackFallbackScheduledRef.current = false;
+        appendCountRef.current = 0;
         setError(null);
         setIsPlaying(false);
         setShowWaitingHint(false);
 
+        // Chunk arrival stats
+        const chunkStats = { totalChunks: 0, totalBytes: 0, headers: 0, dataChunks: 0, lastLogAt: Date.now() };
+
         waitingTimeoutRef.current = setTimeout(() => {
             setShowWaitingHint(true);
-            console.log('[LIVE_DEBUG] MediaStreamPlayer 12s timeout: no media:chunk received yet for callId=', callId);
+            vwarn('NO_CHUNK_TIMEOUT_12S', { callId, chunksReceived: chunkStats.totalChunks });
         }, WAITING_HINT_AFTER_MS);
+
+        // Video element listeners for diagnostics
+        const videoEl = videoRef.current;
+        const onVideoEvent = (evName: string) => () => {
+            vlog(`video.${evName}`, snapshotVideo(videoEl, mediaSourceRef.current, sourceBufferRef.current));
+        };
+        const videoEvents = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'play', 'playing', 'pause', 'waiting', 'stalled', 'suspend', 'emptied', 'error', 'ended'];
+        const videoListeners = videoEvents.map(ev => {
+            const fn = onVideoEvent(ev);
+            videoEl.addEventListener(ev, fn);
+            return { ev, fn };
+        });
+
+        // Health check every 2s — single-line format so you can scan/copy without expanding.
+        // Skipped entirely when debug logging is disabled to avoid per-tick work in prod.
+        const healthCheck = DEBUG_VIDEO ? setInterval(() => {
+            const snap = snapshotVideo(videoEl, mediaSourceRef.current, sourceBufferRef.current);
+            const wsState = wsRef.current?.readyState;
+            const wsLabel = wsState === 0 ? 'CONNECTING' : wsState === 1 ? 'OPEN' : wsState === 2 ? 'CLOSING' : wsState === 3 ? 'CLOSED' : '?';
+            // eslint-disable-next-line no-console
+            console.log(
+                `[VIDEO HEALTH] t=${snap.currentTime} rs=${snap.readyState} ns=${snap.networkState} ` +
+                `paused=${snap.paused} err=${snap.videoError ?? 'null'} ` +
+                `chunks=${chunkStats.totalChunks}(data=${chunkStats.dataChunks},hdr=${chunkStats.headers},${Math.round(chunkStats.totalBytes / 1024)}KB) ` +
+                `queue=${queueRef.current.length} sbUpd=${snap.sbUpdating} msRS=${snap.msReadyState} ` +
+                `sbBuf=${snap.sbBuffered} vBuf=${snap.videoBuffered} ws=${wsLabel} ` +
+                `dead=${sourceBufferDeadRef.current} err=${error ?? 'null'}`
+            );
+        }, 2000) : null;
 
         // Create MediaSource
         const mediaSource = new MediaSource();
         mediaSourceRef.current = mediaSource;
         videoRef.current.src = URL.createObjectURL(mediaSource);
+        vlog('MediaSource_created', { readyState: mediaSource.readyState });
 
         const handleSourceOpen = () => {
             URL.revokeObjectURL(videoRef.current!.src); // Cleanup URL
@@ -221,30 +337,32 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
             }
 
             try {
+                // vp9 first — Google Meet's default codec since 2020+.
+                // Starting with vp9 avoids an unnecessary codec switch on the very first header.
                 const webmTypes = [
-                    'video/webm;codecs=vp8,opus',
-                    'video/webm;codecs=opus,vp8',
                     'video/webm;codecs=vp9,opus',
                     'video/webm;codecs=opus,vp9',
-                    'video/webm;codecs=vp8,vorbis',
-                    'video/webm;codecs=vp8',
+                    'video/webm;codecs=vp8,opus',
+                    'video/webm;codecs=opus,vp8',
                     'video/webm;codecs=vp9',
+                    'video/webm;codecs=vp8',
+                    'video/webm;codecs=vp8,vorbis',
                     'video/webm',
                 ];
                 const mimeType = webmTypes.find((t) => MediaSource.isTypeSupported(t)) ?? webmTypes[0];
-                console.log('[LIVE_DEBUG] MediaStreamPlayer addSourceBuffer mimeType=', mimeType);
+                vlog('SB_ADD', { mimeType });
 
                 const sourceBuffer = mediaSource.addSourceBuffer(mimeType);
                 (sourceBuffer as any).mimeType = mimeType; // store for codec detection
                 sourceBufferRef.current = sourceBuffer;
-                sourceBuffer.mode = 'segments';
+                sourceBuffer.mode = 'sequence';
 
                 sourceBuffer.addEventListener('updateend', () => {
                     processQueue();
                 });
 
-                sourceBuffer.addEventListener('error', () => {
-                    console.warn('[LIVE_DEBUG] SourceBuffer error — attempting recovery');
+                sourceBuffer.addEventListener('error', (e) => {
+                    vwarn('SB_ERROR — attempting recovery', { event: String(e), ...snapshotVideo(videoEl, mediaSourceRef.current, sourceBuffer) });
                     sourceBufferDeadRef.current = true;
                     sourceBufferRef.current = null;
                     try {
@@ -254,7 +372,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                     // Auto-recover: recreate MediaSource after brief pause
                     setTimeout(() => {
                         if (!videoRef.current) return;
-                        console.log('[LIVE_DEBUG] Recreating MediaSource after error');
+                        vlog('RECREATING_MEDIASOURCE_AFTER_ERROR');
                         sourceBufferDeadRef.current = false;
                         hasAppendedInitRef.current = false;
                         queueRef.current = [];
@@ -278,7 +396,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                                 const mimeType = webmTypes.find((t) => MediaSource.isTypeSupported(t)) ?? webmTypes[0];
                                 const newSB = newMS.addSourceBuffer(mimeType);
                                 sourceBufferRef.current = newSB;
-                                newSB.mode = 'segments';
+                                newSB.mode = 'sequence';
                                 newSB.addEventListener('updateend', () => processQueue());
                                 newSB.addEventListener('error', () => {
                                     sourceBufferDeadRef.current = true;
@@ -334,7 +452,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
 
                 let wsAuthenticated = false;
                 ws.onopen = () => {
-                    console.log('[LIVE_DEBUG] MediaStreamPlayer WS open, sending auth challenge');
+                    vlog('WS_OPEN → sending auth', { tokenLen: token?.length ?? 0 });
                     ws.send(JSON.stringify({ type: 'auth', payload: { token } }));
                 };
 
@@ -345,12 +463,28 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                         const parsed = parseBinaryMediaChunk(data);
                         if (!parsed) return;
                         const { bytes, isHeader } = parsed;
+                        chunkStats.totalChunks++;
+                        chunkStats.totalBytes += bytes.length;
+                        if (isHeader) chunkStats.headers++; else chunkStats.dataChunks++;
                         if (!hasReceivedChunkRef.current) {
                             hasReceivedChunkRef.current = true;
-                            console.log('[LIVE_DEBUG] MediaStreamPlayer first media chunk (binary) received');
+                            vlog('FIRST_CHUNK_RX', { instanceId, isHeader, bytes: bytes.length });
+                        }
+                        // Log every header so we can see if they are real (1KB+) or garbage (1 byte)
+                        if (isHeader) {
+                            vlog('HEADER_RX', { seq: chunkStats.headers, bytes: bytes.length, first8: Array.from(bytes.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(' ') });
+                        }
+                        // Log every Nth data chunk so we can see data is flowing after init
+                        if (hasAppendedInitRef.current && !isHeader && chunkStats.dataChunks % 25 === 0) {
+                            vlog('DATA_FLOW', { instanceId, dataChunks: chunkStats.dataChunks, chunkSize: bytes.length });
                         }
                         if (!hasAppendedInitRef.current) {
-                            if (!isHeader) return;
+                            if (!isHeader) {
+                                if (chunkStats.dataChunks <= 20 || chunkStats.dataChunks % 20 === 0) {
+                                    vwarn('DATA_CHUNK_BEFORE_INIT', { instanceId, bytesDropped: bytes.length, totalDropped: chunkStats.dataChunks });
+                                }
+                                return;
+                            }
                         }
                         if (waitingTimeoutRef.current) {
                             clearTimeout(waitingTimeoutRef.current);
@@ -360,7 +494,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                         processQueue();
                         setShowWaitingHint(false);
                         if (queueRef.current.length >= 1 && !sourceBufferDeadRef.current && videoRef.current?.paused) {
-                            videoRef.current.play().catch(() => {});
+                            videoRef.current.play().catch((e) => { vwarn('video.play.rejected', { msg: String(e) }); });
                         }
                         return;
                     }
@@ -369,7 +503,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                         const message = JSON.parse(data as string);
                         if (message.type === 'auth:ok' && !wsAuthenticated) {
                             wsAuthenticated = true;
-                            console.log('[LIVE_DEBUG] MediaStreamPlayer WS authenticated, sending manager:join callId=', callId);
+                            vlog('WS_AUTH_OK → manager:join', { callId });
                             ws.send(JSON.stringify({
                                 type: 'manager:join',
                                 payload: { callId }
@@ -377,9 +511,10 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                             return;
                         }
                         if (message.type === 'manager:joined') {
-                            console.log('[LIVE_DEBUG] MediaStreamPlayer manager:joined callId=', message.payload?.callId);
+                            vlog('WS_MANAGER_JOINED', { callId: message.payload?.callId });
                             return;
                         }
+                        vlog('WS_MSG_UNKNOWN', { type: message.type, payload: message.payload });
                     } catch {
                         if (!hasReceivedChunkRef.current) setError('Invalid stream data');
                     }
@@ -393,7 +528,7 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                     if (reconnectTimer) return;
                     const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY);
                     reconnectAttempt++;
-                    console.log(`[LIVE_DEBUG] MediaStreamPlayer WS reconnecting in ${delay}ms (attempt ${reconnectAttempt})`);
+                    vwarn(`WS_RECONNECTING in ${delay}ms (attempt ${reconnectAttempt})`);
                     reconnectTimer = setTimeout(() => {
                         reconnectTimer = null;
                         if (!wsRef.current || wsRef.current.readyState >= WebSocket.CLOSING) {
@@ -408,17 +543,19 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
                     }, delay);
                 };
 
-                ws.onerror = () => {
-                    console.warn('[LIVE_DEBUG] MediaStreamPlayer WS error');
+                ws.onerror = (e) => {
+                    vwarn('WS_ERROR', { readyState: ws.readyState, msg: String(e) });
                 };
 
-                ws.onclose = () => {
+                ws.onclose = (ev) => {
+                    vwarn('WS_CLOSE', { code: ev.code, reason: ev.reason, wasClean: ev.wasClean });
                     setIsPlaying(false);
                     reconnectWS();
                 };
 
             } catch (err: unknown) {
                 const message = err instanceof Error ? err.message : 'Playback error';
+                verror('handleSourceOpen_CAUGHT', { msg: message });
                 setError(message);
             }
         };
@@ -426,6 +563,11 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
         mediaSource.addEventListener('sourceopen', handleSourceOpen);
 
         return () => {
+            vlog('UNMOUNT_OR_DEP_CHANGE', { totalChunks: chunkStats.totalChunks, totalKB: Math.round(chunkStats.totalBytes / 1024) });
+            if (healthCheck) clearInterval(healthCheck);
+            videoListeners.forEach(({ ev, fn }) => {
+                try { videoEl.removeEventListener(ev, fn); } catch {}
+            });
             if (waitingTimeoutRef.current) clearTimeout(waitingTimeoutRef.current);
             if (trimIntervalRef.current) {
                 clearInterval(trimIntervalRef.current);
@@ -450,13 +592,29 @@ export function MediaStreamPlayer({ callId, wsUrl, token }: MediaStreamPlayerPro
             }
             mediaSource.removeEventListener('sourceopen', handleSourceOpen);
         };
-    }, [callId, wsUrl, token]);
+    }, [callId, wsUrl, token, resetCounter]);
 
     return (
         <div className="relative w-full bg-black rounded-lg overflow-hidden border border-gray-800 shadow-xl aspect-video">
             {error && (
-                <div className="absolute top-2 left-2 bg-red-500/90 text-white px-3 py-1 rounded text-sm z-20 font-medium">
-                    {error}
+                <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-30 backdrop-blur-sm">
+                    <div className="text-center px-6 py-5 rounded-xl bg-red-900/30 border border-red-500/30 max-w-sm">
+                        <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-red-500/20 flex items-center justify-center">
+                            <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <p className="text-white font-semibold mb-1">{error}</p>
+                        <p className="text-xs text-gray-400 mb-3">
+                            O player do vídeo ao vivo encontrou um problema. Isso pode acontecer ao trocar de codec ou após instabilidade na rede.
+                        </p>
+                        <button
+                            onClick={handleRetry}
+                            className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-400 text-white text-sm font-semibold transition-colors"
+                        >
+                            Tentar novamente
+                        </button>
+                    </div>
                 </div>
             )}
 

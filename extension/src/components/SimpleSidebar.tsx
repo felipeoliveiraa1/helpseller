@@ -123,6 +123,8 @@ export default function SimpleSidebar() {
     const fs = (base: number) => base + fontSizeOffset;
     const dragRef = useRef({ startX: 0, startY: 0, startLeft: 0, startTop: 0, panelW: SIDEBAR_W, panelH: 300 });
     const transcriptEndRef = useRef<HTMLDivElement>(null);
+    const transcriptContainerRef = useRef<HTMLDivElement>(null);
+    const [transcriptScrolledUp, setTranscriptScrolledUp] = useState(false);
     const coachFeedRef = useRef<HTMLDivElement>(null);
     const coachFeedEndRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -276,8 +278,17 @@ export default function SimpleSidebar() {
     }, [session, loading]);
 
     useEffect(() => {
-        transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [transcripts]);
+        if (!transcriptScrolledUp) {
+            transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [transcripts, transcriptScrolledUp]);
+
+    const handleTranscriptScroll = () => {
+        const el = transcriptContainerRef.current;
+        if (!el) return;
+        const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+        setTranscriptScrolledUp(!isAtBottom);
+    };
 
     // Auto-scroll coach feed only if user is NOT scrolled up reading
     useEffect(() => {
@@ -644,7 +655,8 @@ export default function SimpleSidebar() {
             </div>
 
             {/* Realtime Transcripts — Chat Bubble Layout */}
-            <div style={{ flexShrink: 0, height: `${transcriptPct}%`, minHeight: 40, overflowY: 'auto', overflowX: 'hidden', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, backgroundColor: BG }}>
+            <div style={{ flexShrink: 0, height: `${transcriptPct}%`, minHeight: 40, position: 'relative', backgroundColor: BG }}>
+            <div ref={transcriptContainerRef} onScroll={handleTranscriptScroll} style={{ position: 'absolute', inset: 0, overflowY: 'auto', overflowX: 'hidden', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 2, color: TEXT_MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0, display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: ACCENT_BLUE }}>Cliente</span>
                     <span>Transcrição</span>
@@ -690,6 +702,28 @@ export default function SimpleSidebar() {
                     })
                 )}
                 <div ref={transcriptEndRef} />
+            </div>
+            {transcriptScrolledUp && transcripts.length > 0 && (
+                <button
+                    onClick={() => {
+                        transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                        setTranscriptScrolledUp(false);
+                    }}
+                    style={{
+                        position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        padding: '5px 12px', borderRadius: 20,
+                        border: `1px solid ${ACCENT_BLUE}44`,
+                        background: `${BG}ee`, color: ACCENT_BLUE,
+                        fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: `0 2px 12px rgba(0,0,0,0.5)`,
+                    }}
+                >
+                    <ChevronsDown size={12} />
+                    Novas mensagens
+                </button>
+            )}
             </div>
 
             {/* Status Bar */}

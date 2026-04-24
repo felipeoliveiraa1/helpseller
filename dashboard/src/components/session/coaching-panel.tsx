@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
 import { Zap, Lightbulb, ShoppingCart, AlertTriangle, Sparkles, X, MessageSquare, Target, MessageCircle } from 'lucide-react'
 import type { CoachMessage } from '@/hooks/use-web-session'
+import { useSmartAutoscroll } from '@/hooks/use-smart-autoscroll'
 import { SpinIndicator } from './spin-indicator'
 
 interface CoachingPanelProps {
@@ -109,15 +109,8 @@ function CoachCard({ message, onDismiss, fs }: { message: CoachMessage; onDismis
 
 export function CoachingPanel({ messages, currentSpinPhase, onDismiss, fs: fsProp }: CoachingPanelProps) {
   const fs = fsProp ?? ((b: number) => b)
-  const scrollRef = useRef<HTMLDivElement>(null)
   const activeMessages = messages.filter(m => !m.isDismissed)
-
-  // Auto-scroll to latest card
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [activeMessages.length])
+  const { containerRef, handleScroll, hasNewBelow, jumpToBottom } = useSmartAutoscroll<HTMLDivElement>(activeMessages.length)
 
   return (
     <div className="flex flex-col h-full">
@@ -126,7 +119,8 @@ export function CoachingPanel({ messages, currentSpinPhase, onDismiss, fs: fsPro
         <h3 className="text-sm font-semibold text-white">Coach IA</h3>
         <span className="text-xs text-gray-500 ml-auto">{activeMessages.length} sugestões</span>
       </div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-pink">
+      <div className="relative flex-1 min-h-0">
+      <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto p-3 space-y-2 scrollbar-pink">
         <SpinIndicator currentPhase={currentSpinPhase} />
 
         {activeMessages.map(msg => (
@@ -145,6 +139,16 @@ export function CoachingPanel({ messages, currentSpinPhase, onDismiss, fs: fsPro
             )}
           </div>
         )}
+      </div>
+      {hasNewBelow && (
+        <button
+          onClick={jumpToBottom}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-medium shadow-lg border border-white/10 hover:brightness-110 transition"
+          style={{ backgroundColor: NEON_PINK, color: 'white' }}
+        >
+          ↓ novas sugestões
+        </button>
+      )}
       </div>
     </div>
   )

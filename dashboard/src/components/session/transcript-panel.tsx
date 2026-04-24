@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
 import type { TranscriptChunk } from '@/hooks/use-web-session'
+import { useSmartAutoscroll } from '@/hooks/use-smart-autoscroll'
 
 interface TranscriptPanelProps {
   transcript: TranscriptChunk[]
@@ -12,14 +12,7 @@ const NEON_PINK = '#ff007a'
 
 export function TranscriptPanel({ transcript, fs: fsProp }: TranscriptPanelProps) {
   const fs = fsProp ?? ((b: number) => b)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [transcript])
+  const { containerRef, handleScroll, hasNewBelow, jumpToBottom } = useSmartAutoscroll<HTMLDivElement>(transcript.length)
 
   return (
     <div className="flex flex-col h-full">
@@ -28,9 +21,11 @@ export function TranscriptPanel({ transcript, fs: fsProp }: TranscriptPanelProps
         <h3 className="text-sm font-semibold text-white">Transcrição</h3>
         <span className="text-xs text-gray-500 ml-auto">{transcript.filter(t => t.isFinal).length} mensagens</span>
       </div>
+      <div className="relative flex-1 min-h-0">
       <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-pink"
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="h-full overflow-y-auto p-4 space-y-3 scrollbar-pink"
       >
         {transcript.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
@@ -82,6 +77,16 @@ export function TranscriptPanel({ transcript, fs: fsProp }: TranscriptPanelProps
             <span>Transcrevendo...</span>
           </div>
         )}
+      </div>
+      {hasNewBelow && (
+        <button
+          onClick={jumpToBottom}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-medium shadow-lg border border-white/10 hover:brightness-110 transition"
+          style={{ backgroundColor: NEON_PINK, color: 'white' }}
+        >
+          ↓ novas mensagens
+        </button>
+      )}
       </div>
     </div>
   )

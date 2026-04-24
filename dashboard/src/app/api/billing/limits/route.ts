@@ -67,66 +67,58 @@ export async function GET() {
       return NextResponse.json({ error: 'No organization found' }, { status: 403 });
     }
 
-    // Get organization plan
-    const { data: org } = await supabase
-      .from('organizations')
-      .select('plan')
-      .eq('id', organizationId)
-      .single();
-
-    const plan = ((org as { plan?: string } | null)?.plan ?? 'FREE') as PlanSlug;
-    const planLimits = getPlanLimits(plan);
-
-    // Count all active team members (excluding the current user/owner)
-    // This prevents the exploit of promoting SELLERs to MANAGER to bypass limits
-    const { count: sellerCount } = await supabase
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('organization_id', organizationId)
-      .eq('is_active', true)
-      .neq('id', user.id);
-
-    const currentSellers = sellerCount ?? 0;
-
-    // Calculate call hours this month
+    // Calculate month boundaries (used by 3 of the 4 parallel queries below)
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
-    const { data: callsData } = await supabase
-      .from('calls')
-      .select('duration_seconds')
-      .eq('organization_id', organizationId)
-      .gte('started_at', startOfMonth.toISOString())
-      .lt('started_at', endOfMonth.toISOString());
-
-    const totalSeconds = (callsData ?? []).reduce((sum, call) => {
-      const duration = (call as { duration_seconds: number | null }).duration_seconds ?? 0;
-      return sum + duration;
-    }, 0);
-
-    const currentCallHours = Math.round((totalSeconds / 3600) * 100) / 100;
-
-    // Fetch extra hours purchased this month
     const startOfMonthStr = startOfMonth.toISOString().split('T')[0]
-    let extraHoursPurchased = 0
-    let extraHoursPurchases: ExtraHoursPurchase[] = []
-    try {
-      const { data: purchases } = await supabase
+
+    // Run the 4 org-scoped queries in parallel — they only depend on organizationId
+    const [orgRes, sellerCountRes, callsRes, purchasesRes] = await Promise.all([
+      supabase
+        .from('organizations')
+        .select('plan')
+        .eq('id', organizationId)
+        .single(),
+      supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .eq('is_active', true)
+        .neq('id', user.id),
+      supabase
+        .from('calls')
+        .select('duration_seconds')
+        .eq('organization_id', organizationId)
+        .gte('started_at', startOfMonth.toISOString())
+        .lt('started_at', endOfMonth.toISOString()),
+      supabase
         .from('extra_hours_purchases')
         .select('id, hours, amount_cents, status, paid_at, created_at')
         .eq('organization_id', organizationId)
         .eq('valid_month', startOfMonthStr)
         .order('created_at', { ascending: false })
+        .then(r => r, () => ({ data: null, error: null })), // extra_hours table may not exist yet
+    ]);
 
-      if (purchases) {
-        extraHoursPurchases = purchases as unknown as ExtraHoursPurchase[]
-        extraHoursPurchased = purchases
-          .filter((p: { status: string }) => p.status === 'paid')
-          .reduce((sum: number, p: { hours: number }) => sum + (p.hours ?? 0), 0)
-      }
-    } catch {
-      // Table might not exist yet
+    const plan = ((orgRes.data as { plan?: string } | null)?.plan ?? 'FREE') as PlanSlug;
+    const planLimits = getPlanLimits(plan);
+    const currentSellers = sellerCountRes.count ?? 0;
+
+    const totalSeconds = (callsRes.data ?? []).reduce((sum, call) => {
+      const duration = (call as { duration_seconds: number | null }).duration_seconds ?? 0;
+      return sum + duration;
+    }, 0);
+    const currentCallHours = Math.round((totalSeconds / 3600) * 100) / 100;
+
+    let extraHoursPurchased = 0
+    let extraHoursPurchases: ExtraHoursPurchase[] = []
+    const purchases = purchasesRes.data as Array<{ status: string; hours: number }> | null
+    if (purchases) {
+      extraHoursPurchases = purchases as unknown as ExtraHoursPurchase[]
+      extraHoursPurchased = purchases
+        .filter((p) => p.status === 'paid')
+        .reduce((sum, p) => sum + (p.hours ?? 0), 0)
     }
 
     const totalAvailableHours = planLimits.maxCallHoursPerMonth === -1
@@ -170,7 +162,11 @@ export async function GET() {
       canAddSeller,
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
+      },
+    });
   } catch (err) {
     console.error('[BILLING_LIMITS] Error:', err);
     return NextResponse.json({ error: 'Failed to get limits' }, { status: 500 });

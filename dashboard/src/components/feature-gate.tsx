@@ -18,7 +18,23 @@ const NEON_GREEN = '#00ff94'
 
 // Cache plan data to avoid refetching on every component mount
 let _planCache: { data: any; fetchedAt: number } | null = null
+let _inflightFetch: Promise<any> | null = null
 const PLAN_CACHE_TTL = 60_000 // 1 minute
+const PLAN_FETCH_TIMEOUT = 10_000 // Cap inflight promise so the spinner never hangs forever
+
+/** Returns the cached plan slug if we've successfully fetched at least once this session. */
+export function getCachedPlan(): PlanSlug | null {
+  return (_planCache?.data?.plan as PlanSlug | undefined) ?? null
+}
+
+/**
+ * Clears the in-memory plan cache. Call this on sign-out so a new user
+ * signing in from the same tab doesn't see the previous account's plan.
+ */
+export function clearPlanCache(): void {
+  _planCache = null
+  _inflightFetch = null
+}
 
 // Plan context for caching plan data across components
 interface PlanContextValue {
@@ -63,33 +79,42 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const [canAddSeller, setCanAddSeller] = useState(false)
 
   const refresh = useCallback(async () => {
+    const applyData = (data: any) => {
+      setPlan(data.plan)
+      setUsage(data.usage)
+      setLimits(data.limits)
+      setRemaining(data.remaining ?? { sellerSlots: 0, callHours: 0 })
+      setExtraHoursPurchased(data.extraHours?.purchased ?? 0)
+      setCanStartCall(data.canStartCall)
+      setCanAddSeller(data.canAddSeller)
+    }
+
     try {
       // Use cached data if fresh enough
       if (_planCache && Date.now() - _planCache.fetchedAt < PLAN_CACHE_TTL) {
-        const data = _planCache.data
-        setPlan(data.plan)
-        setUsage(data.usage)
-        setLimits(data.limits)
-        setRemaining(data.remaining ?? { sellerSlots: 0, callHours: 0 })
-        setExtraHoursPurchased(data.extraHours?.purchased ?? 0)
-        setCanStartCall(data.canStartCall)
-        setCanAddSeller(data.canAddSeller)
+        applyData(_planCache.data)
         setLoading(false)
         return
       }
 
-      const response = await fetch('/api/billing/limits')
-      if (response.ok) {
-        const data = await response.json()
-        _planCache = { data, fetchedAt: Date.now() }
-        setPlan(data.plan)
-        setUsage(data.usage)
-        setLimits(data.limits)
-        setRemaining(data.remaining ?? { sellerSlots: 0, callHours: 0 })
-        setExtraHoursPurchased(data.extraHours?.purchased ?? 0)
-        setCanStartCall(data.canStartCall)
-        setCanAddSeller(data.canAddSeller)
+      // Dedup: share the same promise with any other concurrent refresh() call
+      if (!_inflightFetch) {
+        const fetchPromise = fetch('/api/billing/limits').then(async (response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          const data = await response.json()
+          _planCache = { data, fetchedAt: Date.now() }
+          return data
+        })
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('plan-fetch-timeout')), PLAN_FETCH_TIMEOUT)
+        })
+        _inflightFetch = Promise.race([fetchPromise, timeoutPromise]).finally(() => {
+          _inflightFetch = null
+        })
       }
+
+      const data = await _inflightFetch
+      applyData(data)
     } catch (err) {
       console.error('Failed to fetch plan limits:', err)
     } finally {
@@ -142,19 +167,42 @@ interface FeatureGateProps {
 /**
  * Conditionally renders children based on plan feature access.
  * Shows upgrade prompt if feature is not available.
+ *
+ * While the plan data is still loading we avoid an indefinite spinner:
+ * - If we already have cached plan data from a previous fetch, use it optimistically
+ * - Otherwise show a spinner capped by a 6s timeout; after that, render children and
+ *   let downstream components display the real empty states themselves.
  */
 export function FeatureGate({ feature, children, fallback }: FeatureGateProps) {
   const { plan, loading } = usePlanContext()
+  const [spinnerExpired, setSpinnerExpired] = useState(false)
+
+  useEffect(() => {
+    if (!loading) {
+      setSpinnerExpired(false)
+      return
+    }
+    const id = setTimeout(() => setSpinnerExpired(true), 6000)
+    return () => clearTimeout(id)
+  }, [loading])
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[40vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
-      </div>
-    )
+    const cachedPlan = getCachedPlan()
+    if (cachedPlan && hasFeature(cachedPlan, feature)) {
+      return <>{children}</>
+    }
+    if (!spinnerExpired) {
+      return (
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
+        </div>
+      )
+    }
+    // Spinner timed out; fall through to resolve with whatever plan state we have.
   }
 
-  const hasAccess = hasFeature(plan, feature)
+  const effectivePlan = plan || getCachedPlan() || ('FREE' as PlanSlug)
+  const hasAccess = hasFeature(effectivePlan, feature)
 
   if (hasAccess) {
     return <>{children}</>
@@ -164,7 +212,7 @@ export function FeatureGate({ feature, children, fallback }: FeatureGateProps) {
     return <>{fallback}</>
   }
 
-  return <UpgradePrompt feature={feature} currentPlan={plan} />
+  return <UpgradePrompt feature={feature} currentPlan={effectivePlan} />
 }
 
 interface UpgradePromptProps {

@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Phone, MessageSquare, Clock, AlertTriangle } from 'lucide-react';
+import { Phone, MessageSquare, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { MediaStreamPlayer } from '@/components/MediaStreamPlayer';
 import { LiveKitViewer } from '@/components/LiveKitViewer';
@@ -50,24 +50,15 @@ export default function LivePage() {
     const [token, setToken] = useState<string | null>(null);
     const [sentWhispers, setSentWhispers] = useState<{ content: string; timestamp: number }[]>([]);
     const [managerUserId, setManagerUserId] = useState<string | null>(null);
+    const [managerOrgId, setManagerOrgId] = useState<string | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
     const apiBase = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') : 'http://localhost:3001';
     const WS_URL = apiBase.replace(/^http/, 'ws') + (apiBase.endsWith('/') ? '' : '/') + 'ws/manager';
     const useLiveKit = typeof window !== 'undefined' && !!process.env.NEXT_PUBLIC_LIVEKIT_URL;
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
 
-    const fetchActiveCalls = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('role, organization_id')
-            .eq('id', user.id)
-            .single();
-
-        const orgId = (profile as { organization_id?: string | null } | null)?.organization_id ?? null;
-
+    const fetchActiveCalls = async (userId: string, orgId: string | null) => {
         let query = supabase
             .from('calls')
             .select(`
@@ -81,7 +72,7 @@ export default function LivePage() {
         if (orgId) {
             query = query.eq('organization_id', orgId);
         } else {
-            query = query.eq('user_id', user.id);
+            query = query.eq('user_id', userId);
         }
 
         const { data, error } = await query;
@@ -89,20 +80,21 @@ export default function LivePage() {
         if (error) {
             const fallbackSelect = orgId
                 ? supabase.from('calls').select('*, user:profiles!user_id(full_name, avatar_url)').eq('status', 'ACTIVE').eq('organization_id', orgId).order('started_at', { ascending: false })
-                : supabase.from('calls').select('*, user:profiles!user_id(full_name, avatar_url)').eq('status', 'ACTIVE').eq('user_id', user.id).order('started_at', { ascending: false });
+                : supabase.from('calls').select('*, user:profiles!user_id(full_name, avatar_url)').eq('status', 'ACTIVE').eq('user_id', userId).order('started_at', { ascending: false });
             const fallback = await fallbackSelect;
             if (!fallback.error && fallback.data) {
                 setActiveCalls(fallback.data as any);
                 setSelectedCall((current) => {
                     if (!current) return current;
                     const fresh = (fallback.data as Call[]).find((c) => c.id === current.id);
-                    return fresh ?? current;
+                    if (!fresh) return current;
+                    return fresh.status === current.status ? current : fresh;
                 });
                 return;
             }
             const minimalSelect = orgId
                 ? supabase.from('calls').select('*').eq('status', 'ACTIVE').eq('organization_id', orgId).order('started_at', { ascending: false })
-                : supabase.from('calls').select('*').eq('status', 'ACTIVE').eq('user_id', user.id).order('started_at', { ascending: false });
+                : supabase.from('calls').select('*').eq('status', 'ACTIVE').eq('user_id', userId).order('started_at', { ascending: false });
             const minimal = await minimalSelect;
             if (!minimal.error && minimal.data) setActiveCalls(minimal.data as any);
             return;
@@ -113,8 +105,19 @@ export default function LivePage() {
             setSelectedCall((current) => {
                 if (!current) return current;
                 const fresh = (data as Call[]).find((c) => c.id === current.id);
-                return fresh ?? current;
+                if (!fresh) return current;
+                return fresh.status === current.status ? current : fresh;
             });
+        }
+    };
+
+    const refreshActiveCalls = async () => {
+        if (!managerUserId || refreshing) return;
+        setRefreshing(true);
+        try {
+            await fetchActiveCalls(managerUserId, managerOrgId);
+        } finally {
+            setRefreshing(false);
         }
     };
 
@@ -123,30 +126,50 @@ export default function LivePage() {
         setIsMounted(true);
     }, []);
 
-    // Check Role & Fetch Calls
+    // Initial load: auth + profile + active calls (single pass, no polling)
     useEffect(() => {
-        // hydration check inside effect is fine as it doesn't change hook count
         if (!isMounted) return;
+
+        let cancelled = false;
 
         async function init() {
             const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('role')
-                    .eq('id', user.id)
-                    .single();
+            if (!user || cancelled) { setLoading(false); return; }
 
-                if (profile) setRole((profile as any).role);
-            }
-            fetchActiveCalls();
-            setLoading(false);
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role, organization_id')
+                .eq('id', user.id)
+                .single();
+
+            if (cancelled) return;
+
+            const profileData = profile as { role?: string; organization_id?: string | null } | null;
+            const orgId = profileData?.organization_id ?? null;
+            if (profileData?.role) setRole(profileData.role);
+            setManagerUserId(user.id);
+            setManagerOrgId(orgId);
+
+            await fetchActiveCalls(user.id, orgId);
+            if (!cancelled) setLoading(false);
         }
         init();
 
-        const interval = setInterval(fetchActiveCalls, 5000);
-        return () => clearInterval(interval);
+        return () => { cancelled = true; };
     }, [isMounted]);
+
+    // Silent refresh when tab regains focus
+    useEffect(() => {
+        if (!isMounted || !managerUserId) return;
+        const handler = () => {
+            if (document.visibilityState === 'visible') {
+                fetchActiveCalls(managerUserId, managerOrgId);
+            }
+        };
+        document.addEventListener('visibilitychange', handler);
+        return () => document.removeEventListener('visibilitychange', handler);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isMounted, managerUserId, managerOrgId]);
 
     // WebSocket: transcript + live summary (vídeo usa MediaStreamPlayer com sua própria conexão)
     const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
@@ -257,7 +280,8 @@ export default function LivePage() {
             setWs(null);
             setWsStatus('disconnected');
         };
-    }, [selectedCall, isMounted]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedCall?.id, isMounted]);
 
     // 3. RETORNOS ANTECIPADOS (Apenas após TODOS os hooks)
     if (!isMounted) return null;
@@ -314,8 +338,17 @@ export default function LivePage() {
                     className="w-full lg:w-80 shrink-0 rounded-[24px] border overflow-hidden flex flex-col"
                     style={CARD_STYLE}
                 >
-                    <div className="p-4 border-b border-white/10">
+                    <div className="p-4 border-b border-white/10 flex items-center justify-between gap-2">
                         <h2 className="text-lg font-bold text-white">Chamadas ativas</h2>
+                        <button
+                            onClick={refreshActiveCalls}
+                            disabled={refreshing || !managerUserId}
+                            className="shrink-0 flex items-center gap-1.5 text-xs text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed rounded-lg px-2 py-1 border border-white/10 hover:border-white/20 transition-colors"
+                            title="Atualizar lista de chamadas"
+                        >
+                            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                            {refreshing ? 'Atualizando' : 'Atualizar'}
+                        </button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide" suppressHydrationWarning={true}>
                         {activeCalls.length === 0 ? (

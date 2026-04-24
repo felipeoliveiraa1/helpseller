@@ -207,8 +207,6 @@ export function CallRaioXPanel({ call, objections, loading, error }: CallRaioXPa
         }
     }
 
-    console.log('Rendering RaioX Panel for call:', call.id, 'Data:', analysisData);
-
     const coachName = call.coach?.name || (call.summary?.raw_analysis as any)?.coach_name;
 
     const handleDownloadPdf = async () => {

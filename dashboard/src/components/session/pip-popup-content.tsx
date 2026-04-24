@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useRef, useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { WebSessionState, CoachMessage, CallResult } from '@/hooks/use-web-session'
+import { useSmartAutoscroll } from '@/hooks/use-smart-autoscroll'
 
 const NEON_PINK = '#ff007a'
 
@@ -24,18 +25,14 @@ export function PipPopupContent({ state, onDismiss, onStop }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('coach')
   const [fontSizeOffset, setFontSizeOffset] = useState(0)
   const fs = (base: number) => base + fontSizeOffset
-  const coachEndRef = useRef<HTMLDivElement>(null)
-  const transcriptEndRef = useRef<HTMLDivElement>(null)
 
   const activeCoach = useMemo(() => (state.coachMessages || []).filter(m => !m.isDismissed), [state.coachMessages])
   const finalTranscript = useMemo(() => (state.transcript || []).filter(t => t.isFinal), [state.transcript])
 
-  useEffect(() => {
-    if (activeTab === 'coach') coachEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [state.coachMessages, activeTab])
-  useEffect(() => {
-    if (activeTab === 'transcript') transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [state.transcript, activeTab])
+  const scrollDep = activeTab === 'coach'
+    ? `coach:${activeCoach.length}`
+    : `transcript:${finalTranscript.length}`
+  const { containerRef, handleScroll, hasNewBelow, jumpToBottom } = useSmartAutoscroll<HTMLDivElement>(scrollDep)
 
   const fmt = (s: number) => {
     const m = Math.floor(s / 60); const ss = s % 60
@@ -174,7 +171,8 @@ export function PipPopupContent({ state, onDismiss, onStop }: Props) {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+      <div ref={containerRef} onScroll={handleScroll} style={{ position: 'absolute', inset: 0, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
         {activeTab === 'coach' ? (
           <>
             {activeCoach.length === 0 && (
@@ -192,7 +190,6 @@ export function PipPopupContent({ state, onDismiss, onStop }: Props) {
             {activeCoach.map(msg => (
               <PipCoachCard key={msg.id} msg={msg} onDismiss={onDismiss} fs={fs} />
             ))}
-            <div ref={coachEndRef} />
           </>
         ) : (
           <>
@@ -224,9 +221,22 @@ export function PipPopupContent({ state, onDismiss, onStop }: Props) {
                 </div>
               </div>
             ))}
-            <div ref={transcriptEndRef} />
           </>
         )}
+      </div>
+      {hasNewBelow && (
+        <button
+          onClick={jumpToBottom}
+          style={{
+            position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
+            padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600,
+            background: NEON_PINK, color: 'white', border: '1px solid rgba(255,255,255,0.15)',
+            cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          }}
+        >
+          ↓ {activeTab === 'coach' ? 'novas sugestões' : 'novas mensagens'}
+        </button>
+      )}
       </div>
 
       {/* End bar */}

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { useCoachingStore } from '../stores/coaching-store';
 
@@ -11,19 +11,43 @@ interface Transcript {
 export function TranscriptMini({ transcripts }: { transcripts: Transcript[] }) {
     const [expanded, setExpanded] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const stuckToBottomRef = useRef(true);
+    const [hasNewBelow, setHasNewBelow] = useState(false);
     const fontSizeOffset = useCoachingStore(state => state.fontSizeOffset);
 
     useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        const el = scrollRef.current;
+        if (!el) return;
+        if (stuckToBottomRef.current) {
+            el.scrollTop = el.scrollHeight;
+            if (hasNewBelow) setHasNewBelow(false);
+        } else {
+            setHasNewBelow(true);
         }
-    }, [transcripts, expanded]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transcripts.length, expanded]);
+
+    const handleScroll = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        stuckToBottomRef.current = atBottom;
+        if (atBottom) setHasNewBelow(false);
+    }, []);
+
+    const jumpToBottom = () => {
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        stuckToBottomRef.current = true;
+        setHasNewBelow(false);
+    };
 
     // Show last 3 messages if collapsed
     const displayedTranscripts = expanded ? transcripts : transcripts.slice(-3);
 
     return (
-        <div className={`shrink-0 border-t border-white/10 bg-[#1A1B2E] transition-all duration-300 ${expanded ? 'h-64' : 'h-auto max-h-40'
+        <div className={`relative shrink-0 border-t border-white/10 bg-[#1A1B2E] transition-all duration-300 ${expanded ? 'h-64' : 'h-auto max-h-40'
             }`}>
             <div
                 className="px-4 py-1 flex items-center justify-center cursor-pointer hover:bg-white/5"
@@ -36,6 +60,7 @@ export function TranscriptMini({ transcripts }: { transcripts: Transcript[] }) {
                 className="px-4 py-2 space-y-2 overflow-y-auto custom-scrollbar"
                 style={{ height: expanded ? 'calc(100% - 24px)' : 'auto' }}
                 ref={scrollRef}
+                onScroll={handleScroll}
             >
                 {displayedTranscripts.map((t, i) => (
                     <div key={i} className={`leading-snug ${t.speaker === 'user' ? 'text-blue-200' : 'text-slate-300'}`}
@@ -47,6 +72,14 @@ export function TranscriptMini({ transcripts }: { transcripts: Transcript[] }) {
                     </div>
                 ))}
             </div>
+            {hasNewBelow && expanded && (
+                <button
+                    onClick={jumpToBottom}
+                    className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-semibold bg-blue-500 text-white shadow-lg hover:brightness-110"
+                >
+                    ↓ novas mensagens
+                </button>
+            )}
         </div>
     );
 }

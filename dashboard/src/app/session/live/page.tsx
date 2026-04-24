@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Zap, Lightbulb, ShoppingCart, AlertTriangle, Sparkles, X, MessageSquare, Target, MessageCircle } from 'lucide-react'
 import type { CoachMessage, TranscriptChunk, WebSessionState, CallResult } from '@/hooks/use-web-session'
+import { useSmartAutoscroll } from '@/hooks/use-smart-autoscroll'
 
 const NEON_PINK = '#ff007a'
 const BROADCAST_CHANNEL = 'helpcloser-session'
@@ -22,8 +23,6 @@ export default function SessionLivePopup() {
   const [fontSizeOffset, setFontSizeOffset] = useState(0)
   const fs = (base: number) => base + fontSizeOffset
   const channelRef = useRef<BroadcastChannel | null>(null)
-  const coachEndRef = useRef<HTMLDivElement>(null)
-  const transcriptEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const ch = new BroadcastChannel(BROADCAST_CHANNEL)
@@ -34,14 +33,6 @@ export default function SessionLivePopup() {
     return () => ch.close()
   }, [])
 
-  // Auto-scroll
-  useEffect(() => {
-    if (activeTab === 'coach') coachEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [state?.coachMessages, activeTab])
-  useEffect(() => {
-    if (activeTab === 'transcript') transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [state?.transcript, activeTab])
-
   const sendCmd = (type: string, data?: Record<string, unknown>) => {
     channelRef.current?.postMessage({ type, ...data })
   }
@@ -51,6 +42,11 @@ export default function SessionLivePopup() {
 
   const activeCoach = useMemo(() => (state?.coachMessages || []).filter(m => !m.isDismissed), [state?.coachMessages])
   const finalTranscript = useMemo(() => (state?.transcript || []).filter(t => t.isFinal), [state?.transcript])
+
+  const scrollDep = activeTab === 'coach'
+    ? `coach:${activeCoach.length}`
+    : `transcript:${finalTranscript.length}`
+  const { containerRef, handleScroll, hasNewBelow, jumpToBottom } = useSmartAutoscroll<HTMLDivElement>(scrollDep)
 
   const fmt = (s: number) => {
     const m = Math.floor(s / 60); const ss = s % 60
@@ -179,7 +175,13 @@ export default function SessionLivePopup() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5" style={{ scrollbarWidth: 'thin', scrollbarColor: `${NEON_PINK}40 transparent` }}>
+      <div className="relative flex-1 min-h-0">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="absolute inset-0 overflow-y-auto p-2.5 space-y-1.5"
+        style={{ scrollbarWidth: 'thin', scrollbarColor: `${NEON_PINK}40 transparent` }}
+      >
         {activeTab === 'coach' ? (
           <>
             {activeCoach.length === 0 && (
@@ -189,7 +191,6 @@ export default function SessionLivePopup() {
               </div>
             )}
             {activeCoach.map(msg => <PopupCoachCard key={msg.id} msg={msg} onDismiss={dismiss} fs={fs} />)}
-            <div ref={coachEndRef} />
           </>
         ) : (
           <>
@@ -220,9 +221,18 @@ export default function SessionLivePopup() {
                 </div>
               </div>
             ))}
-            <div ref={transcriptEndRef} />
           </>
         )}
+      </div>
+      {hasNewBelow && (
+        <button
+          onClick={jumpToBottom}
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-semibold shadow-lg border border-white/10 hover:brightness-110 transition"
+          style={{ backgroundColor: NEON_PINK, color: 'white' }}
+        >
+          ↓ {activeTab === 'coach' ? 'novas sugestões' : 'novas mensagens'}
+        </button>
+      )}
       </div>
 
       {/* End bar */}

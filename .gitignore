@@ -19,6 +19,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Redis in-memory fallback dump — contains live transcripts / sensitive session state
+backend/redis-dump.json
+backend/recent_calls.json
+backend/calls.json
+backend/summary.json
+backend/participant_debug.js
+
 # OS files
 .DS_Store
 Thumbs.db

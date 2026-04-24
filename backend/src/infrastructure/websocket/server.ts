@@ -432,12 +432,27 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                             };
 
                             if (event.payload.isHeader) {
-                                await redis.set(
-                                    `call:${callId}:media_header`,
-                                    payload,
-                                    14400
-                                );
-                                logger.info(`📼 Video Header cached for call ${callId}`);
+                                // Only cache the chunk if it's a real WebM init segment (starts with EBML
+                                // magic 0x1A45DFA3 and is at least MIN_INIT_SEGMENT_BYTES long). The seller
+                                // sometimes emits tiny "header" heartbeats (1 byte) that used to corrupt the
+                                // cache and leave new managers stuck dropping data chunks as DATA_BEFORE_INIT.
+                                let cacheable = false;
+                                try {
+                                    const chunkBuf = Buffer.from(event.payload.chunk, 'base64');
+                                    cacheable = isValidWebMInit(chunkBuf);
+                                } catch {
+                                    cacheable = false;
+                                }
+                                if (cacheable) {
+                                    await redis.set(
+                                        `call:${callId}:media_header`,
+                                        payload,
+                                        14400
+                                    );
+                                    logger.info(`📼 Video Header cached for call ${callId}`);
+                                } else {
+                                    logger.debug(`📼 Skipping invalid header (not EBML / too small) for call ${callId}`);
+                                }
                             }
 
                             await redis.publish(`call:${callId}:media_raw`, payload);
@@ -1744,19 +1759,12 @@ export async function websocketRoutes(fastify: FastifyInstance) {
                             socket.send(JSON.stringify({ type: 'error', payload: { code: 'SUBSCRIPTION_FAILED', message: 'Failed to subscribe to call stream' } }));
                         }
 
-                        // Subscribe to media stream (video + audio) — send binary to avoid base64 encoding issues
-                        mediaHandler = (mediaData: any) => {
-                            if (socket.readyState !== WebSocket.OPEN) return;
-                            const binaryMsg = encodeMediaChunkToBinary(mediaData);
-                            if (binaryMsg) socket.send(binaryMsg);
-                        };
-
-                        try {
-                            await redis.subscribe(`call:${subscribedCallId}:media_raw`, mediaHandler);
-                        } catch (subErr) {
-                            logger.error({ error: subErr }, '[LIVE_DEBUG] Failed to subscribe to media');
-                            socket.send(JSON.stringify({ type: 'error', payload: { code: 'SUBSCRIPTION_FAILED', message: 'Failed to subscribe to media stream' } }));
-                        }
+                        // Media stream delivery uses the direct broadcast path below (managerSocketsByCallId).
+                        // The Redis pub/sub subscription was removed because it caused every media chunk
+                        // to be delivered TWICE to the same manager socket (once via pub/sub, once via direct
+                        // broadcast), which triggered CHUNK_DEMUXER_ERROR_APPEND_FAILED ("block with a timecode
+                        // before the previous block") in the browser's WebM demuxer.
+                        mediaHandler = null;
 
                         // Subscribe to live summary
                         liveSummaryHandler = async (summaryData: any) => {

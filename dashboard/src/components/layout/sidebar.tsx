@@ -8,6 +8,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { hasFeature, type FeatureKey } from '@/lib/plan-limits'
 import { TourButton } from '@/components/product-tour'
+import { clearPlanCache } from '@/components/feature-gate'
+import { clearProfileCache } from '@/components/dashboard-content-guard'
 
 const navSections = [
   {
@@ -89,6 +91,10 @@ export function Sidebar() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
+    // Drop module-level caches so the next account that signs in on this tab
+    // doesn't inherit the previous user's plan / organization data.
+    clearPlanCache()
+    clearProfileCache()
     router.push('/login')
     router.refresh()
   }
